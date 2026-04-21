@@ -1014,12 +1014,18 @@ export default function Home() {
   // Scroll to today whenever dates load or change
   useEffect(() => {
     if (loading) return
-    if (!ganttScrollRef.current) return
-    const todayStr = formatDateKey(new Date())
-    const todayIdx = dates.findIndex(d => formatDateKey(d) === todayStr)
-    if (todayIdx === -1) return
-    const scrollPos = todayIdx * DAY_COL_WIDTH - 400 // scroll so today lands ~5 cols from left edge
-    ganttScrollRef.current.scrollLeft = Math.max(0, scrollPos)
+    const scrollToToday = () => {
+      if (!ganttScrollRef.current) return
+      const todayStr = formatDateKey(new Date())
+      const todayIdx = dates.findIndex(d => formatDateKey(d) === todayStr)
+      if (todayIdx === -1) return
+      const scrollPos = todayIdx * DAY_COL_WIDTH - 400
+      ganttScrollRef.current.scrollLeft = Math.max(0, scrollPos)
+    }
+    // Try immediately, then again after a short delay for production
+    scrollToToday()
+    const t = setTimeout(scrollToToday, 300)
+    return () => clearTimeout(t)
   }, [loading, dates])
 
   // For each crew, for each date: total booked capacity fraction
