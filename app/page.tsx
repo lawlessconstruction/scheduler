@@ -5698,10 +5698,18 @@ Payment terms:
                         <div style={{ display: "flex", gap: 8 }}>
                           {[{ type: "labour", label: "👷 Labour", color: "#2563eb" }, { type: "material", label: "🧱 Material", color: "#d97706" }, { type: "fixed", label: "💰 Fixed price", color: "#16a34a" }].map(ct => (
                             <button key={ct.type} type="button" onClick={async () => {
-                              const { data } = await supabase.from("extra_items").insert({
-                                extra_id: activeExtra.id, charge_type: ct.type, description: ct.type === "labour" ? "Labour" : ct.type === "material" ? "Materials" : "Fixed charge",
-                                ordinary_hours: 0, ot_hours: 0, unit_cost: 0, margin_percent: ct.type === "material" ? 0 : 30, sort_order: activeExtraItemsList.length
+                              if (!activeExtra) return
+                              const { data, error } = await supabase.from("extra_items").insert({
+                                extra_id: activeExtra.id,
+                                charge_type: ct.type,
+                                description: ct.type === "labour" ? "Labour" : ct.type === "material" ? "Materials" : "Fixed charge",
+                                ordinary_hours: 0,
+                                ot_hours: 0,
+                                unit_cost: 0,
+                                margin_percent: ct.type === "material" ? 0 : 30,
+                                sort_order: activeExtraItemsList.length,
                               }).select().single()
+                              if (error) { showToast("Error adding item: " + error.message); return }
                               if (data) setExtraItems(prev => [...prev, data as ExtraItem])
                             }} style={{ ...secondaryButtonStyle, fontSize: 12, padding: "6px 12px", color: ct.color, borderColor: ct.color }}>+ {ct.label}</button>
                           ))}
