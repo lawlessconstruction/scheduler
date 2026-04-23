@@ -5536,8 +5536,9 @@ Payment terms:
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 20, fontWeight: 900, color: "#f0f4ff" }}>Extras & Variations</div>
                   <button type="button" onClick={async () => {
-                    const { data } = await supabase.from("extras").insert({ title: "New variation", status: "draft" }).select().single()
-                    if (data) { setExtras(prev => [data as Extra, ...prev]); setActiveExtraId(data.id) }
+                    const { data, error } = await supabase.from("extras").insert({ title: "New variation", status: "draft" }).select().single()
+                    if (error) { showToast("Error creating variation: " + error.message); return }
+                    if (data) { setExtras(prev => [data as Extra, ...prev]); setActiveExtraId((data as Extra).id) }
                   }} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #7c3aed", background: "#1a1a3e", color: "#c4b5fd", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>＋ New</button>
                 </div>
                 {extras.map(ex => {
