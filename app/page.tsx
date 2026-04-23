@@ -5500,13 +5500,23 @@ Payment terms:
         const activeExtra = extras.find(e => e.id === activeExtraId) ?? extras[0] ?? null
         const activeExtraItemsList = activeExtra ? extraItems.filter(i => i.extra_id === activeExtra.id) : []
 
+        function getWorkerChargeRate(worker: Worker): number {
+          // Use standard classification charge-out rate
+          const classRate = classificationRates.find(r => r.classification === worker.classification)
+          if (classRate) return classRate.rate_ex_gst
+          // Fall back to standard_charge_rate, then base rate
+          return worker.standard_charge_rate ?? worker.base_rate_hourly ?? 0
+        }
+
         function calcItemTotal(item: ExtraItem): number {
           if (item.charge_type === 'labour') {
             const worker = workers.find(w => w.id === item.worker_id)
             if (!worker) return 0
-            const ordCost = (item.ordinary_hours ?? 0) * (worker.total_cost_hourly_with_ot ?? worker.base_rate_hourly ?? 0)
-            const otCost = (item.ot_hours ?? 0) * (worker.ot_rate_hourly ?? 0)
-            return (ordCost + otCost) * (1 + item.margin_percent / 100)
+            const chargeRate = getWorkerChargeRate(worker)
+            const otRate = chargeRate * 2 // double time
+            const ordCharge = (item.ordinary_hours ?? 0) * chargeRate
+            const otCharge = (item.ot_hours ?? 0) * otRate
+            return ordCharge + otCharge // no extra margin — rates already include margin
           }
           return item.unit_cost * (1 + item.margin_percent / 100)
         }
@@ -5626,7 +5636,7 @@ Payment terms:
 
                       {/* Column headers */}
                       <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 160px 80px 80px 100px 90px auto", gap: 10, marginBottom: 10, padding: "8px 14px", background: "#161d2e", borderRadius: 8 }}>
-                        {["Type", "Description", "Worker / Cost", "Ord hrs", "OT hrs", "Margin", "Total", ""].map(h => (
+                        {["Type", "Description", "Worker / Rate", "Ord hrs", "OT hrs", "Margin %", "Total (ex GST)", ""].map(h => (
                           <div key={h} style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>{h}</div>
                         ))}
                       </div>
@@ -5668,11 +5678,16 @@ Payment terms:
                                   <option value="">Select worker...</option>
                                   {workers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                                 </select>
-                                {worker && (
-                                  <div style={{ fontSize: 11, color: "#6b7a9a", marginTop: 4 }}>
-                                    ${formatMoney(worker.total_cost_hourly_with_ot ?? worker.base_rate_hourly ?? 0)}/hr true cost
-                                  </div>
-                                )}
+                                {worker && (() => {
+                                  const classRate = classificationRates.find(r => r.classification === worker.classification)
+                                  const chargeRate = classRate?.rate_ex_gst ?? worker.standard_charge_rate ?? worker.base_rate_hourly ?? 0
+                                  return (
+                                    <div style={{ fontSize: 11, color: "#a0b0cc", marginTop: 4 }}>
+                                      <span style={{ color: "#4ade80", fontWeight: 700 }}>${formatMoney(chargeRate)}/hr</span> ord · <span style={{ color: "#fbbf24", fontWeight: 700 }}>${formatMoney(chargeRate * 2)}/hr</span> OT
+                                      {worker.classification && <span style={{ color: "#6b7a9a", marginLeft: 6 }}>({worker.classification.replace(/_/g, " ")})</span>}
+                                    </div>
+                                  )
+                                })()}
                               </div>
                             ) : (
                               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
