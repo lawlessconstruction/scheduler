@@ -13,6 +13,29 @@ type Project = {
   profitability_included: boolean | null
 }
 
+type Extra = {
+  id: string
+  project_id: string | null
+  title: string
+  status: string
+  issued_date: string | null
+  notes: string | null
+  created_at: string
+}
+
+type ExtraItem = {
+  id: string
+  extra_id: string
+  description: string | null
+  charge_type: string
+  worker_id: string | null
+  ordinary_hours: number
+  ot_hours: number
+  unit_cost: number
+  margin_percent: number
+  sort_order: number
+}
+
 type EstimateTemplate = {
   id: string
   name: string
@@ -772,6 +795,10 @@ export default function Home() {
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [estimateItems, setEstimateItems] = useState<EstimateItem[]>([])
   const [showEstimatesModal, setShowEstimatesModal] = useState(false)
+  const [showExtrasModal, setShowExtrasModal] = useState(false)
+  const [extras, setExtras] = useState<Extra[]>([])
+  const [extraItems, setExtraItems] = useState<ExtraItem[]>([])
+  const [activeExtraId, setActiveExtraId] = useState<string | null>(null)
   const [quickAddProject, setQuickAddProject] = useState(false)
   const [quickProjectForm, setQuickProjectForm] = useState({ name: "", client_id: "", client: "" })
   const [activeEstimateId, setActiveEstimateId] = useState<string | null>(null)
@@ -888,7 +915,7 @@ export default function Home() {
   async function loadData() {
     setLoading(true)
 
-    const [projectsRes, crewsRes, segmentsRes, labelsRes, milestonesRes, contractsRes, contractTypesRes, contractTypeMilestonesRes, workersRes, classificationRatesRes, clientsRes, allTimesheetsRes, projectCostsRes, estimatesRes, estimateItemsRes, scopeTemplatesRes, estimateTemplatesRes, estimateTemplateItemsRes] = await Promise.all([
+    const [projectsRes, crewsRes, segmentsRes, labelsRes, milestonesRes, contractsRes, contractTypesRes, contractTypeMilestonesRes, workersRes, classificationRatesRes, clientsRes, allTimesheetsRes, projectCostsRes, estimatesRes, estimateItemsRes, scopeTemplatesRes, estimateTemplatesRes, estimateTemplateItemsRes, extrasRes, extraItemsRes] = await Promise.all([
       supabase.from("projects").select("*").order("name"),
       supabase.from("crews").select("*").order("name"),
       supabase.from("segments").select(`*, projects(name), crews(name, color, capacity)`).order("start_date"),
@@ -905,6 +932,8 @@ export default function Home() {
       supabase.from("estimates").select("*").order("created_at", { ascending: false }),
       supabase.from("estimate_items").select("*").order("sort_order"),
       supabase.from("scope_templates").select("*").order("sort_order"),
+      supabase.from("extras").select("*").order("created_at", { ascending: false }),
+      supabase.from("extra_items").select("*").order("sort_order"),
       supabase.from("estimate_templates").select("*").order("sort_order"),
       supabase.from("estimate_template_items").select("*").order("sort_order"),
     ])
@@ -944,6 +973,8 @@ export default function Home() {
     setScopeTemplates(scopeTemplatesData)
     setEstimateTemplates((estimateTemplatesRes.data ?? []) as EstimateTemplate[])
     setEstimateTemplateItems((estimateTemplateItemsRes.data ?? []) as EstimateTemplateItem[])
+    setExtras((extrasRes.data ?? []) as Extra[])
+    setExtraItems((extraItemsRes.data ?? []) as ExtraItem[])
 
     const { data: companyCostData } = await supabase.from("company_cost_summary").select("*").single()
     if (companyCostData) setCompanyCost(companyCostData as typeof companyCost)
@@ -2197,6 +2228,10 @@ Payment terms:
             <div style={divider} />
 
             {/* Data views */}
+            {canSeeAll && <button type="button" onClick={() => setShowExtrasModal(true)} style={{ ...pillBase, background: "#1a1a3e", border: "1.5px solid #7c3aed", color: "#c4b5fd" }}>
+              <span style={{ ...iconStyle, background: "#7c3aed22" }}>⚡</span>
+              Extras {extras.length > 0 && <span style={{ background: "#7c3aed", color: "white", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2 }}>{extras.length}</span>}
+            </button>}
             {canSeeAll && <button type="button" onClick={() => setShowEstimatesModal(true)} style={pillAmber}>
               <span style={{ ...iconStyle, background: "#c2410c22" }}>📋</span>
               Estimates {estimates.length > 0 && <span style={{ background: "#c2410c", color: "white", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2 }}>{estimates.length}</span>}
@@ -5454,6 +5489,253 @@ Payment terms:
 
               <div style={{ marginTop: 16, fontSize: 12, color: "#6b7a9a" }}>
                 All amounts ex GST. Segment-triggered payments update automatically when you move segments. Costs flow into cashflow and profitability.
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Extras & Variations Modal ── */}
+      {showExtrasModal && (() => {
+        const activeExtra = extras.find(e => e.id === activeExtraId) ?? extras[0] ?? null
+        const activeExtraItemsList = activeExtra ? extraItems.filter(i => i.extra_id === activeExtra.id) : []
+
+        function calcItemTotal(item: ExtraItem): number {
+          if (item.charge_type === 'labour') {
+            const worker = workers.find(w => w.id === item.worker_id)
+            if (!worker) return 0
+            const ordCost = (item.ordinary_hours ?? 0) * (worker.total_cost_hourly_with_ot ?? worker.base_rate_hourly ?? 0)
+            const otCost = (item.ot_hours ?? 0) * (worker.ot_rate_hourly ?? 0)
+            return (ordCost + otCost) * (1 + item.margin_percent / 100)
+          }
+          return item.unit_cost * (1 + item.margin_percent / 100)
+        }
+
+        const subtotal = activeExtraItemsList.reduce((s, i) => s + calcItemTotal(i), 0)
+        const gst = subtotal * 0.1
+        const total = subtotal + gst
+
+        return (
+          <div onClick={() => setShowExtrasModal(false)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", display: "flex", overflow: "hidden" }}>
+
+              {/* Sidebar */}
+              <div style={{ width: 300, minWidth: 300, borderRight: "1px solid #252f45", padding: 20, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: "#f0f4ff" }}>Extras & Variations</div>
+                  <button type="button" onClick={async () => {
+                    const { data } = await supabase.from("extras").insert({ title: "New variation", status: "draft" }).select().single()
+                    if (data) { setExtras(prev => [data as Extra, ...prev]); setActiveExtraId(data.id) }
+                  }} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #7c3aed", background: "#1a1a3e", color: "#c4b5fd", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>＋ New</button>
+                </div>
+                {extras.map(ex => {
+                  const items = extraItems.filter(i => i.extra_id === ex.id)
+                  const exTotal = items.reduce((s, i) => {
+                    if (i.charge_type === 'labour') {
+                      const w = workers.find(wk => wk.id === i.worker_id)
+                      if (!w) return s
+                      return s + ((i.ordinary_hours ?? 0) * (w.total_cost_hourly_with_ot ?? w.base_rate_hourly ?? 0) + (i.ot_hours ?? 0) * (w.ot_rate_hourly ?? 0)) * (1 + i.margin_percent / 100)
+                    }
+                    return s + i.unit_cost * (1 + i.margin_percent / 100)
+                  }, 0)
+                  const proj = projects.find(p => p.id === ex.project_id)
+                  return (
+                    <div key={ex.id} onClick={() => setActiveExtraId(ex.id)}
+                      style={{ background: activeExtraId === ex.id ? "#1a1a3e" : "#141a28", border: `1.5px solid ${activeExtraId === ex.id ? "#7c3aed" : "#252f45"}`, borderRadius: 10, padding: "14px 16px", cursor: "pointer" }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: "#f0f4ff", marginBottom: 4 }}>{ex.title}</div>
+                      <div style={{ fontSize: 12, color: "#6b7a9a", marginBottom: 6 }}>{proj?.name ?? "No project"}</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, color: ex.status === "invoiced" ? "#4ade80" : "#c4b5fd", background: ex.status === "invoiced" ? "#14532d" : "#1a1a3e", borderRadius: 6, padding: "2px 8px" }}>{ex.status}</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: "#c4b5fd" }}>${formatMoney(exTotal * 1.1)}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+                {extras.length === 0 && <div style={{ fontSize: 13, color: "#6b7a9a", textAlign: "center", padding: "30px 0" }}>No extras yet</div>}
+                <div style={{ marginTop: "auto", paddingTop: 12 }}>
+                  <button type="button" onClick={() => setShowExtrasModal(false)} style={{ ...secondaryButtonStyle, width: "100%", textAlign: "center", padding: "12px", fontSize: 14, fontWeight: 700 }}>Close</button>
+                </div>
+              </div>
+
+              {/* Right panel */}
+              <div style={{ flex: 1, padding: 28, overflowY: "auto" }}>
+                {!activeExtra && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 16 }}>
+                    <div style={{ fontSize: 14, color: "#6b7a9a" }}>Select a variation or create a new one</div>
+                  </div>
+                )}
+                {activeExtra && (
+                  <>
+                    {/* Header */}
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7a9a", textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 6 }}>Title</div>
+                      <input defaultValue={activeExtra.title} key={`ext-${activeExtra.id}`}
+                        style={{ ...fieldStyle, fontSize: 22, fontWeight: 900, padding: "14px 16px", color: "#f0f4ff" }}
+                        onBlur={async e => { await supabase.from("extras").update({ title: e.target.value }).eq("id", activeExtra.id); setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, title: e.target.value } : x)) }} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto", gap: 12, marginBottom: 20, alignItems: "end" }}>
+                      <div>
+                        <FieldLabel>Project</FieldLabel>
+                        <select defaultValue={activeExtra.project_id ?? ""} key={`exp-${activeExtra.id}`} style={fieldStyle}
+                          onChange={async e => { await supabase.from("extras").update({ project_id: e.target.value || null }).eq("id", activeExtra.id); setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, project_id: e.target.value || null } : x)) }}>
+                          <option value="">No project</option>
+                          {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <FieldLabel>Date</FieldLabel>
+                        <input type="date" defaultValue={activeExtra.issued_date ?? ""} key={`exd-${activeExtra.id}`} style={fieldStyle}
+                          onBlur={async e => { await supabase.from("extras").update({ issued_date: e.target.value || null }).eq("id", activeExtra.id) }} />
+                      </div>
+                      <div>
+                        <FieldLabel>Status</FieldLabel>
+                        <select defaultValue={activeExtra.status} key={`exs-${activeExtra.id}`} style={fieldStyle}
+                          onChange={async e => { await supabase.from("extras").update({ status: e.target.value }).eq("id", activeExtra.id); setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, status: e.target.value } : x)) }}>
+                          <option value="draft">Draft</option>
+                          <option value="sent">Sent</option>
+                          <option value="invoiced">Invoiced</option>
+                        </select>
+                      </div>
+                      <button type="button" onClick={async () => {
+                        if (!window.confirm("Delete this variation?")) return
+                        await supabase.from("extras").delete().eq("id", activeExtra.id)
+                        setExtras(prev => prev.filter(x => x.id !== activeExtra.id))
+                        setExtraItems(prev => prev.filter(x => x.extra_id !== activeExtra.id))
+                        setActiveExtraId(null)
+                      }} style={{ ...dangerButtonStyle, fontSize: 13, padding: "10px 14px" }}>×</button>
+                    </div>
+
+                    {/* Line items */}
+                    <div style={{ borderTop: "1px solid #252f45", paddingTop: 16, marginBottom: 16 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                        <div style={{ fontWeight: 800, fontSize: 18, color: "#f0f4ff" }}>Line items</div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          {[{ type: "labour", label: "👷 Labour", color: "#2563eb" }, { type: "material", label: "🧱 Material", color: "#d97706" }, { type: "fixed", label: "💰 Fixed price", color: "#16a34a" }].map(ct => (
+                            <button key={ct.type} type="button" onClick={async () => {
+                              const { data } = await supabase.from("extra_items").insert({
+                                extra_id: activeExtra.id, charge_type: ct.type, description: ct.type === "labour" ? "Labour" : ct.type === "material" ? "Materials" : "Fixed charge",
+                                ordinary_hours: 0, ot_hours: 0, unit_cost: 0, margin_percent: ct.type === "material" ? 0 : 30, sort_order: activeExtraItemsList.length
+                              }).select().single()
+                              if (data) setExtraItems(prev => [...prev, data as ExtraItem])
+                            }} style={{ ...secondaryButtonStyle, fontSize: 12, padding: "6px 12px", color: ct.color, borderColor: ct.color }}>+ {ct.label}</button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Column headers */}
+                      <div style={{ display: "grid", gridTemplateColumns: "120px 1fr 160px 80px 80px 100px 90px auto", gap: 10, marginBottom: 10, padding: "8px 14px", background: "#161d2e", borderRadius: 8 }}>
+                        {["Type", "Description", "Worker / Cost", "Ord hrs", "OT hrs", "Margin", "Total", ""].map(h => (
+                          <div key={h} style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>{h}</div>
+                        ))}
+                      </div>
+
+                      {activeExtraItemsList.length === 0 && (
+                        <div style={{ fontSize: 13, color: "#6b7a9a", textAlign: "center", padding: "30px 0" }}>Add labour, material or fixed price items above</div>
+                      )}
+
+                      {activeExtraItemsList.map(item => {
+                        const itemTotal = calcItemTotal(item)
+                        const worker = workers.find(w => w.id === item.worker_id)
+                        const isLabour = item.charge_type === "labour"
+                        const isMaterial = item.charge_type === "material"
+                        const isFixed = item.charge_type === "fixed"
+                        const typeColor = isLabour ? "#2563eb" : isMaterial ? "#d97706" : "#16a34a"
+
+                        return (
+                          <div key={item.id} style={{ marginBottom: 10, background: "#141a28", borderRadius: 12, padding: "14px", border: `1px solid ${typeColor}44`, display: "grid", gridTemplateColumns: "120px 1fr 160px 80px 80px 100px 90px auto", gap: 10, alignItems: "center" }}>
+                            {/* Type badge */}
+                            <div style={{ fontSize: 12, fontWeight: 700, color: typeColor, background: typeColor + "22", borderRadius: 6, padding: "4px 8px", textAlign: "center" }}>
+                              {isLabour ? "👷 Labour" : isMaterial ? "🧱 Material" : "💰 Fixed"}
+                            </div>
+
+                            {/* Description */}
+                            <input defaultValue={item.description ?? ""} key={`exid-${item.id}`}
+                              style={{ ...fieldStyle, fontSize: 14, fontWeight: 600 }}
+                              placeholder="e.g. New doorway, Relocate wall..."
+                              onBlur={async e => { await supabase.from("extra_items").update({ description: e.target.value }).eq("id", item.id); setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, description: e.target.value } : x)) }} />
+
+                            {/* Worker selector or cost input */}
+                            {isLabour ? (
+                              <select defaultValue={item.worker_id ?? ""} key={`exiw-${item.id}`} style={{ ...fieldStyle, fontSize: 12 }}
+                                onChange={async e => { await supabase.from("extra_items").update({ worker_id: e.target.value || null }).eq("id", item.id); setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, worker_id: e.target.value || null } : x)) }}>
+                                <option value="">Select worker...</option>
+                                {workers.map(w => <option key={w.id} value={w.id}>{w.name} — ${formatMoney(w.total_cost_hourly_with_ot ?? 0)}/hr</option>)}
+                              </select>
+                            ) : (
+                              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                <span style={{ fontSize: 12, color: "#6b7a9a" }}>$</span>
+                                <input type="number" defaultValue={item.unit_cost} key={`exiuc-${item.id}`} style={{ ...fieldStyle, fontSize: 14, fontWeight: 700 }}
+                                  placeholder={isMaterial ? "Material cost" : "Fixed price"}
+                                  onBlur={async e => { await supabase.from("extra_items").update({ unit_cost: Number(e.target.value) }).eq("id", item.id); setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, unit_cost: Number(e.target.value) } : x)) }} />
+                              </div>
+                            )}
+
+                            {/* Ord hours */}
+                            {isLabour ? (
+                              <input type="number" step="0.5" defaultValue={item.ordinary_hours} key={`exiord-${item.id}`}
+                                style={{ ...fieldStyle, fontSize: 16, fontWeight: 700, textAlign: "center" as const }}
+                                onBlur={async e => { await supabase.from("extra_items").update({ ordinary_hours: Number(e.target.value) }).eq("id", item.id); setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ordinary_hours: Number(e.target.value) } : x)) }} />
+                            ) : <div />}
+
+                            {/* OT hours */}
+                            {isLabour ? (
+                              <input type="number" step="0.5" defaultValue={item.ot_hours} key={`exiot-${item.id}`}
+                                style={{ ...fieldStyle, fontSize: 16, fontWeight: 700, textAlign: "center" as const, borderColor: item.ot_hours > 0 ? "#f59e0b" : undefined }}
+                                onBlur={async e => { await supabase.from("extra_items").update({ ot_hours: Number(e.target.value) }).eq("id", item.id); setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ot_hours: Number(e.target.value) } : x)) }} />
+                            ) : <div />}
+
+                            {/* Margin */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                              <input type="number" defaultValue={item.margin_percent} key={`exim-${item.id}`}
+                                style={{ ...fieldStyle, fontSize: 13, padding: "8px 6px" }}
+                                onBlur={async e => { await supabase.from("extra_items").update({ margin_percent: Number(e.target.value) }).eq("id", item.id); setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, margin_percent: Number(e.target.value) } : x)) }} />
+                              <span style={{ fontSize: 11, color: "#6b7a9a" }}>%</span>
+                            </div>
+
+                            {/* Total */}
+                            <div style={{ fontWeight: 800, fontSize: 16, color: "#c4b5fd", textAlign: "right" as const }}>${formatMoney(itemTotal)}</div>
+
+                            {/* Delete */}
+                            <button type="button" onClick={async () => {
+                              await supabase.from("extra_items").delete().eq("id", item.id)
+                              setExtraItems(prev => prev.filter(x => x.id !== item.id))
+                            }} style={{ background: "none", border: "none", color: "#6b7a9a", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>×</button>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Totals + notes */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 24, alignItems: "start" }}>
+                      <div>
+                        <FieldLabel>Notes</FieldLabel>
+                        <textarea defaultValue={activeExtra.notes ?? ""} key={`exnotes-${activeExtra.id}`} rows={4}
+                          placeholder="Notes for client or accounting..."
+                          style={{ ...fieldStyle, resize: "vertical" as const, fontFamily: "system-ui" }}
+                          onBlur={async e => { await supabase.from("extras").update({ notes: e.target.value || null }).eq("id", activeExtra.id) }} />
+                      </div>
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#6b7a9a" }}>
+                          <span>Subtotal (ex GST)</span><span>${formatMoney(subtotal)}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#6b7a9a" }}>
+                          <span>GST (10%)</span><span>${formatMoney(gst)}</span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 20, fontWeight: 900, color: "#c4b5fd", borderTop: "2px solid #2e3650", paddingTop: 10 }}>
+                          <span>TOTAL inc GST</span><span>${formatMoney(total)}</span>
+                        </div>
+                        <div style={{ marginTop: 8, padding: "12px 16px", background: "#141a28", border: "1px solid #252f45", borderRadius: 10, fontSize: 12, color: "#6b7a9a" }}>
+                          <div style={{ fontWeight: 700, color: "#a0b0cc", marginBottom: 6 }}>For accounting invoice:</div>
+                          <div>{activeExtra.title}</div>
+                          {activeExtra.project_id && <div>{projects.find(p => p.id === activeExtra.project_id)?.name}</div>}
+                          <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, color: "#c4b5fd" }}>Total: ${formatMoney(total)} inc GST</div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
