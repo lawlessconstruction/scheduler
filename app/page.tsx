@@ -5572,12 +5572,86 @@ Payment terms:
               {/* Right panel */}
               <div style={{ flex: 1, padding: 28, overflowY: "auto" }}>
                 {!activeExtra && (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 16 }}>
-                    <div style={{ fontSize: 14, color: "#6b7a9a" }}>Select a variation or create a new one</div>
+                  <div style={{ padding: 8 }}>
+                    {/* History view — summary table of all extras */}
+                    <div style={{ fontSize: 22, fontWeight: 900, color: "#f0f4ff", marginBottom: 20 }}>All Extras & Variations</div>
+
+                    {/* Summary cards */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 24 }}>
+                      {[
+                        { label: "Total variations", value: extras.length.toString(), color: "#c4b5fd" },
+                        { label: "Draft / Sent", value: extras.filter(e => e.status !== "invoiced").length.toString(), color: "#fbbf24" },
+                        { label: "Total invoiced", value: "$" + formatMoney(extras.filter(e => e.status === "invoiced").reduce((s, ex) => {
+                          const items = extraItems.filter(i => i.extra_id === ex.id)
+                          return s + items.reduce((si, i) => {
+                            if (i.charge_type === "labour") {
+                              const w = workers.find(wk => wk.id === i.worker_id)
+                              if (!w) return si
+                              const cr = classificationRates.find(r => r.classification === w.classification)?.rate_ex_gst ?? w.standard_charge_rate ?? w.base_rate_hourly ?? 0
+                              return si + (i.ordinary_hours ?? 0) * cr + (i.ot_hours ?? 0) * cr * 2
+                            }
+                            return si + i.unit_cost * (1 + i.margin_percent / 100)
+                          }, 0) * 1.1
+                        }, 0)), color: "#4ade80" },
+                      ].map(s => (
+                        <div key={s.label} style={{ background: "#141a28", border: "1px solid #252f45", borderRadius: 10, padding: "14px 16px" }}>
+                          <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 6, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>{s.label}</div>
+                          <div style={{ fontSize: 20, fontWeight: 900, color: s.color }}>{s.value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* History table */}
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 120px 140px", gap: 12, padding: "8px 14px", background: "#161d2e", borderRadius: 8 }}>
+                        {["Title", "Project", "Date", "Status", "Total inc GST"].map(h => (
+                          <div key={h} style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 700, textTransform: "uppercase" as const }}>{h}</div>
+                        ))}
+                      </div>
+                      {extras.length === 0 && (
+                        <div style={{ fontSize: 13, color: "#6b7a9a", textAlign: "center" as const, padding: "40px 0" }}>No extras yet — click + New to create one</div>
+                      )}
+                      {[...extras].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(ex => {
+                        const items = extraItems.filter(i => i.extra_id === ex.id)
+                        const exSubtotal = items.reduce((s, i) => {
+                          if (i.charge_type === "labour") {
+                            const w = workers.find(wk => wk.id === i.worker_id)
+                            if (!w) return s
+                            const cr = classificationRates.find(r => r.classification === w.classification)?.rate_ex_gst ?? w.standard_charge_rate ?? w.base_rate_hourly ?? 0
+                            return s + (i.ordinary_hours ?? 0) * cr + (i.ot_hours ?? 0) * cr * 2
+                          }
+                          return s + i.unit_cost * (1 + i.margin_percent / 100)
+                        }, 0)
+                        const exTotal = exSubtotal * 1.1
+                        const proj = projects.find(p => p.id === ex.project_id)
+                        const statusColor = ex.status === "invoiced" ? "#4ade80" : ex.status === "sent" ? "#60a5fa" : "#fbbf24"
+                        return (
+                          <div key={ex.id} onClick={() => setActiveExtraId(ex.id)}
+                            style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 120px 140px", gap: 12, padding: "14px 14px", background: "#141a28", border: "1px solid #252f45", borderRadius: 10, cursor: "pointer", alignItems: "center" }}
+                            onMouseEnter={e => (e.currentTarget.style.borderColor = "#7c3aed")}
+                            onMouseLeave={e => (e.currentTarget.style.borderColor = "#252f45")}
+                          >
+                            <div style={{ fontWeight: 700, color: "#f0f4ff", fontSize: 14 }}>{ex.title}</div>
+                            <div style={{ fontSize: 13, color: "#8899bb" }}>{proj?.name ?? "—"}</div>
+                            <div style={{ fontSize: 12, color: "#6b7a9a" }}>{ex.issued_date ? formatDateLabel(parseDate(ex.issued_date)) : "—"}</div>
+                            <div>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: statusColor, background: statusColor + "22", borderRadius: 6, padding: "3px 8px" }}>{ex.status}</span>
+                            </div>
+                            <div style={{ fontWeight: 800, fontSize: 15, color: "#c4b5fd", textAlign: "right" as const }}>${formatMoney(exTotal)}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
                 {activeExtra && (
                   <>
+                    {/* Back button */}
+                    <button type="button" onClick={() => setActiveExtraId(null)}
+                      style={{ ...secondaryButtonStyle, fontSize: 12, padding: "6px 12px", marginBottom: 16, color: "#8899bb" }}>
+                      ← Back to history
+                    </button>
+
                     {/* Header */}
                     <div style={{ marginBottom: 16 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7a9a", textTransform: "uppercase" as const, letterSpacing: "0.5px", marginBottom: 6 }}>Title</div>
