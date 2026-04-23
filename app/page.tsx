@@ -2228,7 +2228,7 @@ Payment terms:
             <div style={divider} />
 
             {/* Data views */}
-            {canSeeAll && <button type="button" onClick={() => setShowExtrasModal(true)} style={{ ...pillBase, background: "#1a1a3e", border: "1.5px solid #7c3aed", color: "#c4b5fd" }}>
+            {canSeeAll && <button type="button" onClick={() => { setShowExtrasModal(true); setActiveExtraId(null) }} style={{ ...pillBase, background: "#1a1a3e", border: "1.5px solid #7c3aed", color: "#c4b5fd" }}>
               <span style={{ ...iconStyle, background: "#7c3aed22" }}>⚡</span>
               Extras {extras.length > 0 && <span style={{ background: "#7c3aed", color: "white", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2 }}>{extras.length}</span>}
             </button>}
@@ -5497,7 +5497,7 @@ Payment terms:
 
       {/* ── Extras & Variations Modal ── */}
       {showExtrasModal && (() => {
-        const activeExtra = extras.find(e => e.id === activeExtraId) ?? extras[0] ?? null
+        const activeExtra = extras.find(e => e.id === activeExtraId) ?? null
         const activeExtraItemsList = activeExtra ? extraItems.filter(i => i.extra_id === activeExtra.id) : []
 
         function getWorkerChargeRate(worker: Worker): number {
