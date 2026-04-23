@@ -5658,11 +5658,22 @@ Payment terms:
 
                             {/* Worker selector or cost input */}
                             {isLabour ? (
-                              <select defaultValue={item.worker_id ?? ""} key={`exiw-${item.id}`} style={{ ...fieldStyle, fontSize: 12 }}
-                                onChange={async e => { await supabase.from("extra_items").update({ worker_id: e.target.value || null }).eq("id", item.id); setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, worker_id: e.target.value || null } : x)) }}>
-                                <option value="">Select worker...</option>
-                                {workers.map(w => <option key={w.id} value={w.id}>{w.name} — ${formatMoney(w.total_cost_hourly_with_ot ?? 0)}/hr</option>)}
-                              </select>
+                              <div>
+                                <select value={item.worker_id ?? ""} key={`exiw-${item.id}`} style={{ ...fieldStyle, fontSize: 12 }}
+                                  onChange={async e => {
+                                    const wid = e.target.value || null
+                                    await supabase.from("extra_items").update({ worker_id: wid }).eq("id", item.id)
+                                    setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, worker_id: wid } : x))
+                                  }}>
+                                  <option value="">Select worker...</option>
+                                  {workers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+                                </select>
+                                {worker && (
+                                  <div style={{ fontSize: 11, color: "#6b7a9a", marginTop: 4 }}>
+                                    ${formatMoney(worker.total_cost_hourly_with_ot ?? worker.base_rate_hourly ?? 0)}/hr true cost
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                                 <span style={{ fontSize: 12, color: "#6b7a9a" }}>$</span>
@@ -5676,14 +5687,22 @@ Payment terms:
                             {isLabour ? (
                               <input type="number" step="0.5" defaultValue={item.ordinary_hours} key={`exiord-${item.id}`}
                                 style={{ ...fieldStyle, fontSize: 16, fontWeight: 700, textAlign: "center" as const }}
-                                onBlur={async e => { await supabase.from("extra_items").update({ ordinary_hours: Number(e.target.value) }).eq("id", item.id); setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ordinary_hours: Number(e.target.value) } : x)) }} />
+                                onBlur={async e => {
+                                  const hrs = Number(e.target.value)
+                                  await supabase.from("extra_items").update({ ordinary_hours: hrs }).eq("id", item.id)
+                                  setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ordinary_hours: hrs } : x))
+                                }} />
                             ) : <div />}
 
                             {/* OT hours */}
                             {isLabour ? (
                               <input type="number" step="0.5" defaultValue={item.ot_hours} key={`exiot-${item.id}`}
                                 style={{ ...fieldStyle, fontSize: 16, fontWeight: 700, textAlign: "center" as const, borderColor: item.ot_hours > 0 ? "#f59e0b" : undefined }}
-                                onBlur={async e => { await supabase.from("extra_items").update({ ot_hours: Number(e.target.value) }).eq("id", item.id); setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ot_hours: Number(e.target.value) } : x)) }} />
+                                onBlur={async e => {
+                                  const hrs = Number(e.target.value)
+                                  await supabase.from("extra_items").update({ ot_hours: hrs }).eq("id", item.id)
+                                  setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ot_hours: hrs } : x))
+                                }} />
                             ) : <div />}
 
                             {/* Margin */}
