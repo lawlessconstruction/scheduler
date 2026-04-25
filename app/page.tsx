@@ -716,6 +716,42 @@ function findCrewAvailability(
 
 
 
+function ChangePinModal({ userName, userId, onClose, onSuccess }: {
+  userName: string; userId: string; onClose: () => void; onSuccess: () => void
+}) {
+  const [newPin, setNewPin] = useState("")
+  const [confirmPin, setConfirmPin] = useState("")
+  const fs: React.CSSProperties = { width: "100%", padding: "12px 14px", borderRadius: 10, background: "#111827", border: "1.5px solid #2e3a58", color: "#f0f4ff", fontSize: 24, letterSpacing: "0.3em", textAlign: "center", outline: "none", boxSizing: "border-box" }
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 360, background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 16, padding: 32, color: "white" }}>
+        <div style={{ fontSize: 20, fontWeight: 900, color: "#f0f4ff", marginBottom: 6 }}>Change PIN</div>
+        <div style={{ fontSize: 13, color: "#6b7a9a", marginBottom: 24 }}>Set a new 4-digit PIN for {userName}</div>
+        <div style={{ display: "grid", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#8899bb", marginBottom: 8 }}>New PIN</div>
+            <input type="password" maxLength={4} placeholder="4 digits" value={newPin} onChange={e => setNewPin(e.target.value)} style={fs} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#8899bb", marginBottom: 8 }}>Confirm PIN</div>
+            <input type="password" maxLength={4} placeholder="4 digits" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} style={fs} />
+          </div>
+          <button type="button" onClick={async () => {
+            if (newPin.length !== 4) { alert("PIN must be 4 digits"); return }
+            if (newPin !== confirmPin) { alert("PINs don't match"); return }
+            const { error } = await supabase.from("workers").update({ pin: newPin }).eq("id", userId)
+            if (error) { alert("Error: " + error.message); return }
+            onSuccess()
+          }} style={{ padding: "14px", borderRadius: 12, fontSize: 16, fontWeight: 800, background: "linear-gradient(135deg, #1e3a6e, #2563eb)", border: "1.5px solid #2563eb", color: "white", cursor: "pointer" }}>
+            Save new PIN
+          </button>
+          <button type="button" onClick={onClose} style={{ padding: "12px", borderRadius: 12, fontSize: 14, fontWeight: 700, background: "#141a28", border: "1px solid #2e3650", color: "#8899bb", cursor: "pointer" }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ExtrasModal({ onClose, projects, workers, classificationRates }: {
   onClose: () => void
   projects: { id: string; name: string; archived: boolean | null }[]
@@ -2536,8 +2572,6 @@ Payment terms:
           </div>
         </div>
       </div>
-      <div style={{ padding: "20px 28px" }}>
-
       {toast && (
         <div style={{
           position: "fixed",
@@ -2602,7 +2636,7 @@ Payment terms:
             {/* Data views */}
             {canSeeAll && <button type="button" onClick={() => setShowExtrasModal(true)} style={{ ...pillBase, background: "#1a1a3e", border: "1.5px solid #7c3aed", color: "#c4b5fd" }}>
               <span style={{ ...iconStyle, background: "#7c3aed22" }}>⚡</span>
-              Extras {extras.length > 0 && <span style={{ background: "#7c3aed", color: "white", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2 }}>{extras.length}</span>}
+              Extras
             </button>}
             {canSeeAll && <button type="button" onClick={() => setShowEstimatesModal(true)} style={pillAmber}>
               <span style={{ ...iconStyle, background: "#c2410c22" }}>📋</span>
@@ -5876,7 +5910,7 @@ Payment terms:
         />
       )}
 
-      {showEstimatesModal && (() => {      {showEstimatesModal && (() => {
+      {showEstimatesModal && (() => {
         const activeEstimate = estimates.find(e => e.id === activeEstimateId) ?? estimates[0] ?? null
         const activeItems = activeEstimate ? estimateItems.filter(i => i.estimate_id === activeEstimate.id) : []
         const subtotal = activeItems.reduce((s, i) => s + i.quantity * i.unit_cost, 0)
@@ -6310,50 +6344,15 @@ Payment terms:
         )
       })()}
 
-    </div>
-        {/* ── Change PIN modal ── */}
-      {showChangePinModal && (() => {
-        let newPin = ""
-        let confirmPin = ""
-        return (
-          <div onClick={() => setShowChangePinModal(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
-            <div onClick={e => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: 360, background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 16, padding: 32, color: "white" }}>
-              <div style={{ fontSize: 20, fontWeight: 900, color: "#f0f4ff", marginBottom: 6 }}>Change PIN</div>
-              <div style={{ fontSize: 13, color: "#6b7a9a", marginBottom: 24 }}>Set a new 4-digit PIN for {currentUser.name}</div>
-              <div style={{ display: "grid", gap: 16 }}>
-                <div>
-                  <FieldLabel>New PIN</FieldLabel>
-                  <input type="password" maxLength={4} placeholder="4 digits"
-                    style={{ ...fieldStyle, fontSize: 24, letterSpacing: "0.3em", textAlign: "center" }}
-                    onChange={e => { newPin = e.target.value }} />
-                </div>
-                <div>
-                  <FieldLabel>Confirm PIN</FieldLabel>
-                  <input type="password" maxLength={4} placeholder="4 digits"
-                    style={{ ...fieldStyle, fontSize: 24, letterSpacing: "0.3em", textAlign: "center" }}
-                    onChange={e => { confirmPin = e.target.value }} />
-                </div>
-                <button type="button"
-                  onClick={async () => {
-                    if (newPin.length !== 4) { showToast("PIN must be 4 digits"); return }
-                    if (newPin !== confirmPin) { showToast("PINs don't match"); return }
-                    const { error } = await supabase.from("workers").update({ pin: newPin }).eq("id", currentUser.id)
-                    if (error) { showToast("Error saving PIN"); return }
-                    showToast("PIN updated ✓")
-                    setShowChangePinModal(false)
-                  }}
-                  style={{ padding: "14px", borderRadius: 12, fontSize: 16, fontWeight: 800, background: "linear-gradient(135deg, #1e3a6e, #2563eb)", border: "1.5px solid #2563eb", color: "white", cursor: "pointer" }}>
-                  Save new PIN
-                </button>
-                <button type="button" onClick={() => setShowChangePinModal(false)}
-                  style={{ ...secondaryButtonStyle, width: "100%", textAlign: "center" }}>Cancel</button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
+      {/* ── Change PIN modal ── */}
+      {showChangePinModal && (
+        <ChangePinModal
+          userName={currentUser.name}
+          userId={currentUser.id}
+          onClose={() => setShowChangePinModal(false)}
+          onSuccess={() => { showToast("PIN updated ✓"); setShowChangePinModal(false) }}
+        />
+      )}
 
     </div>
   )
