@@ -1521,6 +1521,7 @@ export default function Home() {
     projectId: "",
     name: "",
     client: "",
+    client_id: null,
     archived: false,
     contract_value: "",
   })
@@ -1970,9 +1971,22 @@ export default function Home() {
     e.preventDefault()
     if (!projectForm.name.trim()) return
 
+    let clientId = null
+    const clientName = projectForm.client.trim() || null
+    if (clientName) {
+      const existing = clients.find(c => c.name === clientName)
+      if (existing) {
+        clientId = existing.id
+      } else {
+        const { data } = await supabase.from("clients").insert({ name: clientName }).select().single()
+        if (data) { setClients(prev => [...prev, data as Client]); clientId = (data as any).id }
+      }
+    }
+
     await supabase.from("projects").insert({
       name: projectForm.name,
-      client: projectForm.client || null,
+      client: clientName,
+      client_id: clientId,
     })
 
     setProjectForm({ name: "", client: "" })
@@ -2625,22 +2639,39 @@ Payment terms:
       projectId: project.id,
       name: project.name,
       client: project.client ?? "",
+      client_id: project.client_id ?? null,
       archived: project.archived ?? false,
       contract_value: project.contract_value != null ? String(project.contract_value) : "",
     })
   }
 
   function closeProjectEditor() {
-    setProjectEditor({ open: false, projectId: "", name: "", client: "", archived: false, contract_value: "" })
+    setProjectEditor({ open: false, projectId: "", name: "", client: "", client_id: null, archived: false, contract_value: "" })
   }
 
   async function saveProject() {
     if (!projectEditor.projectId || !projectEditor.name.trim()) return
+    let clientId = projectEditor.client_id || null
+    const clientName = projectEditor.client.trim() || null
+
+    // Auto-create client if name entered but not in DB
+    if (clientName && !clients.find(c => c.name === clientName)) {
+      const { data } = await supabase.from("clients").insert({ name: clientName }).select().single()
+      if (data) {
+        setClients(prev => [...prev, data as Client])
+        clientId = (data as any).id
+      }
+    } else if (clientName) {
+      const existing = clients.find(c => c.name === clientName)
+      if (existing) clientId = existing.id
+    }
+
     await supabase
       .from("projects")
       .update({
         name: projectEditor.name.trim(),
-        client: projectEditor.client.trim() || null,
+        client: clientName,
+        client_id: clientId,
         archived: projectEditor.archived,
         contract_value: projectEditor.contract_value ? Number(projectEditor.contract_value) : null,
       })
@@ -3774,12 +3805,25 @@ Payment terms:
 
                 <div style={sectionCardStyle}>
                   <FieldLabel>Client</FieldLabel>
-                  <input
-                    placeholder="Enter client name"
+                  <select
                     value={projectForm.client}
-                    onChange={(e) => setProjectForm({ ...projectForm, client: e.target.value })}
+                    onChange={async (e) => {
+                      const val = e.target.value
+                      if (val === "__new__") {
+                        const name = window.prompt("New client name:")
+                        if (!name?.trim()) return
+                        const { data } = await supabase.from("clients").insert({ name: name.trim() }).select().single()
+                        if (data) { setClients(prev => [...prev, data as Client]); setProjectForm(prev => ({ ...prev, client: name.trim() })) }
+                      } else {
+                        setProjectForm(prev => ({ ...prev, client: val }))
+                      }
+                    }}
                     style={fieldStyle}
-                  />
+                  >
+                    <option value="">No client</option>
+                    {clients.map(c => <option key={c.id} value={c.name}>{c.name}{c.company ? ` — ${c.company}` : ""}</option>)}
+                    <option value="__new__">＋ Add new client...</option>
+                  </select>
                 </div>
 
                 <div>
@@ -4277,12 +4321,36 @@ Payment terms:
                 </div>
                 <div style={sectionCardStyle}>
                   <FieldLabel>Client</FieldLabel>
-                  <input
-                    placeholder="Client name"
-                    value={projectEditor.client}
-                    onChange={(e) => setProjectEditor((prev) => ({ ...prev, client: e.target.value }))}
-                    style={fieldStyle}
-                  />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <select
+                      value={projectEditor.client}
+                      onChange={async (e) => {
+                        const val = e.target.value
+                        if (val === "__new__") {
+                          const name = window.prompt("New client name:")
+                          if (!name?.trim()) return
+                          const { data } = await supabase.from("clients").insert({ name: name.trim() }).select().single()
+                          if (data) {
+                            setClients(prev => [...prev, data as Client])
+                            setProjectEditor(prev => ({ ...prev, client: name.trim(), client_id: (data as any).id }))
+                          }
+                        } else {
+                          const selected = clients.find(c => c.name === val)
+                          setProjectEditor(prev => ({ ...prev, client: val, client_id: selected?.id ?? prev.client_id }))
+                        }
+                      }}
+                      style={fieldStyle}
+                    >
+                      <option value="">No client</option>
+                      {clients.map(c => <option key={c.id} value={c.name}>{c.name}{c.company ? ` — ${c.company}` : ""}</option>)}
+                      <option value="__new__">＋ Add new client...</option>
+                    </select>
+                  </div>
+                  {projectEditor.client && !clients.find(c => c.name === projectEditor.client) && (
+                    <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 6 }}>
+                      ⚠ "{projectEditor.client}" is not in the clients database — save to auto-create
+                    </div>
+                  )}
                 </div>
               </div>
 
