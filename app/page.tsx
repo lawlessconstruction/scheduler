@@ -716,6 +716,163 @@ function findCrewAvailability(
 
 
 
+function ProjectsListModal({ onClose, projects, contracts, milestones, profitabilityData, extras, extraItems, onEditProject }: {
+  onClose: () => void
+  projects: { id: string; name: string; client: string | null; archived: boolean | null; contract_value: number | null }[]
+  contracts: { id: string; project_id: string; name: string | null; value: number | null; color: string | null }[]
+  milestones: { id: string; project_id: string; name: string | null; amount: number | null; segment_id: string | null; due_date_override: string | null }[]
+  profitabilityData: any[]
+  extras: any[]
+  extraItems: any[]
+  onEditProject: (p: any) => void
+}) {
+  const [filter, setFilter] = useState<"active" | "archived" | "all">("active")
+
+  const getProjectStatus = (p: any) => p.archived ? "archived" : "active"
+
+  const grouped = {
+    active: projects.filter(p => !p.archived),
+    archived: projects.filter(p => p.archived),
+  }
+
+  const displayed = filter === "all" ? projects : grouped[filter] ?? []
+
+  function formatM(v: number) { return v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+  function formatK(v: number) { return "$" + (v / 1000).toFixed(1) + "k" }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#f0f4ff" }}>Projects</div>
+            <div style={{ fontSize: 13, color: "#6b7a9a", marginTop: 2 }}>{projects.length} total · {grouped.active.length} active · {grouped.archived.length} archived</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {(["active", "archived", "all"] as const).map(f => (
+              <button key={f} type="button" onClick={() => setFilter(f)}
+                style={{ padding: "7px 14px", borderRadius: 8, border: `1.5px solid ${filter === f ? "#2563eb" : "#252f45"}`, background: filter === f ? "#1e3a6e" : "#141a28", color: filter === f ? "#93c5fd" : "#6b7a9a", fontWeight: 700, fontSize: 13, cursor: "pointer", textTransform: "capitalize" }}>
+                {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)} {f !== "all" && `(${grouped[f]?.length ?? 0})`}
+              </button>
+            ))}
+            <button type="button" onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Close</button>
+          </div>
+        </div>
+
+        {/* Table header */}
+        <div style={{ padding: "10px 28px", background: "#161d2e", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 80px", gap: 12 }}>
+          {["Project / Client", "Contract value", "Margin %", "Outstanding milestones", "Extras / Variations", "Status", ""].map(h => (
+            <div key={h} style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px" }}>{h}</div>
+          ))}
+        </div>
+
+        {/* Rows */}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {displayed.length === 0 && (
+            <div style={{ padding: "60px 28px", textAlign: "center", color: "#6b7a9a", fontSize: 14 }}>No projects</div>
+          )}
+          {displayed.map(p => {
+            const prof = profitabilityData.find((r: any) => r.project_id === p.id)
+            const projContracts = contracts.filter(c => c.project_id === p.id)
+            const contractTotal = projContracts.reduce((s, c) => s + (c.value ?? 0), 0)
+            const totalLabour = prof?.total_labour_true_cost ?? 0
+            const totalMaterials = prof?.total_materials_cost ?? 0
+            const grossProfit = contractTotal - totalLabour - totalMaterials
+            const margin = contractTotal > 0 ? (grossProfit / contractTotal) * 100 : null
+            const marginColor = margin == null ? "#6b7a9a" : margin >= 30 ? "#4ade80" : margin >= 0 ? "#fbbf24" : "#f87171"
+
+            // Outstanding milestones (no date set or no amount)
+            const projMilestones = milestones.filter(m => m.project_id === p.id)
+            const outstanding = projMilestones.filter(m => m.amount && !m.segment_id && !m.due_date_override)
+            const totalOutstanding = outstanding.reduce((s, m) => s + (m.amount ?? 0), 0)
+
+            // Extras
+            const projExtras = extras.filter((e: any) => e.project_id === p.id)
+            const unclaimedExtras = projExtras.filter((e: any) => e.status !== "invoiced")
+            const unclaimedTotal = unclaimedExtras.reduce((s: number, ex: any) => {
+              const items = extraItems.filter((i: any) => i.extra_id === ex.id)
+              return s + items.reduce((si: number, i: any) => si + (i.unit_cost ?? 0) * (1 + (i.margin_percent ?? 0) / 100), 0) * 1.1
+            }, 0)
+
+            return (
+              <div key={p.id} style={{ padding: "14px 28px", borderBottom: "1px solid #1a2035", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 80px", gap: 12, alignItems: "center", background: "#1e2130" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "#242838")}
+                onMouseLeave={e => (e.currentTarget.style.background = "#1e2130")}>
+
+                {/* Project / Client */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: "#f0f4ff" }}>{p.name}</div>
+                  <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>{p.client ?? "—"}</div>
+                </div>
+
+                {/* Contract value */}
+                <div>
+                  {contractTotal > 0 ? (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#e4e4e7" }}>${formatM(contractTotal)}</div>
+                      <div style={{ fontSize: 11, color: "#6b7a9a" }}>${formatM(contractTotal / 1.1)} ex GST</div>
+                    </>
+                  ) : <span style={{ color: "#6b7a9a", fontSize: 13 }}>No contract</span>}
+                </div>
+
+                {/* Margin */}
+                <div>
+                  {margin != null ? (
+                    <div style={{ fontWeight: 800, fontSize: 16, color: marginColor }}>{margin.toFixed(1)}%</div>
+                  ) : <span style={{ color: "#6b7a9a", fontSize: 13 }}>—</span>}
+                </div>
+
+                {/* Outstanding milestones */}
+                <div>
+                  {outstanding.length > 0 ? (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#f87171" }}>${formatM(totalOutstanding)}</div>
+                      <div style={{ fontSize: 11, color: "#6b7a9a" }}>{outstanding.length} unlinked</div>
+                    </>
+                  ) : projMilestones.length > 0 ? (
+                    <div style={{ fontSize: 12, color: "#4ade80" }}>✓ All linked</div>
+                  ) : <span style={{ color: "#6b7a9a", fontSize: 13 }}>No milestones</span>}
+                </div>
+
+                {/* Extras */}
+                <div>
+                  {projExtras.length > 0 ? (
+                    <>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: unclaimedExtras.length > 0 ? "#fbbf24" : "#4ade80" }}>
+                        {projExtras.length} variation{projExtras.length !== 1 ? "s" : ""}
+                      </div>
+                      {unclaimedExtras.length > 0 ? (
+                        <div style={{ fontSize: 11, color: "#fbbf24" }}>{unclaimedExtras.length} unclaimed · ${formatK(unclaimedTotal)}</div>
+                      ) : (
+                        <div style={{ fontSize: 11, color: "#4ade80" }}>All invoiced</div>
+                      )}
+                    </>
+                  ) : <span style={{ color: "#6b7a9a", fontSize: 13 }}>—</span>}
+                </div>
+
+                {/* Status */}
+                <div>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: p.archived ? "#6b7a9a" : "#4ade80", background: p.archived ? "#1a1a1a" : "#14532d", borderRadius: 6, padding: "3px 10px" }}>
+                    {p.archived ? "Archived" : "Active"}
+                  </span>
+                </div>
+
+                {/* Edit button */}
+                <button type="button" onClick={() => { onEditProject(p); onClose() }}
+                  style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                  Edit
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ChangePinModal({ userName, userId, onClose, onSuccess }: {
   userName: string; userId: string; onClose: () => void; onSuccess: () => void
 }) {
@@ -1202,6 +1359,7 @@ export default function Home() {
   const [showContractTypesModal, setShowContractTypesModal] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
   const [showClientsModal, setShowClientsModal] = useState(false)
+  const [showProjectsListModal, setShowProjectsListModal] = useState(false)
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [estimateItems, setEstimateItems] = useState<EstimateItem[]>([])
   const [showEstimatesModal, setShowEstimatesModal] = useState(false)
@@ -2624,6 +2782,10 @@ Payment terms:
             {canSeeAll && <button type="button" onClick={() => setTopModal("addProject")} style={pillPrimary}>
               <span style={{ ...iconStyle, background: "#2563eb22" }}>＋</span>
               Add Project
+            </button>}
+            {canSeeAll && <button type="button" onClick={() => setShowProjectsListModal(true)} style={pillBase}>
+              <span style={{ ...iconStyle, background: "#ffffff11" }}>📁</span>
+              Projects
             </button>}
             <button type="button" onClick={() => setShowAvailability((v) => !v)}
               style={showAvailability ? pillActive : pillBase}>
@@ -6345,6 +6507,19 @@ Payment terms:
       })()}
 
       {/* ── Change PIN modal ── */}
+      {showProjectsListModal && (
+        <ProjectsListModal
+          onClose={() => setShowProjectsListModal(false)}
+          projects={projects}
+          contracts={contracts}
+          milestones={milestones}
+          profitabilityData={profitabilityData}
+          extras={[]}
+          extraItems={[]}
+          onEditProject={(p) => { openProjectEditor(p); setShowProjectsListModal(false) }}
+        />
+      )}
+
       {showChangePinModal && (
         <ChangePinModal
           userName={currentUser.name}
