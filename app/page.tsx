@@ -716,6 +716,108 @@ function findCrewAvailability(
 
 
 
+function ClientsListModal({ onClose, clients, projects, contracts, profitabilityData }: {
+  onClose: () => void
+  clients: { id: string; name: string; email: string | null; phone: string | null; company: string | null; notes: string | null }[]
+  projects: { id: string; name: string; client: string | null; client_id: string | null; archived: boolean | null }[]
+  contracts: { id: string; project_id: string; value: number | null; color: string | null }[]
+  profitabilityData: any[]
+}) {
+  function fmt(v: number) { return v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#f0f4ff" }}>Clients</div>
+            <div style={{ fontSize: 13, color: "#6b7a9a", marginTop: 2 }}>{clients.length} clients</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Close</button>
+        </div>
+
+        {/* Client list */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 28px", display: "grid", gap: 16 }}>
+          {clients.length === 0 && <div style={{ color: "#6b7a9a", fontSize: 14, textAlign: "center", padding: 40 }}>No clients yet</div>}
+
+          {clients.map(c => {
+            const clientProjects = projects.filter(p => p.client_id === c.id || p.client === c.name)
+            const totalContractValue = clientProjects.reduce((s, p) => {
+              return s + contracts.filter(ct => ct.project_id === p.id).reduce((ss, ct) => ss + (ct.value ?? 0), 0)
+            }, 0)
+            const totalLabour = clientProjects.reduce((s, p) => {
+              const prof = profitabilityData.find((r: any) => r.project_id === p.id)
+              return s + (prof?.total_labour_true_cost ?? 0) + (prof?.total_materials_cost ?? 0)
+            }, 0)
+            const totalMargin = totalContractValue > 0 ? ((totalContractValue - totalLabour) / totalContractValue) * 100 : null
+            const marginColor = totalMargin == null ? "#6b7a9a" : totalMargin >= 30 ? "#4ade80" : totalMargin >= 0 ? "#fbbf24" : "#f87171"
+
+            return (
+              <div key={c.id} style={{ background: "#141a28", border: "1px solid #252f45", borderRadius: 12, overflow: "hidden" }}>
+                {/* Client header */}
+                <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16, alignItems: "center", borderBottom: clientProjects.length > 0 ? "1px solid #1e2a40" : "none" }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 17, color: "#f0f4ff" }}>{c.name}</div>
+                    {c.company && <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>{c.company}</div>}
+                    <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                      {c.email && <a href={`mailto:${c.email}`} style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none" }}>{c.email}</a>}
+                      {c.phone && <span style={{ fontSize: 11, color: "#6b7a9a" }}>{c.phone}</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>Total contract value</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#f0f4ff" }}>{totalContractValue > 0 ? `$${fmt(totalContractValue)}` : "—"}</div>
+                    {totalContractValue > 0 && <div style={{ fontSize: 11, color: "#6b7a9a" }}>${fmt(totalContractValue / 1.1)} ex GST</div>}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>Avg margin</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: marginColor }}>{totalMargin != null ? `${totalMargin.toFixed(1)}%` : "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>Projects</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#c4b5fd" }}>{clientProjects.length}</div>
+                    <div style={{ fontSize: 11, color: "#6b7a9a" }}>{clientProjects.filter(p => !p.archived).length} active · {clientProjects.filter(p => p.archived).length} archived</div>
+                  </div>
+                </div>
+
+                {/* Project rows */}
+                {clientProjects.length > 0 && (
+                  <div>
+                    <div style={{ padding: "8px 20px", display: "grid", gridTemplateColumns: "1fr 140px 140px 100px", gap: 12, background: "#111827" }}>
+                      {["Project", "Contract value", "Margin", "Status"].map(h => (
+                        <div key={h} style={{ fontSize: 10, color: "#4a6080", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>{h}</div>
+                      ))}
+                    </div>
+                    {clientProjects.map(p => {
+                      const projContractValue = contracts.filter(ct => ct.project_id === p.id).reduce((s, ct) => s + (ct.value ?? 0), 0)
+                      const prof = profitabilityData.find((r: any) => r.project_id === p.id)
+                      const costs = (prof?.total_labour_true_cost ?? 0) + (prof?.total_materials_cost ?? 0)
+                      const projMargin = projContractValue > 0 ? ((projContractValue - costs) / projContractValue) * 100 : null
+                      const mc = projMargin == null ? "#6b7a9a" : projMargin >= 30 ? "#4ade80" : projMargin >= 0 ? "#fbbf24" : "#f87171"
+                      return (
+                        <div key={p.id} style={{ padding: "10px 20px", display: "grid", gridTemplateColumns: "1fr 140px 140px 100px", gap: 12, alignItems: "center", borderTop: "1px solid #1a2035" }}>
+                          <div style={{ fontWeight: 600, fontSize: 14, color: "#c8d4f0" }}>{p.name}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#e4e4e7" }}>{projContractValue > 0 ? `$${fmt(projContractValue)}` : "—"}</div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: mc }}>{projMargin != null ? `${projMargin.toFixed(1)}%` : "—"}</div>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: p.archived ? "#6b7a9a" : "#4ade80", background: p.archived ? "#1a1a1a" : "#14532d", borderRadius: 6, padding: "3px 8px", width: "fit-content" }}>
+                            {p.archived ? "Archived" : "Active"}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ProjectsListModal({ onClose, projects, contracts, milestones, profitabilityData, extras, extraItems, onEditProject }: {
   onClose: () => void
   projects: { id: string; name: string; client: string | null; archived: boolean | null; contract_value: number | null }[]
@@ -1360,6 +1462,7 @@ export default function Home() {
   const [clients, setClients] = useState<Client[]>([])
   const [showClientsModal, setShowClientsModal] = useState(false)
   const [showProjectsListModal, setShowProjectsListModal] = useState(false)
+  const [showClientsListModal, setShowClientsListModal] = useState(false)
   const [estimates, setEstimates] = useState<Estimate[]>([])
   const [estimateItems, setEstimateItems] = useState<EstimateItem[]>([])
   const [showEstimatesModal, setShowEstimatesModal] = useState(false)
@@ -2824,7 +2927,7 @@ Payment terms:
               <span style={{ ...iconStyle, background: "#ffffff11" }}>🕐</span>
               Timesheets
             </button>}
-            {canSeeAll && <button type="button" onClick={() => setShowClientsModal(true)} style={pillBase}>
+            {canSeeAll && <button type="button" onClick={() => setShowClientsListModal(true)} style={pillBase}>
               <span style={{ ...iconStyle, background: "#ffffff11" }}>👤</span>
               Clients
             </button>}
@@ -6507,6 +6610,16 @@ Payment terms:
       })()}
 
       {/* ── Change PIN modal ── */}
+      {showClientsListModal && (
+        <ClientsListModal
+          onClose={() => setShowClientsListModal(false)}
+          clients={clients}
+          projects={projects}
+          contracts={contracts}
+          profitabilityData={profitabilityData}
+        />
+      )}
+
       {showProjectsListModal && (
         <ProjectsListModal
           onClose={() => setShowProjectsListModal(false)}
