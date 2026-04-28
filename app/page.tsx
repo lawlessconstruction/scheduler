@@ -266,6 +266,10 @@ type Milestone = {
   segment_id: string | null
   due_date_override: string | null
   sort_order: number
+  status: string | null
+  invoice_date: string | null
+  paid_date: string | null
+  invoice_number: string | null
 }
 
 type MilestoneModalState = {
@@ -716,6 +720,152 @@ function findCrewAvailability(
 }
 
 
+
+function MilestonesListModal({ onClose, milestones, projects, contracts, segments }: {
+  onClose: () => void
+  milestones: Milestone[]
+  projects: { id: string; name: string; client: string | null }[]
+  contracts: { id: string; project_id: string; name: string | null; color: string | null }[]
+  segments: { id: string; end_date: string }[]
+}) {
+  const [filter, setFilter] = useState<"all" | "pending" | "invoiced" | "paid" | "no_amount">("pending")
+  
+  function fmt(v: number) { return v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+
+  function getMilestoneDate(m: Milestone): string | null {
+    if (m.due_date_override) return m.due_date_override
+    if (m.segment_id) return segments.find(s => s.id === m.segment_id)?.end_date ?? null
+    return null
+  }
+
+  const allMilestones = milestones.filter(m => {
+    if (filter === "no_amount") return !m.amount
+    if (filter === "all") return true
+    return (m.status ?? "pending") === filter
+  }).sort((a, b) => {
+    const da = getMilestoneDate(a) ?? "9999"
+    const db = getMilestoneDate(b) ?? "9999"
+    return da.localeCompare(db)
+  })
+
+  const totalPending = milestones.filter(m => (m.status ?? "pending") === "pending" && m.amount).reduce((s, m) => s + (m.amount ?? 0), 0)
+  const totalInvoiced = milestones.filter(m => m.status === "invoiced" && m.amount).reduce((s, m) => s + (m.amount ?? 0), 0)
+  const totalPaid = milestones.filter(m => m.status === "paid" && m.amount).reduce((s, m) => s + (m.amount ?? 0), 0)
+  const noAmount = milestones.filter(m => !m.amount).length
+
+  const statusConfig: Record<string, { color: string; bg: string; label: string }> = {
+    pending: { color: "#6b7a9a", bg: "#1e2535", label: "Pending" },
+    invoiced: { color: "#60a5fa", bg: "#0c1a2e", label: "Invoiced" },
+    paid: { color: "#4ade80", bg: "#0a1f0f", label: "Paid" },
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#f0f4ff" }}>Milestones</div>
+            <div style={{ fontSize: 13, color: "#6b7a9a", marginTop: 2 }}>{milestones.length} total across all projects</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button type="button" onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Close</button>
+          </div>
+        </div>
+
+        {/* Summary cards */}
+        <div style={{ padding: "16px 28px 0", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 }}>
+          {[
+            { label: "Pending", value: `$${fmt(totalPending)}`, count: milestones.filter(m => (m.status ?? "pending") === "pending" && m.amount).length, color: "#6b7a9a", filter: "pending" as const },
+            { label: "Invoiced", value: `$${fmt(totalInvoiced)}`, count: milestones.filter(m => m.status === "invoiced").length, color: "#60a5fa", filter: "invoiced" as const },
+            { label: "Paid", value: `$${fmt(totalPaid)}`, count: milestones.filter(m => m.status === "paid").length, color: "#4ade80", filter: "paid" as const },
+            { label: "No amount set", value: `${noAmount} milestones`, count: noAmount, color: "#f87171", filter: "no_amount" as const },
+          ].map(s => (
+            <div key={s.label} onClick={() => setFilter(s.filter)}
+              style={{ background: filter === s.filter ? "#1e2a40" : "#141a28", border: `1.5px solid ${filter === s.filter ? s.color : "#252f45"}`, borderRadius: 10, padding: "14px 16px", cursor: "pointer" }}>
+              <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>{s.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: s.color }}>{s.value}</div>
+              <div style={{ fontSize: 11, color: "#6b7a9a", marginTop: 2 }}>{s.count} milestone{s.count !== 1 ? "s" : ""}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Filter tabs */}
+        <div style={{ padding: "12px 28px 0", display: "flex", gap: 8 }}>
+          {[
+            { value: "all", label: "All" },
+            { value: "pending", label: "Pending" },
+            { value: "invoiced", label: "Invoiced" },
+            { value: "paid", label: "Paid" },
+            { value: "no_amount", label: "⚠ No amount" },
+          ].map(f => (
+            <button key={f.value} type="button" onClick={() => setFilter(f.value as any)}
+              style={{ padding: "6px 14px", borderRadius: 8, border: `1.5px solid ${filter === f.value ? "#7c3aed" : "#252f45"}`, background: filter === f.value ? "#1a1a3e" : "#141a28", color: filter === f.value ? "#c4b5fd" : "#6b7a9a", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Table header */}
+        <div style={{ margin: "12px 28px 0", padding: "10px 16px", background: "#161d2e", borderRadius: 8, display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 120px 160px 120px", gap: 12 }}>
+          {["Milestone / Project", "Amount", "Due date", "Contract", "Status", "Invoice #", "Paid date"].map(h => (
+            <div key={h} style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>{h}</div>
+          ))}
+        </div>
+
+        {/* Rows */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 28px 20px" }}>
+          {allMilestones.length === 0 && (
+            <div style={{ textAlign: "center", padding: "40px 0", color: "#6b7a9a", fontSize: 14 }}>No milestones in this category</div>
+          )}
+          {allMilestones.map(m => {
+            const proj = projects.find(p => p.id === m.project_id)
+            const contract = contracts.find(c => c.id === m.contract_id)
+            const dueDate = getMilestoneDate(m)
+            const status = m.status ?? "pending"
+            const sc = statusConfig[status] ?? statusConfig.pending
+            const isOverdue = dueDate && dueDate < new Date().toISOString().slice(0, 10) && status !== "paid"
+            
+            return (
+              <div key={m.id} style={{ padding: "12px 16px", borderBottom: "1px solid #1a2035", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 120px 160px 120px", gap: 12, alignItems: "center",
+                background: !m.amount ? "#1a0a0a" : isOverdue ? "#1a100a" : "#1e2130" }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: "#f0f4ff" }}>{m.name ?? "Milestone"}</div>
+                  <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>{proj?.name ?? "—"}{proj?.client ? ` · ${proj.client}` : ""}</div>
+                </div>
+                <div>
+                  {m.amount ? (
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#e4e4e7" }}>${fmt(m.amount)}</div>
+                  ) : (
+                    <span style={{ fontSize: 12, color: "#f87171", background: "#2a0a0a", border: "1px solid #7f1d1d", borderRadius: 6, padding: "2px 8px" }}>⚠ Not set</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 13, color: isOverdue ? "#f87171" : "#8899bb", fontWeight: isOverdue ? 700 : 400 }}>
+                  {dueDate ? dueDate : <span style={{ color: "#52525b" }}>Not linked</span>}
+                  {isOverdue && <div style={{ fontSize: 10, color: "#f87171" }}>OVERDUE</div>}
+                </div>
+                <div style={{ fontSize: 12, color: contract?.color ?? "#6b7a9a" }}>{contract?.name ?? "—"}</div>
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: sc.color, background: sc.bg, borderRadius: 6, padding: "3px 10px" }}>{sc.label}</span>
+                </div>
+                <div style={{ fontSize: 12, color: "#8899bb" }}>
+                  {m.invoice_number ? (
+                    <div>
+                      <div style={{ fontWeight: 600, color: "#c8d4f0" }}>{m.invoice_number}</div>
+                      {m.invoice_date && <div style={{ fontSize: 11, color: "#6b7a9a" }}>{m.invoice_date}</div>}
+                    </div>
+                  ) : status !== "pending" ? <span style={{ color: "#52525b" }}>—</span> : null}
+                </div>
+                <div style={{ fontSize: 12, color: "#4ade80" }}>{m.paid_date ?? (status === "paid" ? <span style={{ color: "#52525b" }}>—</span> : null)}</div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function ClientsListModal({ onClose, clients, projects, contracts, profitabilityData }: {
   onClose: () => void
@@ -1460,6 +1610,7 @@ export default function Home() {
   const [contractTypes, setContractTypes] = useState<ContractType[]>([])
   const [contractTypeMilestones, setContractTypeMilestones] = useState<ContractTypeMilestone[]>([])
   const [showContractTypesModal, setShowContractTypesModal] = useState(false)
+  const [showMilestonesListModal, setShowMilestonesListModal] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
   const [showClientsModal, setShowClientsModal] = useState(false)
   const [showProjectsListModal, setShowProjectsListModal] = useState(false)
@@ -2059,6 +2210,10 @@ export default function Home() {
       percent: m.percent,
       segment_id: m.segment_id,
       due_date_override: m.due_date_override,
+      status: m.status ?? "pending",
+      invoice_date: m.invoice_date ?? null,
+      paid_date: m.paid_date ?? null,
+      invoice_number: m.invoice_number ?? null,
     }).eq("id", m.id)
     // Reload segments first so reorder has fresh data
     const { data: freshSegments } = await supabase.from("segments").select("*,projects(name),crews(name,color,capacity)").order("start_date")
@@ -2942,6 +3097,10 @@ Payment terms:
             {canSeeAll && <button type="button" onClick={() => setShowCashflowModal(true)} style={pillBase}>
               <span style={{ ...iconStyle, background: "#2563eb22" }}>📈</span>
               Cashflow
+            </button>}
+            {canSeeAll && <button type="button" onClick={() => setShowMilestonesListModal(true)} style={pillBase}>
+              <span style={{ ...iconStyle, background: "#7c3aed22" }}>◆</span>
+              Milestones
             </button>}
             {canSeeAll && <button type="button" onClick={() => { setShowProfitabilityModal(true); loadProfitability() }} style={pillBase}>
               <span style={{ ...iconStyle, background: "#16a34a22" }}>$</span>
@@ -4527,6 +4686,48 @@ Payment terms:
                 </div>
               </div>
               <button type="button" onClick={() => deleteMilestone(m.id)} style={{ ...dangerButtonStyle, fontSize: 12, padding: "6px 12px", width: "fit-content" }}>Delete milestone</button>
+
+              {/* Status flow */}
+              <div style={{ borderTop: "1px solid #252f45", paddingTop: 12, display: "grid", gap: 10 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  {[
+                    { value: "pending", label: "Pending", color: "#6b7a9a", bg: "#1e2535" },
+                    { value: "invoiced", label: "Invoiced", color: "#60a5fa", bg: "#0c1a2e" },
+                    { value: "paid", label: "Paid ✓", color: "#4ade80", bg: "#0a1f0f" },
+                  ].map(s => (
+                    <button key={s.value} type="button"
+                      onClick={() => { const updated = { ...m, status: s.value }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); saveMilestone(updated) }}
+                      style={{ padding: "6px 14px", borderRadius: 8, border: `1.5px solid ${(m.status ?? "pending") === s.value ? s.color : "#252f45"}`, background: (m.status ?? "pending") === s.value ? s.bg : "#111", color: (m.status ?? "pending") === s.value ? s.color : "#6b7a9a", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                      {s.label}
+                    </button>
+                  ))}
+                  {!m.amount && <span style={{ fontSize: 11, color: "#f87171", background: "#2a0a0a", border: "1px solid #7f1d1d", borderRadius: 6, padding: "3px 8px" }}>⚠ No amount set</span>}
+                </div>
+                {(m.status === "invoiced" || m.status === "paid") && (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                    <div>
+                      <FieldLabel>Invoice number</FieldLabel>
+                      <input defaultValue={m.invoice_number ?? ""} key={`inv-${m.id}`} placeholder="e.g. INV-001"
+                        style={fieldStyle}
+                        onBlur={async e => { const updated = { ...m, invoice_number: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
+                    </div>
+                    <div>
+                      <FieldLabel>Invoice date</FieldLabel>
+                      <input type="date" defaultValue={m.invoice_date ?? ""} key={`invd-${m.id}`}
+                        style={fieldStyle}
+                        onBlur={async e => { const updated = { ...m, invoice_date: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
+                    </div>
+                    {m.status === "paid" && (
+                      <div>
+                        <FieldLabel>Paid date</FieldLabel>
+                        <input type="date" defaultValue={m.paid_date ?? ""} key={`paidd-${m.id}`}
+                          style={fieldStyle}
+                          onBlur={async e => { const updated = { ...m, paid_date: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )
         }
@@ -6679,6 +6880,16 @@ Payment terms:
       })()}
 
       {/* ── Change PIN modal ── */}
+      {showMilestonesListModal && (
+        <MilestonesListModal
+          onClose={() => setShowMilestonesListModal(false)}
+          milestones={milestones}
+          projects={projects}
+          contracts={contracts}
+          segments={segments}
+        />
+      )}
+
       {showClientsListModal && (
         <ClientsListModal
           onClose={() => setShowClientsListModal(false)}
