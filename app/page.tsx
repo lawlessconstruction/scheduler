@@ -280,6 +280,7 @@ type ProjectEditorState = {
   projectId: string
   name: string
   client: string
+  client_id: string | null
   archived: boolean
   contract_value: string
 }
