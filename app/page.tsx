@@ -3262,13 +3262,15 @@ Payment terms:
                               if (project) openProjectEditor(project)
                             }}
                             style={{
-                              background: "none",
-                              border: "1px solid #3f3f46",
-                              borderRadius: 6,
-                              color: "#8899bb",
+                              background: "#1e2a45",
+                              border: "1.5px solid #3b4f72",
+                              borderRadius: 7,
+                              color: "#c8d4f0",
                               cursor: "pointer",
-                              fontSize: 11,
-                              padding: "3px 8px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              padding: "5px 12px",
+                              letterSpacing: "0.02em",
                             }}
                           >
                             Edit
@@ -3277,13 +3279,14 @@ Payment terms:
                             type="button"
                             onClick={() => openMilestoneModal(row.projectId, row.projectName)}
                             style={{
-                              background: "none",
-                              border: "1px solid #3f3f46",
-                              borderRadius: 6,
-                              color: "#a78bfa",
+                              background: "#1a1030",
+                              border: "1.5px solid #6d28d9",
+                              borderRadius: 7,
+                              color: "#c4b5fd",
                               cursor: "pointer",
-                              fontSize: 11,
-                              padding: "3px 8px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              padding: "5px 12px",
                             }}
                           >
                             {(() => {
@@ -3319,13 +3322,14 @@ Payment terms:
                             type="button"
                             onClick={() => setCostsModal({ open: true, projectId: row.projectId, projectName: row.projectName })}
                             style={{
-                              background: "none",
-                              border: "1px solid #3f3f46",
-                              borderRadius: 6,
+                              background: "#1c1400",
+                              border: "1.5px solid #92400e",
+                              borderRadius: 7,
                               color: "#fbbf24",
                               cursor: "pointer",
-                              fontSize: 11,
-                              padding: "3px 8px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              padding: "5px 12px",
                             }}
                           >
                             {(() => {
