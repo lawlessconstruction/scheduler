@@ -1393,8 +1393,17 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                   </div>
                 </div>
 
+                {/* Spreadsheet header */}
+                {activeItems.length > 0 && (
+                  <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 200px 80px 80px 110px 28px", gap: 6, padding: "6px 8px", background: "#0f1520", borderRadius: 6, marginBottom: 4 }}>
+                    {["Type", "Description", "Worker / Cost", "Ord hrs", "OT hrs", "Total ex GST", ""].map(h => (
+                      <div key={h} style={{ fontSize: 10, color: "#4a6080", fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>{h}</div>
+                    ))}
+                  </div>
+                )}
+
                 {activeItems.length === 0 && (
-                  <div style={{ color: "#6b7a9a", fontSize: 13, textAlign: "center", padding: "30px 0" }}>Add items above</div>
+                  <div style={{ color: "#6b7a9a", fontSize: 13, textAlign: "center", padding: "20px 0" }}>Add items using the buttons above</div>
                 )}
 
                 {activeItems.map(item => {
@@ -1404,95 +1413,87 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                   const isLabour = item.charge_type === "labour"
                   const isMaterial = item.charge_type === "material"
                   const tc = isLabour ? "#2563eb" : isMaterial ? "#d97706" : "#16a34a"
+                  const rowFs: React.CSSProperties = { ...fs, padding: "7px 8px", fontSize: 13 }
 
                   return (
-                    <div key={item.id} style={{ marginBottom: 10, background: "#141a28", borderRadius: 10, padding: 14, border: `1px solid ${tc}44` }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "110px 1fr auto", gap: 10, alignItems: "center", marginBottom: 10 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: tc, background: tc + "22", borderRadius: 6, padding: "4px 8px", textAlign: "center" }}>
-                          {isLabour ? "👷 Labour" : isMaterial ? "🧱 Material" : "💰 Fixed"}
+                    <div key={item.id} style={{ display: "grid", gridTemplateColumns: "80px 1fr 200px 80px 80px 110px 28px", gap: 6, alignItems: "center", padding: "4px 0", borderBottom: "1px solid #1a2035" }}>
+                      {/* Type badge */}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: tc, background: tc + "22", borderRadius: 5, padding: "4px 6px", textAlign: "center" as const }}>
+                        {isLabour ? "👷 Labour" : isMaterial ? "🧱 Matl" : "💰 Fixed"}
+                      </div>
+
+                      {/* Description */}
+                      <input defaultValue={item.description ?? ""} key={`desc-${item.id}`} style={rowFs}
+                        placeholder="e.g. New doorway..."
+                        onBlur={async e => {
+                          await supabase.from("extra_items").update({ description: e.target.value }).eq("id", item.id)
+                          setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, description: e.target.value } : x))
+                        }} />
+
+                      {/* Worker or cost */}
+                      {isLabour ? (
+                        <select value={item.worker_id ?? ""} style={{ ...rowFs, fontSize: 12 }}
+                          onChange={async e => {
+                            const wid = e.target.value || null
+                            await supabase.from("extra_items").update({ worker_id: wid }).eq("id", item.id)
+                            setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, worker_id: wid } : x))
+                          }}>
+                          <option value="">Select worker...</option>
+                          {workers.map(wk => {
+                            const r = getChargeRate(wk)
+                            return <option key={wk.id} value={wk.id}>{wk.name} (${r}/hr)</option>
+                          })}
+                        </select>
+                      ) : (
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          <input type="number" defaultValue={item.unit_cost} key={`uc-${item.id}`}
+                            style={{ ...rowFs, flex: 1 }} placeholder="0.00"
+                            onBlur={async e => {
+                              const v = Number(e.target.value)
+                              await supabase.from("extra_items").update({ unit_cost: v }).eq("id", item.id)
+                              setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, unit_cost: v } : x))
+                            }} />
+                          <input type="number" defaultValue={item.margin_percent} key={`m-${item.id}`}
+                            style={{ ...rowFs, width: 48 }} placeholder="0%"
+                            onBlur={async e => {
+                              const v = Number(e.target.value)
+                              await supabase.from("extra_items").update({ margin_percent: v }).eq("id", item.id)
+                              setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, margin_percent: v } : x))
+                            }} />
+                          <span style={{ fontSize: 10, color: "#6b7a9a" }}>%</span>
                         </div>
-                        <input defaultValue={item.description ?? ""} key={`desc-${item.id}`} style={{ ...fs, fontSize: 15, fontWeight: 600 }}
-                          placeholder="e.g. New doorway, Relocate wall..."
+                      )}
+
+                      {/* Ord hours */}
+                      {isLabour ? (
+                        <input type="number" step="0.5" defaultValue={item.ordinary_hours} key={`ord-${item.id}`}
+                          style={{ ...rowFs, textAlign: "center" as const, fontWeight: 700 }}
                           onBlur={async e => {
-                            await supabase.from("extra_items").update({ description: e.target.value }).eq("id", item.id)
-                            setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, description: e.target.value } : x))
+                            const v = Number(e.target.value)
+                            await supabase.from("extra_items").update({ ordinary_hours: v }).eq("id", item.id)
+                            setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ordinary_hours: v } : x))
                           }} />
-                        <button type="button" onClick={() => deleteItem(item.id)} style={{ background: "none", border: "none", color: "#6b7a9a", cursor: "pointer", fontSize: 18, padding: "0 6px" }}>×</button>
+                      ) : <div />}
+
+                      {/* OT hours */}
+                      {isLabour ? (
+                        <input type="number" step="0.5" defaultValue={item.ot_hours} key={`ot-${item.id}`}
+                          style={{ ...rowFs, textAlign: "center" as const, fontWeight: 700, borderColor: (item.ot_hours ?? 0) > 0 ? "#f59e0b" : undefined, color: (item.ot_hours ?? 0) > 0 ? "#fbbf24" : undefined }}
+                          onBlur={async e => {
+                            const v = Number(e.target.value)
+                            await supabase.from("extra_items").update({ ot_hours: v }).eq("id", item.id)
+                            setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ot_hours: v } : x))
+                          }} />
+                      ) : <div />}
+
+                      {/* Total */}
+                      <div style={{ fontWeight: 800, fontSize: 14, color: "#c4b5fd", textAlign: "right" as const }}>
+                        ${itemTotal.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
 
-                      <div style={{ display: "grid", gridTemplateColumns: isLabour ? "1fr 120px 120px 100px" : "1fr 150px 100px", gap: 10, alignItems: "end" }}>
-                        {isLabour ? (
-                          <div>
-                            <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, fontWeight: 600 }}>Worker</div>
-                            <select value={item.worker_id ?? ""} style={fs}
-                              onChange={async e => {
-                                const wid = e.target.value || null
-                                await supabase.from("extra_items").update({ worker_id: wid }).eq("id", item.id)
-                                setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, worker_id: wid } : x))
-                              }}>
-                              <option value="">Select worker...</option>
-                              {workers.map(w => {
-                                const r = getChargeRate(w)
-                                return <option key={w.id} value={w.id}>{w.name} — ${r}/hr ord · ${r * 2}/hr OT</option>
-                              })}
-                            </select>
-                          </div>
-                        ) : (
-                          <div>
-                            <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, fontWeight: 600 }}>{isMaterial ? "Material cost ($)" : "Fixed price ($)"}</div>
-                            <input type="number" defaultValue={item.unit_cost} key={`uc-${item.id}`} style={fs}
-                              onBlur={async e => {
-                                const v = Number(e.target.value)
-                                await supabase.from("extra_items").update({ unit_cost: v }).eq("id", item.id)
-                                setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, unit_cost: v } : x))
-                              }} />
-                          </div>
-                        )}
-
-                        {isLabour && (
-                          <>
-                            <div>
-                              <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, fontWeight: 600 }}>Ord hours</div>
-                              <input type="number" step="0.5" defaultValue={item.ordinary_hours} key={`ord-${item.id}`}
-                                style={{ ...fs, fontSize: 18, fontWeight: 800, textAlign: "center" }}
-                                onBlur={async e => {
-                                  const v = Number(e.target.value)
-                                  await supabase.from("extra_items").update({ ordinary_hours: v }).eq("id", item.id)
-                                  setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ordinary_hours: v } : x))
-                                }} />
-                              {w && <div style={{ fontSize: 10, color: "#6b7a9a", marginTop: 3, textAlign: "center" }}>${rate}/hr</div>}
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 11, color: "#fbbf24", marginBottom: 4, fontWeight: 600 }}>OT hours</div>
-                              <input type="number" step="0.5" defaultValue={item.ot_hours} key={`ot-${item.id}`}
-                                style={{ ...fs, fontSize: 18, fontWeight: 800, textAlign: "center", borderColor: (item.ot_hours ?? 0) > 0 ? "#f59e0b" : undefined }}
-                                onBlur={async e => {
-                                  const v = Number(e.target.value)
-                                  await supabase.from("extra_items").update({ ot_hours: v }).eq("id", item.id)
-                                  setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, ot_hours: v } : x))
-                                }} />
-                              {w && <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 3, textAlign: "center" }}>${rate * 2}/hr</div>}
-                            </div>
-                          </>
-                        )}
-
-                        {!isLabour && (
-                          <div>
-                            <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, fontWeight: 600 }}>Margin %</div>
-                            <input type="number" defaultValue={item.margin_percent} key={`m-${item.id}`} style={fs}
-                              onBlur={async e => {
-                                const v = Number(e.target.value)
-                                await supabase.from("extra_items").update({ margin_percent: v }).eq("id", item.id)
-                                setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, margin_percent: v } : x))
-                              }} />
-                          </div>
-                        )}
-
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, fontWeight: 600 }}>Total (ex GST)</div>
-                          <div style={{ fontSize: 20, fontWeight: 900, color: "#c4b5fd" }}>${itemTotal.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                        </div>
-                      </div>
+                      {/* Delete */}
+                      <button type="button" onClick={() => deleteItem(item.id)}
+                        style={{ background: "none", border: "none", color: "#4a6080", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
                     </div>
                   )
                 })}
