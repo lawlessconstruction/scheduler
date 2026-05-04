@@ -1172,14 +1172,14 @@ function WorkerSearch({ workers, getChargeRate, value, onChange, style }: {
   const selectedWorker = workers.find(w => w.id === value) ?? null
   const [search, setSearch] = useState("")
   const [open, setOpen] = useState(false)
-  const ref = React.useRef<HTMLDivElement>(null)
+  const ref = useRef<HTMLDivElement>(null)
 
   const filtered = workers.filter(w =>
     w.name.toLowerCase().includes(search.toLowerCase())
   ).slice(0, 10)
 
   // Close on outside click
-  React.useEffect(() => {
+  useEffect(() => {
     function handler(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
