@@ -1162,6 +1162,78 @@ function ChangePinModal({ userName, userId, onClose, onSuccess }: {
   )
 }
 
+function WorkerSearch({ workers, getChargeRate, value, onChange, style }: {
+  workers: Worker[]
+  getChargeRate: (w: Worker) => number
+  value: string
+  onChange: (wid: string | null) => void
+  style: React.CSSProperties
+}) {
+  const selectedWorker = workers.find(w => w.id === value) ?? null
+  const [search, setSearch] = useState("")
+  const [open, setOpen] = useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+
+  const filtered = workers.filter(w =>
+    w.name.toLowerCase().includes(search.toLowerCase())
+  ).slice(0, 10)
+
+  // Close on outside click
+  React.useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [])
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <input
+        type="text"
+        value={open ? search : selectedWorker ? `${selectedWorker.name} ($${getChargeRate(selectedWorker)}/hr)` : ""}
+        placeholder="Search worker..."
+        style={{ ...style, cursor: "pointer" }}
+        onFocus={() => { setOpen(true); setSearch("") }}
+        onChange={e => setSearch(e.target.value)}
+      />
+      {open && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
+          background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 8,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)", maxHeight: 240, overflowY: "auto",
+        }}>
+          <div
+            onClick={() => { onChange(null); setOpen(false); setSearch("") }}
+            style={{ padding: "8px 12px", fontSize: 12, color: "#6b7a9a", cursor: "pointer", borderBottom: "1px solid #252f45" }}
+            onMouseEnter={e => (e.currentTarget.style.background = "#252f45")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+          >
+            Clear
+          </div>
+          {filtered.map(w => {
+            const r = getChargeRate(w)
+            return (
+              <div key={w.id}
+                onClick={() => { onChange(w.id); setOpen(false); setSearch("") }}
+                style={{ padding: "8px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "#252f45")}
+                onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+              >
+                <span style={{ fontSize: 13, color: "#f0f4ff", fontWeight: w.id === value ? 700 : 400 }}>{w.name}</span>
+                <span style={{ fontSize: 11, color: "#6b7a9a" }}>${r}/hr · ${r * 2} OT</span>
+              </div>
+            )
+          })}
+          {filtered.length === 0 && (
+            <div style={{ padding: "10px 12px", fontSize: 12, color: "#6b7a9a" }}>No workers found</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ExtrasModal({ onClose, projects, workers, classificationRates }: {
   onClose: () => void
   projects: { id: string; name: string; archived: boolean | null }[]
@@ -1432,18 +1504,16 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
 
                       {/* Worker or cost */}
                       {isLabour ? (
-                        <select value={item.worker_id ?? ""} style={{ ...rowFs, fontSize: 12 }}
-                          onChange={async e => {
-                            const wid = e.target.value || null
+                        <WorkerSearch
+                          workers={workers}
+                          getChargeRate={getChargeRate}
+                          value={item.worker_id ?? ""}
+                          onChange={async wid => {
                             await supabase.from("extra_items").update({ worker_id: wid }).eq("id", item.id)
                             setExtraItems(prev => prev.map(x => x.id === item.id ? { ...x, worker_id: wid } : x))
-                          }}>
-                          <option value="">Select worker...</option>
-                          {workers.map(wk => {
-                            const r = getChargeRate(wk)
-                            return <option key={wk.id} value={wk.id}>{wk.name} (${r}/hr)</option>
-                          })}
-                        </select>
+                          }}
+                          style={rowFs}
+                        />
                       ) : (
                         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                           <input type="number" defaultValue={item.unit_cost} key={`uc-${item.id}`}
