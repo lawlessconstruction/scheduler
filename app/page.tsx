@@ -3309,15 +3309,15 @@ Payment terms:
                         boxShadow: "2px 0 0 #333",
                       }}
                     >
-                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                             {projects.find((p) => p.id === row.projectId)?.archived && (
                               <span style={{ fontSize: 10, background: "#3f3f46", color: "#a1a1aa", borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>
                                 ARCHIVED
                               </span>
                             )}
-                            <span>{row.projectName}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#f0f4ff", lineHeight: 1.3 }}>{row.projectName}</span>
                           </div>
                           {projects.find((p) => p.id === row.projectId)?.client && (
                             <div style={{ fontSize: 12, color: "#8899bb", fontWeight: 400, marginTop: 2 }}>
@@ -3325,7 +3325,7 @@ Payment terms:
                             </div>
                           )}
                         </div>
-                        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                           <button
                             type="button"
                             onClick={() => {
