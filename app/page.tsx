@@ -988,9 +988,7 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, profitabi
     archived: projects.filter(p => p.archived),
   }
 
-  const displayed = (filter === "all" ? projects : grouped[filter] ?? [])
-    .slice()
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
+  const displayed = filter === "all" ? projects : grouped[filter] ?? []
 
   function formatM(v: number) { return v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
   function formatK(v: number) { return "$" + (v / 1000).toFixed(1) + "k" }
@@ -1236,16 +1234,21 @@ function WorkerSearch({ workers, getChargeRate, value, onChange, style }: {
   )
 }
 
-function ExtrasModal({ onClose, projects, workers, classificationRates }: {
+function ExtrasModal({ onClose, projects, workers, classificationRates, segments, onMilestoneCreated }: {
   onClose: () => void
   projects: { id: string; name: string; archived: boolean | null }[]
   workers: Worker[]
   classificationRates: ClassificationRate[]
+  segments: Segment[]
+  onMilestoneCreated?: () => void
 }) {
   const [extras, setExtras] = useState<Extra[]>([])
   const [extraItems, setExtraItems] = useState<ExtraItem[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showMilestonePicker, setShowMilestonePicker] = useState(false)
+  const [chosenSegmentId, setChosenSegmentId] = useState<string>("")
+  const [creatingMilestone, setCreatingMilestone] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -1316,6 +1319,41 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
     setExtras(prev => prev.filter(x => x.id !== activeExtra.id))
     setExtraItems(prev => prev.filter(x => x.extra_id !== activeExtra.id))
     setActiveId(null)
+  }
+
+  async function createMilestoneFromExtra() {
+    if (!activeExtra) return
+    if (!activeExtra.project_id) { alert("Please assign this extra to a project first."); return }
+    if (!chosenSegmentId) { alert("Please pick a segment to attach the milestone to."); return }
+    if (total <= 0) { alert("This extra has no total amount yet."); return }
+
+    setCreatingMilestone(true)
+    const { data: existing } = await supabase
+      .from("milestones")
+      .select("sort_order")
+      .eq("project_id", activeExtra.project_id)
+      .order("sort_order", { ascending: false })
+      .limit(1)
+    const nextSort = ((existing?.[0]?.sort_order ?? -1) as number) + 1
+
+    const { error } = await supabase.from("milestones").insert({
+      project_id: activeExtra.project_id,
+      segment_id: chosenSegmentId,
+      name: `Extra: ${activeExtra.title}`,
+      amount: Math.round(total * 100) / 100,
+      status: "pending",
+      sort_order: nextSort,
+    })
+    setCreatingMilestone(false)
+    if (error) { alert("Error creating milestone: " + error.message); return }
+
+    // Mark extra as billed so we don't double-bill
+    await supabase.from("extras").update({ status: "billed" }).eq("id", activeExtra.id)
+    setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, status: "billed" } : x))
+
+    setShowMilestonePicker(false)
+    setChosenSegmentId("")
+    onMilestoneCreated?.()
   }
 
   const fs: React.CSSProperties = {
@@ -1597,6 +1635,71 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                     <div style={{ marginTop: 6, fontSize: 14, fontWeight: 800, color: "#c4b5fd" }}>
                       ${total.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} inc GST
                     </div>
+                  </div>
+
+                  {/* Create milestone from this extra */}
+                  <div style={{ marginTop: 10, padding: "12px 14px", background: "#0f1a2e", border: "1px solid #1e3a6e", borderRadius: 8 }}>
+                    {activeExtra.status === "billed" ? (
+                      <div style={{ fontSize: 12, color: "#4ade80", fontWeight: 700 }}>✓ Milestone already created from this extra</div>
+                    ) : !showMilestonePicker ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!activeExtra.project_id) { alert("Assign this extra to a project first."); return }
+                          if (total <= 0) { alert("This extra has no total amount yet."); return }
+                          setShowMilestonePicker(true)
+                        }}
+                        style={{
+                          width: "100%", padding: "10px 14px", borderRadius: 8,
+                          background: "#1e3a6e", border: "1.5px solid #2563eb", color: "#93c5fd",
+                          fontWeight: 700, fontSize: 13, cursor: "pointer",
+                        }}
+                      >＋ Create milestone from this extra</button>
+                    ) : (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#a0b0cc" }}>Pick a segment to attach to:</div>
+                        <select
+                          value={chosenSegmentId}
+                          onChange={e => setChosenSegmentId(e.target.value)}
+                          style={fs}
+                        >
+                          <option value="">— select segment —</option>
+                          {segments
+                            .filter(s => s.project_id === activeExtra.project_id)
+                            .sort((a, b) => a.start_date.localeCompare(b.start_date))
+                            .map(s => (
+                              <option key={s.id} value={s.id}>
+                                {s.name ?? s.crews?.name ?? "Segment"} · {s.start_date} → {s.end_date}
+                              </option>
+                            ))}
+                        </select>
+                        {segments.filter(s => s.project_id === activeExtra.project_id).length === 0 && (
+                          <div style={{ fontSize: 11, color: "#f87171" }}>No segments yet on this project.</div>
+                        )}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            type="button"
+                            onClick={createMilestoneFromExtra}
+                            disabled={!chosenSegmentId || creatingMilestone}
+                            style={{
+                              flex: 1, padding: "10px", borderRadius: 8,
+                              background: !chosenSegmentId || creatingMilestone ? "#2e3650" : "#16a34a",
+                              border: "none", color: "white", fontWeight: 700, fontSize: 13,
+                              cursor: !chosenSegmentId || creatingMilestone ? "not-allowed" : "pointer",
+                            }}
+                          >{creatingMilestone ? "Creating…" : "Create milestone"}</button>
+                          <button
+                            type="button"
+                            onClick={() => { setShowMilestonePicker(false); setChosenSegmentId("") }}
+                            style={{
+                              padding: "10px 14px", borderRadius: 8,
+                              background: "#252f45", border: "none", color: "#a0b0cc",
+                              fontWeight: 600, fontSize: 13, cursor: "pointer",
+                            }}
+                          >Cancel</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2015,7 +2118,7 @@ export default function Home() {
         if (project?.archived && !showArchived) return false
         return true
       })
-      .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { numeric: true, sensitivity: "base" }))
+      .sort((a, b) => a.projectName.localeCompare(b.projectName))
   }, [segments, labels, projects, showArchived])
 
   function openCellEditor(projectId: string, projectName: string, date: string, preferredSegmentId?: string) {
@@ -6519,6 +6622,12 @@ Payment terms:
           projects={projects}
           workers={workers}
           classificationRates={classificationRates}
+          segments={segments}
+          onMilestoneCreated={async () => {
+            const { data } = await supabase.from("milestones").select("*").order("sort_order")
+            if (data) setMilestones(data as Milestone[])
+            showToast("Milestone created from extra ✓")
+          }}
         />
       )}
 
