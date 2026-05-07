@@ -988,7 +988,9 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, profitabi
     archived: projects.filter(p => p.archived),
   }
 
-  const displayed = filter === "all" ? projects : grouped[filter] ?? []
+  const displayed = (filter === "all" ? projects : grouped[filter] ?? [])
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
 
   function formatM(v: number) { return v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
   function formatK(v: number) { return "$" + (v / 1000).toFixed(1) + "k" }
@@ -2013,7 +2015,7 @@ export default function Home() {
         if (project?.archived && !showArchived) return false
         return true
       })
-      .sort((a, b) => a.projectName.localeCompare(b.projectName))
+      .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { numeric: true, sensitivity: "base" }))
   }, [segments, labels, projects, showArchived])
 
   function openCellEditor(projectId: string, projectName: string, date: string, preferredSegmentId?: string) {
@@ -3138,7 +3140,13 @@ Payment terms:
           width: 1, background: "#2e3a58", alignSelf: "stretch", margin: "0 4px",
         }
         return (
-          <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{
+            display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between",
+            position: "sticky", top: 64, zIndex: 49,
+            background: "#111827",
+            paddingTop: 12, paddingBottom: 12, paddingLeft: 12, paddingRight: 12,
+            borderBottom: "1px solid #1e2a45",
+          }}>
             {/* Primary actions */}
             {canSeeAll && <button type="button" onClick={() => setTopModal("addProject")} style={pillPrimary}>
               <span style={{ ...iconStyle, background: "#2563eb22" }}>＋</span>
@@ -3241,7 +3249,8 @@ Payment terms:
                     background: "#1e2130",
                     position: "sticky",
                     left: 0,
-                    zIndex: 5,
+                    top: 130,
+                    zIndex: 7,
                     boxShadow: "2px 0 0 #333",
                   }}
                 >
@@ -3262,7 +3271,9 @@ Payment terms:
                         color: isWeekend(date) ? "#888" : "#ddd",
                         minWidth: DAY_COL_WIDTH,
                         width: DAY_COL_WIDTH,
-                        position: "relative",
+                        position: "sticky",
+                        top: 130,
+                        zIndex: 6,
                       }}
                     >
                       {formatDateLabel(date)}
