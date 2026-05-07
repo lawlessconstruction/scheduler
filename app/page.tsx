@@ -3140,16 +3140,7 @@ Payment terms:
           width: 1, background: "#2e3a58", alignSelf: "stretch", margin: "0 4px",
         }
         return (
-          <div style={{
-            display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-start",
-            position: "sticky", top: 64, zIndex: 49,
-            background: "#111827",
-            padding: "12px 28px",
-            borderBottom: "1px solid #1e2a45",
-            height: 64, boxSizing: "border-box",
-            overflowX: "auto", overflowY: "hidden",
-            whiteSpace: "nowrap",
-          }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
             {/* Primary actions */}
             {canSeeAll && <button type="button" onClick={() => setTopModal("addProject")} style={pillPrimary}>
               <span style={{ ...iconStyle, background: "#2563eb22" }}>＋</span>
@@ -3252,8 +3243,7 @@ Payment terms:
                     background: "#1e2130",
                     position: "sticky",
                     left: 0,
-                    top: 128,
-                    zIndex: 7,
+                    zIndex: 5,
                     boxShadow: "2px 0 0 #333",
                   }}
                 >
@@ -3274,9 +3264,7 @@ Payment terms:
                         color: isWeekend(date) ? "#888" : "#ddd",
                         minWidth: DAY_COL_WIDTH,
                         width: DAY_COL_WIDTH,
-                        position: "sticky",
-                        top: 128,
-                        zIndex: 6,
+                        position: "relative",
                       }}
                     >
                       {formatDateLabel(date)}
