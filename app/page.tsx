@@ -3249,7 +3249,7 @@ Payment terms:
                     background: "#1e2130",
                     position: "sticky",
                     left: 0,
-                    top: 130,
+                    top: 170,
                     zIndex: 7,
                     boxShadow: "2px 0 0 #333",
                   }}
@@ -3272,7 +3272,7 @@ Payment terms:
                         minWidth: DAY_COL_WIDTH,
                         width: DAY_COL_WIDTH,
                         position: "sticky",
-                        top: 130,
+                        top: 170,
                         zIndex: 6,
                       }}
                     >
