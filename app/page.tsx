@@ -3141,11 +3141,14 @@ Payment terms:
         }
         return (
           <div style={{
-            display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between",
+            display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-start",
             position: "sticky", top: 64, zIndex: 49,
             background: "#111827",
-            paddingTop: 12, paddingBottom: 12, paddingLeft: 12, paddingRight: 12,
+            padding: "12px 28px",
             borderBottom: "1px solid #1e2a45",
+            height: 64, boxSizing: "border-box",
+            overflowX: "auto", overflowY: "hidden",
+            whiteSpace: "nowrap",
           }}>
             {/* Primary actions */}
             {canSeeAll && <button type="button" onClick={() => setTopModal("addProject")} style={pillPrimary}>
@@ -3249,7 +3252,7 @@ Payment terms:
                     background: "#1e2130",
                     position: "sticky",
                     left: 0,
-                    top: 170,
+                    top: 128,
                     zIndex: 7,
                     boxShadow: "2px 0 0 #333",
                   }}
@@ -3272,7 +3275,7 @@ Payment terms:
                         minWidth: DAY_COL_WIDTH,
                         width: DAY_COL_WIDTH,
                         position: "sticky",
-                        top: 170,
+                        top: 128,
                         zIndex: 6,
                       }}
                     >
