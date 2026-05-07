@@ -1460,8 +1460,10 @@ function ExtrasModal({ onClose, projects, workers, classificationRates, segments
                   <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 6, fontWeight: 600 }}>Project</div>
                   <select value={activeExtra.project_id ?? ""} key={`p-${activeExtra.id}`} style={fs}
                     onChange={async e => {
-                      await supabase.from("extras").update({ project_id: e.target.value || null }).eq("id", activeExtra.id)
-                      setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, project_id: e.target.value || null } : x))
+                      const newProjectId = e.target.value || null
+                      const { error } = await supabase.from("extras").update({ project_id: newProjectId }).eq("id", activeExtra.id)
+                      if (error) { alert("Error saving project: " + error.message); return }
+                      setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, project_id: newProjectId } : x))
                     }}>
                     <option value="">No project</option>
                     {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
