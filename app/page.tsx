@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../src/lib/supabase"
 
 type Project = {
@@ -287,21 +287,6 @@ type ProjectEditorState = {
   client_id: string | null
   archived: boolean
   contract_value: string
-}
-
-type ProjectFile = {
-  id: string
-  project_id: string
-  category: "plan" | "document" | "quote" | "other"
-  name: string
-  version: number
-  is_current: boolean
-  storage_path: string
-  file_size_bytes: number | null
-  mime_type: string | null
-  notes: string | null
-  uploaded_at: string
-  uploaded_by: string | null
 }
 
 const DAY_COL_WIDTH = 80
@@ -1003,7 +988,9 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, profitabi
     archived: projects.filter(p => p.archived),
   }
 
-  const displayed = filter === "all" ? projects : grouped[filter] ?? []
+  const displayed = (filter === "all" ? projects : grouped[filter] ?? [])
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
 
   function formatM(v: number) { return v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
   function formatK(v: number) { return "$" + (v / 1000).toFixed(1) + "k" }
@@ -1686,236 +1673,6 @@ function LoginScreen({ onLogin }: { onLogin: (user: { id: string; name: string; 
   )
 }
 
-function ProjectFilesSection({ projectId, currentUserName }: {
-  projectId: string
-  currentUserName: string
-}) {
-  const [files, setFiles] = useState<ProjectFile[]>([])
-  const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
-  const [showHistory, setShowHistory] = useState<Record<string, boolean>>({})
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from("project_files")
-      .select("*")
-      .eq("project_id", projectId)
-      .order("uploaded_at", { ascending: false })
-    if (error) { console.error(error); setLoading(false); return }
-    setFiles((data ?? []) as ProjectFile[])
-    setLoading(false)
-  }, [projectId])
-
-  useEffect(() => { load() }, [load])
-
-  async function handleUpload(category: "plan" | "document" | "quote" | "other", file: File, replaceFamilyName?: string) {
-    setUploading(true)
-    try {
-      const familyName = replaceFamilyName ?? file.name
-      const sameFamily = files.filter(f => f.category === category && f.name === familyName)
-      const nextVersion = sameFamily.length > 0 ? Math.max(...sameFamily.map(f => f.version)) + 1 : 1
-
-      const ext = file.name.split(".").pop() ?? "bin"
-      const storagePath = `${projectId}/${category}/${Date.now()}-v${nextVersion}.${ext}`
-
-      const { error: upErr } = await supabase.storage.from("project-files").upload(storagePath, file, {
-        contentType: file.type || undefined,
-      })
-      if (upErr) throw upErr
-
-      // mark previous versions of same family as not current
-      if (sameFamily.length > 0) {
-        await supabase.from("project_files")
-          .update({ is_current: false })
-          .eq("project_id", projectId)
-          .eq("category", category)
-          .eq("name", familyName)
-      }
-
-      const { error: insErr } = await supabase.from("project_files").insert({
-        project_id: projectId,
-        category,
-        name: familyName,
-        version: nextVersion,
-        is_current: true,
-        storage_path: storagePath,
-        file_size_bytes: file.size,
-        mime_type: file.type || null,
-        uploaded_by: currentUserName,
-      })
-      if (insErr) throw insErr
-
-      await load()
-    } catch (err: any) {
-      alert("Upload failed: " + (err.message ?? String(err)))
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  async function deleteFile(f: ProjectFile) {
-    if (!window.confirm(`Delete "${f.name}" v${f.version}? This cannot be undone.`)) return
-    await supabase.storage.from("project-files").remove([f.storage_path])
-    await supabase.from("project_files").delete().eq("id", f.id)
-    // if this was the current version, promote the next-newest of same family
-    if (f.is_current) {
-      const remaining = files
-        .filter(x => x.id !== f.id && x.category === f.category && x.name === f.name)
-        .sort((a, b) => b.version - a.version)
-      if (remaining[0]) {
-        await supabase.from("project_files").update({ is_current: true }).eq("id", remaining[0].id)
-      }
-    }
-    await load()
-  }
-
-  function fileUrl(f: ProjectFile): string {
-    const { data } = supabase.storage.from("project-files").getPublicUrl(f.storage_path)
-    return data.publicUrl
-  }
-
-  function fmtSize(bytes: number | null): string {
-    if (!bytes) return ""
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  }
-
-  // Group current files by category, then by name
-  const grouped: Record<string, Record<string, ProjectFile[]>> = {}
-  for (const f of files) {
-    if (!grouped[f.category]) grouped[f.category] = {}
-    if (!grouped[f.category][f.name]) grouped[f.category][f.name] = []
-    grouped[f.category][f.name].push(f)
-  }
-  for (const cat in grouped) {
-    for (const fam in grouped[cat]) {
-      grouped[cat][fam].sort((a, b) => b.version - a.version)
-    }
-  }
-
-  const categoryLabels: { key: "plan" | "document" | "quote" | "other"; label: string; color: string }[] = [
-    { key: "plan", label: "Plans", color: "#60a5fa" },
-    { key: "quote", label: "Quotes", color: "#fbbf24" },
-    { key: "document", label: "Documents", color: "#a78bfa" },
-    { key: "other", label: "Other", color: "#6b7a9a" },
-  ]
-
-  return (
-    <div style={{ background: "#141a28", border: "1px solid #252f45", borderRadius: 12, padding: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: "#a0b0cc", marginBottom: 12 }}>Files</div>
-
-      {loading ? (
-        <div style={{ fontSize: 12, color: "#6b7a9a" }}>Loading…</div>
-      ) : (
-        <>
-          {/* Upload row */}
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-            {categoryLabels.map(c => (
-              <label key={c.key} style={{
-                display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8,
-                background: uploading ? "#252f45" : "#1e2535", border: `1px solid ${c.color}55`, color: c.color,
-                fontSize: 12, fontWeight: 700, cursor: uploading ? "not-allowed" : "pointer",
-              }}>
-                ＋ {c.label}
-                <input
-                  type="file"
-                  disabled={uploading}
-                  onChange={e => {
-                    const file = e.target.files?.[0]
-                    if (file) handleUpload(c.key, file)
-                    e.target.value = ""
-                  }}
-                  style={{ display: "none" }}
-                />
-              </label>
-            ))}
-            {uploading && <span style={{ fontSize: 12, color: "#fbbf24", padding: "6px 4px" }}>Uploading…</span>}
-          </div>
-
-          {/* List by category */}
-          {categoryLabels.map(c => {
-            const families = grouped[c.key]
-            if (!families || Object.keys(families).length === 0) return null
-            return (
-              <div key={c.key} style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: c.color, marginBottom: 6, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                  {c.label}
-                </div>
-                {Object.keys(families).sort().map(famName => {
-                  const versions = families[famName]
-                  const current = versions.find(v => v.is_current) ?? versions[0]
-                  const histKey = `${c.key}::${famName}`
-                  const showHist = showHistory[histKey] && versions.length > 1
-                  return (
-                    <div key={famName} style={{ background: "#0f1520", border: "1px solid #252f45", borderRadius: 8, padding: "8px 10px", marginBottom: 6 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <a href={fileUrl(current)} target="_blank" rel="noopener noreferrer"
-                          style={{ flex: 1, color: "#e4e4e7", fontSize: 13, fontWeight: 600, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          📄 {current.name}
-                        </a>
-                        <span style={{ fontSize: 11, color: "#fbbf24", fontWeight: 700, padding: "2px 8px", background: "#fbbf2422", borderRadius: 6 }}>v{current.version}</span>
-                        <span style={{ fontSize: 11, color: "#6b7a9a" }}>{fmtSize(current.file_size_bytes)}</span>
-                        <label style={{
-                          fontSize: 11, color: "#60a5fa", padding: "4px 8px", borderRadius: 6,
-                          border: "1px solid #2563eb55", cursor: uploading ? "not-allowed" : "pointer", fontWeight: 600,
-                        }}>
-                          New version
-                          <input type="file" disabled={uploading}
-                            onChange={e => {
-                              const file = e.target.files?.[0]
-                              if (file) handleUpload(c.key, file, famName)
-                              e.target.value = ""
-                            }}
-                            style={{ display: "none" }} />
-                        </label>
-                        <button type="button" onClick={() => deleteFile(current)}
-                          style={{ background: "none", border: "none", color: "#6b7a9a", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>×</button>
-                      </div>
-                      <div style={{ fontSize: 10, color: "#6b7a9a", marginTop: 4, display: "flex", gap: 10, alignItems: "center" }}>
-                        <span>{new Date(current.uploaded_at).toLocaleString("en-AU", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
-                        {current.uploaded_by && <span>by {current.uploaded_by}</span>}
-                        {versions.length > 1 && (
-                          <button type="button" onClick={() => setShowHistory(prev => ({ ...prev, [histKey]: !prev[histKey] }))}
-                            style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", fontSize: 10, padding: 0, marginLeft: "auto", fontWeight: 600 }}>
-                            {showHist ? "Hide" : "Show"} {versions.length - 1} older version{versions.length - 1 === 1 ? "" : "s"}
-                          </button>
-                        )}
-                      </div>
-                      {showHist && (
-                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #252f45", display: "grid", gap: 4 }}>
-                          {versions.filter(v => !v.is_current).map(v => (
-                            <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "#6b7a9a" }}>
-                              <a href={fileUrl(v)} target="_blank" rel="noopener noreferrer" style={{ color: "#a0b0cc", textDecoration: "none", flex: 1 }}>
-                                v{v.version} — {new Date(v.uploaded_at).toLocaleString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
-                                {v.uploaded_by && ` · ${v.uploaded_by}`}
-                              </a>
-                              <span>{fmtSize(v.file_size_bytes)}</span>
-                              <button type="button" onClick={() => deleteFile(v)}
-                                style={{ background: "none", border: "none", color: "#6b7a9a", cursor: "pointer", fontSize: 12, padding: "0 4px" }}>×</button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
-
-          {Object.keys(grouped).length === 0 && (
-            <div style={{ fontSize: 12, color: "#6b7a9a", textAlign: "center", padding: 16 }}>
-              No files yet. Upload plans, quotes, or documents above.
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
-
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([])
   const [crews, setCrews] = useState<Crew[]>([])
@@ -2258,7 +2015,7 @@ export default function Home() {
         if (project?.archived && !showArchived) return false
         return true
       })
-      .sort((a, b) => a.projectName.localeCompare(b.projectName))
+      .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { numeric: true, sensitivity: "base" }))
   }, [segments, labels, projects, showArchived])
 
   function openCellEditor(projectId: string, projectName: string, date: string, preferredSegmentId?: string) {
@@ -4920,8 +4677,6 @@ Payment terms:
                   </div>
                 )}
               </div>
-
-              <ProjectFilesSection projectId={projectEditor.projectId} currentUserName={currentUser.name} />
 
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", paddingTop: 4 }}>
                 <button type="button" onClick={saveProject} style={baseButtonStyle}>
