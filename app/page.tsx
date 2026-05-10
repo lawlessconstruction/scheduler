@@ -78,6 +78,7 @@ type Estimate = {
   terms: string | null
   quote_type: string | null
   created_at: string
+  locked_at: string | null
 }
 
 type EstimateItem = {
@@ -2589,6 +2590,21 @@ export default function Home() {
     setEstimates(prev => prev.filter(e => e.id !== id))
     setEstimateItems(prev => prev.filter(i => i.estimate_id !== id))
     if (activeEstimateId === id) setActiveEstimateId(null)
+  }
+
+  async function toggleEstimateLock(e: Estimate) {
+    if (e.locked_at) {
+      // Unlocking — confirm because future edits will start using current rates again
+      if (!window.confirm(`Unlock "${e.title}"?\n\nIt was locked on ${new Date(e.locked_at).toLocaleDateString()}. While locked, line items kept their original unit costs even when worker rates changed. Unlocking lets new edits pick up current rates.`)) return
+      await supabase.from("estimates").update({ locked_at: null }).eq("id", e.id)
+      setEstimates(prev => prev.map(est => est.id === e.id ? { ...est, locked_at: null } : est))
+      showToast(`${e.title} unlocked`)
+    } else {
+      const now = new Date().toISOString()
+      await supabase.from("estimates").update({ locked_at: now }).eq("id", e.id)
+      setEstimates(prev => prev.map(est => est.id === e.id ? { ...est, locked_at: now } : est))
+      showToast(`${e.title} locked — rates frozen`)
+    }
   }
 
   async function duplicateEstimate(e: Estimate) {
@@ -6596,7 +6612,7 @@ Payment terms:
                         borderRadius: 8, padding: "10px 12px", cursor: "pointer",
                       }}
                     >
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 3 }}>{e.title}</div>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 3 }}>{e.locked_at ? "🔒 " : ""}{e.title}</div>
                       <div style={{ fontSize: 11, color: "#8899bb", marginBottom: 4 }}>
                         {project?.name ?? "No project"} · v{e.version}
                       </div>
@@ -6627,13 +6643,20 @@ Payment terms:
                     {/* Estimate header */}
                     {/* Row 1: Title full width */}
                     <div style={{ marginBottom: 16 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7a9a", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Title</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7a9a", textTransform: "uppercase", letterSpacing: "0.5px" }}>Title</div>
+                        {activeEstimate.locked_at && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", background: "#1c1607", border: "1px solid #854d0e", borderRadius: 999, padding: "2px 8px", letterSpacing: "0.3px" }}>
+                            🔒 RATES LOCKED · {new Date(activeEstimate.locked_at).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
                       <input defaultValue={activeEstimate.title} key={`et-${activeEstimate.id}`}
                         style={{ ...fieldStyle, fontSize: 22, fontWeight: 900, padding: "14px 16px", color: "#f0f4ff" }}
                         onBlur={async (e) => { await saveEstimate({ ...activeEstimate, title: e.target.value }) }} />
                     </div>
                     {/* Row 2: Project + Client + Status + actions */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto", gap: 12, marginBottom: 16, alignItems: "end" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto auto", gap: 12, marginBottom: 16, alignItems: "end" }}>
                       <div>
                         <FieldLabel>Project</FieldLabel>
                         <div style={{ display: "flex", gap: 6 }}>
@@ -6727,6 +6750,19 @@ Payment terms:
                           {ESTIMATE_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
                       </div>
+                      <button type="button" onClick={() => toggleEstimateLock(activeEstimate)}
+                        style={{
+                          ...secondaryButtonStyle,
+                          fontSize: 13,
+                          padding: "10px 14px",
+                          fontWeight: 700,
+                          color: activeEstimate.locked_at ? "#fbbf24" : "#94a3b8",
+                          borderColor: activeEstimate.locked_at ? "#854d0e" : undefined,
+                          background: activeEstimate.locked_at ? "#1c1607" : undefined,
+                        }}
+                        title={activeEstimate.locked_at ? `Unlock (locked ${new Date(activeEstimate.locked_at).toLocaleDateString()})` : "Lock estimate — freeze rates so worker rate changes don't affect this estimate"}>
+                        {activeEstimate.locked_at ? "🔒 Locked" : "🔓 Lock"}
+                      </button>
                       <button type="button" onClick={() => duplicateEstimate(activeEstimate)}
                         style={{ ...secondaryButtonStyle, fontSize: 13, padding: "10px 14px", fontWeight: 700 }} title="New version">v+</button>
                       <button type="button" onClick={() => deleteEstimate(activeEstimate.id)}
@@ -6838,7 +6874,11 @@ Payment terms:
                             <select defaultValue={item.crew_id ?? ""} key={`iw-${item.id}`} style={{ ...fieldStyle, fontSize: 11, padding: "4px 5px" }}
                               onChange={async (e) => {
                                 const crewId = e.target.value || null
-                                const newCrew = crews.find(c => c.id === crewId)
+                                if (activeEstimate?.locked_at) {
+                                  // Locked: just update crew_id, keep the existing unit_cost
+                                  await saveEstimateItem({ ...item, crew_id: crewId })
+                                  return
+                                }
                                 const newCost = crewId ? (workers.filter(w => w.crew_id === crewId && w.total_cost_hourly_with_ot != null).reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / Math.max(workers.filter(w => w.crew_id === crewId).length, 1)) * 9 : item.unit_cost
                                 await saveEstimateItem({ ...item, crew_id: crewId, unit_cost: Math.round(newCost * 100) / 100 })
                               }}>
@@ -6854,7 +6894,7 @@ Payment terms:
                             <div style={{ position: "relative" }}>
                               <input type="number" defaultValue={item.unit_cost} key={`iuc-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "4px 6px" }}
                                 onBlur={async (e) => { await saveEstimateItem({ ...item, unit_cost: Number(e.target.value) }) }} />
-                              {crewBlended && Math.abs(crewBlended - item.unit_cost) > 10 && (
+                              {crewBlended && Math.abs(crewBlended - item.unit_cost) > 10 && !activeEstimate?.locked_at && (
                                 <div style={{ fontSize: 9, color: "#60a5fa", position: "absolute", bottom: -14, left: 0 }}>crew: ${Math.round(crewBlended)}</div>
                               )}
                             </div>
