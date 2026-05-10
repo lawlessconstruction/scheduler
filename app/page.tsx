@@ -21,6 +21,7 @@ type Extra = {
   issued_date: string | null
   notes: string | null
   created_at: string
+  locked_at: string | null
 }
 
 type ExtraItem = {
@@ -34,6 +35,7 @@ type ExtraItem = {
   unit_cost: number
   margin_percent: number
   sort_order: number
+  locked_rate: number | null
 }
 
 type EstimateTemplate = {
@@ -1272,9 +1274,15 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
 
   function calcTotal(item: ExtraItem): number {
     if (item.charge_type === "labour") {
-      const w = workers.find(x => x.id === item.worker_id)
-      if (!w) return 0
-      const rate = getChargeRate(w)
+      // If extra is locked and we snapshotted a rate, use that. Otherwise use the worker's current rate.
+      let rate: number
+      if (activeExtra?.locked_at && item.locked_rate != null) {
+        rate = item.locked_rate
+      } else {
+        const w = workers.find(x => x.id === item.worker_id)
+        if (!w) return 0
+        rate = getChargeRate(w)
+      }
       return (item.ordinary_hours ?? 0) * rate + (item.ot_hours ?? 0) * rate * 2
     }
     return (item.unit_cost ?? 0) * (1 + (item.margin_percent ?? 0) / 100)
@@ -1319,6 +1327,32 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
     setActiveId(null)
   }
 
+  async function toggleExtraLock() {
+    if (!activeExtra) return
+    if (activeExtra.locked_at) {
+      if (!window.confirm(`Unlock "${activeExtra.title}"?\n\nIt was locked on ${new Date(activeExtra.locked_at).toLocaleDateString()}. While locked, labour totals stayed fixed even when worker rates changed. Unlocking lets totals re-price from current rates.`)) return
+      await supabase.from("extras").update({ locked_at: null }).eq("id", activeExtra.id)
+      setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, locked_at: null } : x))
+    } else {
+      // Snapshot rate onto each labour line item before locking
+      const labourItems = activeItems.filter(i => i.charge_type === "labour")
+      for (const it of labourItems) {
+        const w = workers.find(x => x.id === it.worker_id)
+        const rate = w ? getChargeRate(w) : 0
+        await supabase.from("extra_items").update({ locked_rate: rate }).eq("id", it.id)
+      }
+      const now = new Date().toISOString()
+      await supabase.from("extras").update({ locked_at: now }).eq("id", activeExtra.id)
+      // Refresh local state
+      setExtraItems(prev => prev.map(x => {
+        if (x.extra_id !== activeExtra.id || x.charge_type !== "labour") return x
+        const w = workers.find(ww => ww.id === x.worker_id)
+        return { ...x, locked_rate: w ? getChargeRate(w) : 0 }
+      }))
+      setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, locked_at: now } : x))
+    }
+  }
+
   const fs: React.CSSProperties = {
     width: "100%", padding: "10px 12px", borderRadius: 8,
     background: "#0f1520", color: "#f0f4ff", border: "1px solid #2e3a58",
@@ -1354,7 +1388,7 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
             return (
               <div key={ex.id} onClick={() => setActiveId(ex.id)}
                 style={{ background: activeId === ex.id ? "#1a1a3e" : "#141a28", border: `1.5px solid ${activeId === ex.id ? "#7c3aed" : "#252f45"}`, borderRadius: 10, padding: "12px 14px", cursor: "pointer" }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: "#f0f4ff", marginBottom: 3 }}>{ex.title || "Untitled"}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "#f0f4ff", marginBottom: 3 }}>{ex.locked_at ? "🔒 " : ""}{ex.title || "Untitled"}</div>
                 <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 6 }}>{proj?.name ?? "No project"}</div>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 11, color: ex.status === "invoiced" ? "#4ade80" : "#c4b5fd", background: ex.status === "invoiced" ? "#14532d" : "#1a1a3e", borderRadius: 4, padding: "2px 6px" }}>{ex.status}</span>
@@ -1392,7 +1426,7 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                       style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px 120px 160px", gap: 12, padding: "14px 16px", background: "#141a28", border: "1px solid #252f45", borderRadius: 10, cursor: "pointer", alignItems: "center" }}
                       onMouseEnter={e => (e.currentTarget.style.borderColor = "#7c3aed")}
                       onMouseLeave={e => (e.currentTarget.style.borderColor = "#252f45")}>
-                      <div style={{ fontWeight: 700, color: "#f0f4ff" }}>{ex.title || "Untitled"}</div>
+                      <div style={{ fontWeight: 700, color: "#f0f4ff" }}>{ex.locked_at ? "🔒 " : ""}{ex.title || "Untitled"}</div>
                       <div style={{ color: "#8899bb", fontSize: 13 }}>{proj?.name ?? "—"}</div>
                       <div style={{ color: "#6b7a9a", fontSize: 12 }}>{ex.issued_date ?? "—"}</div>
                       <span style={{ fontSize: 11, fontWeight: 700, color: sc, background: sc + "22", borderRadius: 6, padding: "3px 8px", width: "fit-content" }}>{ex.status}</span>
@@ -1410,7 +1444,14 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
               <button type="button" onClick={() => setActiveId(null)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontSize: 12, cursor: "pointer", marginBottom: 20 }}>← Back</button>
 
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, color: "#6b7a9a", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Title</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, color: "#6b7a9a", textTransform: "uppercase", letterSpacing: "0.5px" }}>Title</div>
+                  {activeExtra.locked_at && (
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", background: "#1c1607", border: "1px solid #854d0e", borderRadius: 999, padding: "2px 8px", letterSpacing: "0.3px" }}>
+                      🔒 RATES LOCKED · {new Date(activeExtra.locked_at).toLocaleDateString()}
+                    </div>
+                  )}
+                </div>
                 <input defaultValue={activeExtra.title} key={`t-${activeExtra.id}`} style={{ ...fs, fontSize: 22, fontWeight: 900 }}
                   onBlur={async e => {
                     await supabase.from("extras").update({ title: e.target.value }).eq("id", activeExtra.id)
@@ -1418,7 +1459,7 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                   }} />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto", gap: 12, marginBottom: 24, alignItems: "end" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto", gap: 12, marginBottom: 24, alignItems: "end" }}>
                 <div>
                   <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 6, fontWeight: 600 }}>Project</div>
                   <select value={activeExtra.project_id ?? ""} key={`p-${activeExtra.id}`} style={fs}
@@ -1447,6 +1488,16 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                     <option value="invoiced">Invoiced</option>
                   </select>
                 </div>
+                <button type="button" onClick={toggleExtraLock}
+                  style={{
+                    padding: "10px 14px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 13,
+                    background: activeExtra.locked_at ? "#1c1607" : "#141a28",
+                    border: `1px solid ${activeExtra.locked_at ? "#854d0e" : "#2e3650"}`,
+                    color: activeExtra.locked_at ? "#fbbf24" : "#94a3b8",
+                  }}
+                  title={activeExtra.locked_at ? `Unlock (locked ${new Date(activeExtra.locked_at).toLocaleDateString()})` : "Lock extra — freeze rates so worker rate changes don't affect this extra"}>
+                  {activeExtra.locked_at ? "🔒 Locked" : "🔓 Lock"}
+                </button>
                 <button type="button" onClick={deleteExtra} style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #7f1d1d", background: "#b91c1c", color: "white", fontWeight: 700, cursor: "pointer" }}>×</button>
               </div>
 
