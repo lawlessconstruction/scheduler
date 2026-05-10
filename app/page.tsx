@@ -1705,6 +1705,7 @@ export default function Home() {
   const [classificationRates, setClassificationRates] = useState<ClassificationRate[]>([])
   const [showWorkersModal, setShowWorkersModal] = useState(false)
   const [selectedWorkerCrew, setSelectedWorkerCrew] = useState<string>("all")
+  const [movingWorkerId, setMovingWorkerId] = useState<string | null>(null)
   const [showTimesheetModal, setShowTimesheetModal] = useState(false)
   const [showCashflowModal, setShowCashflowModal] = useState(false)
   const [cashflowView, setCashflowView] = useState<"weekly" | "monthly">("monthly")
@@ -5278,7 +5279,7 @@ Payment terms:
                     return (
                       <div key={w.id} style={{ background: "#161d2e", border: `1px solid ${isSub ? "#422006" : "#222"}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
                         {/* Header row */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto auto", gap: 10, marginBottom: 10, alignItems: "end" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto auto auto", gap: 10, marginBottom: 10, alignItems: "end" }}>
                           <div>
                             <FieldLabel>Name</FieldLabel>
                             <input defaultValue={w.name} key={`w-name-${w.id}`} style={fieldStyle} onBlur={async (e) => { await saveWorker({ ...w, name: e.target.value }) }} />
@@ -5303,8 +5304,35 @@ Payment terms:
                             </select>
                           </div>
                           <button type="button" onClick={autoCalcOncosts} style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 10px", marginBottom: 2, color: "#4ade80", borderColor: "#166534" }} title="Auto-calculate oncosts from base rate">Calc</button>
+                          <button type="button" onClick={() => setMovingWorkerId(movingWorkerId === w.id ? null : w.id)} style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 10px", marginBottom: 2, color: "#60a5fa", borderColor: "#1e3a8a" }} title="Move this worker to another crew">Move</button>
                           <button type="button" onClick={() => deleteWorker(w.id)} style={{ ...dangerButtonStyle, fontSize: 11, padding: "6px 10px", marginBottom: 2 }}>×</button>
                         </div>
+                        {/* Move-to-crew picker (shown when Move button toggled) */}
+                        {movingWorkerId === w.id && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "10px 12px", background: "#0f1520", borderRadius: 8, border: "1px solid #1e3a8a" }}>
+                            <span style={{ fontSize: 12, color: "#93c5fd", fontWeight: 600 }}>Move {w.name} to:</span>
+                            <select
+                              defaultValue=""
+                              style={{ ...fieldStyle, flex: 1, maxWidth: 280 }}
+                              onChange={async (e) => {
+                                const newCrewId = e.target.value
+                                if (!newCrewId || newCrewId === w.crew_id) { setMovingWorkerId(null); return }
+                                const targetCrew = crews.find((c) => c.id === newCrewId)
+                                const confirmed = window.confirm(`Move ${w.name} to ${targetCrew?.name ?? "this crew"}?\n\nTheir existing schedule and timesheet history stays with them.`)
+                                if (!confirmed) { setMovingWorkerId(null); return }
+                                await saveWorker({ ...w, crew_id: newCrewId })
+                                setMovingWorkerId(null)
+                                showToast(`${w.name} moved to ${targetCrew?.name ?? "new crew"}`)
+                              }}
+                            >
+                              <option value="">Select crew…</option>
+                              {crews.filter((c) => c.id !== w.crew_id).map((c) => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                              ))}
+                            </select>
+                            <button type="button" onClick={() => setMovingWorkerId(null)} style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 10px" }}>Cancel</button>
+                          </div>
+                        )}
                         {/* Login credentials row */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px", gap: 10, marginBottom: 10, padding: "10px 12px", background: "#0f1520", borderRadius: 8, border: "1px solid #1e2a45" }}>
                           <div>
