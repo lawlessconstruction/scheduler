@@ -3681,9 +3681,9 @@ Payment terms:
                                         border: conflict
                                           ? "2px solid #FCA5A5"
                                           : isPastUnbilled
-                                            ? "2px dashed #fbbf24"
+                                            ? "3px solid #fde68a"
                                             : "1px solid rgba(255,255,255,0.15)",
-                                        boxShadow: isPastUnbilled && !conflict ? "0 0 0 1px #854d0e" : undefined,
+                                        boxShadow: isPastUnbilled && !conflict ? "0 0 0 2px #78350f" : undefined,
                                         cursor: isFirstRun ? "grab" : "pointer",
                                         opacity: isBeingMoved || isBeingResized ? 0.65 : 1,
                                         userSelect: "none",
