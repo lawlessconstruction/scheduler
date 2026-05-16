@@ -3735,22 +3735,40 @@ Payment terms:
                           })
                         )}
 
-                        {/* Milestone markers */}
-                        {milestones
-                          .filter((m) => m.project_id === row.projectId)
-                          .sort((a, b) => a.sort_order - b.sort_order)
-                          .map((m, milestoneIndex) => {
+                        {/* Milestone markers — grouped by date, one diamond per date with X/Y or ✔ */}
+                        {(() => {
+                          const projectMilestones = milestones
+                            .filter((m) => m.project_id === row.projectId)
+                            .sort((a, b) => a.sort_order - b.sort_order)
+                          // Group by date
+                          const groups = new Map<string, Milestone[]>()
+                          for (const m of projectMilestones) {
                             const dateKey = getMilestoneDate(m)
-                            if (!dateKey) return null
+                            if (!dateKey) continue
+                            if (!groups.has(dateKey)) groups.set(dateKey, [])
+                            groups.get(dateKey)!.push(m)
+                          }
+                          return Array.from(groups.entries()).map(([dateKey, group]) => {
                             const index = dateIndexMap.get(dateKey)
                             if (index === undefined) return null
                             const left = index * DAY_COL_WIDTH + DAY_COL_WIDTH / 2
-                            const contractColor = contracts.find((c) => c.id === m.contract_id)?.color ?? "#a78bfa"
+                            const contractColor = contracts.find((c) => c.id === group[0].contract_id)?.color ?? "#a78bfa"
+                            const total = group.length
+                            const invoicedCount = group.filter(m => m.status === "invoiced" || m.status === "paid").length
+                            const allInvoiced = invoicedCount === total && total > 0
+                            const label = allInvoiced ? "✔" : `${invoicedCount}/${total}`
+                            const tooltipLines = group.map(m => {
+                              const status = m.status ?? "pending"
+                              const statusIcon = (status === "invoiced" || status === "paid") ? "✔ " : ""
+                              const amountPart = m.amount ? ` — $${formatMoney(m.amount)}` : ""
+                              const percentPart = m.percent ? ` (${m.percent}%)` : ""
+                              return `${statusIcon}${m.name ?? "Milestone"}${amountPart}${percentPart} [${status}]`
+                            })
                             return (
                               <div
-                                key={m.id}
-                                onClick={(e) => { e.stopPropagation(); openMilestoneModal(row.projectId, row.projectName, m.id) }}
-                                title={`${m.name ?? "Milestone"}${m.amount ? ` — $${formatMoney(m.amount)}` : ""}${m.percent ? ` (${m.percent}%)` : ""}`}
+                                key={dateKey}
+                                onClick={(e) => { e.stopPropagation(); openMilestoneModal(row.projectId, row.projectName, group[0].id) }}
+                                title={tooltipLines.join("\n")}
                                 style={{
                                   position: "absolute",
                                   left: left - 10,
@@ -3761,18 +3779,20 @@ Payment terms:
                                   transform: "rotate(45deg)",
                                   cursor: "pointer",
                                   zIndex: 3,
-                                  border: `2px solid ${contractColor}cc`,
+                                  border: allInvoiced ? "2px solid #4ade80" : `2px solid ${contractColor}cc`,
+                                  boxShadow: allInvoiced ? "0 0 0 1px #14532d" : undefined,
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",
                                 }}
                               >
-                                <span style={{ transform: "rotate(-45deg)", fontSize: 9, fontWeight: 800, color: "white", lineHeight: 1, pointerEvents: "none" }}>
-                                  {milestoneIndex + 1}
+                                <span style={{ transform: "rotate(-45deg)", fontSize: allInvoiced ? 11 : 9, fontWeight: 800, color: "white", lineHeight: 1, pointerEvents: "none" }}>
+                                  {label}
                                 </span>
                               </div>
                             )
-                          })}
+                          })
+                        })()}
 
                         {/* Cost payment flags — amber $ at top of bar on effective date */}
                         {projectCosts
