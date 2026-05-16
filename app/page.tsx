@@ -3121,6 +3121,12 @@ Payment terms:
 
   return (
     <div style={{ background: "#111827", color: "white", minHeight: "100vh" }}>
+      <style>{`
+        @keyframes unbilledPulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.95), 0 0 0 4px rgba(251, 191, 36, 0.0); }
+          50%      { box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.85), 0 0 14px 6px rgba(251, 191, 36, 0.55); }
+        }
+      `}</style>
       {/* ── Branded header bar ── */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -3683,7 +3689,7 @@ Payment terms:
                                           : isPastUnbilled
                                             ? "3px solid #fde68a"
                                             : "1px solid rgba(255,255,255,0.15)",
-                                        boxShadow: isPastUnbilled && !conflict ? "0 0 0 2px #78350f" : undefined,
+                                        animation: isPastUnbilled && !conflict ? "unbilledPulse 1.6s ease-in-out infinite" : undefined,
                                         cursor: isFirstRun ? "grab" : "pointer",
                                         opacity: isBeingMoved || isBeingResized ? 0.65 : 1,
                                         userSelect: "none",
