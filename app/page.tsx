@@ -3632,6 +3632,9 @@ Payment terms:
                             const conflict = conflictInfo.conflict
                             const isBeingMoved = draggingToken === s.id
                             const isBeingResized = draggingToken === `resize:${s.id}`
+                            // Flag past segments with no milestone linked — for invoicing chase-up
+                            const hasMilestoneLinked = milestones.some(m => m.segment_id === s.id)
+                            const isPastUnbilled = todayKey != null && s.end_date < todayKey && !hasMilestoneLinked
                             const top = ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP)
 
                             return (
@@ -3661,7 +3664,9 @@ Payment terms:
                                       title={
                                         conflict
                                           ? `${s.crews?.name} overbooked: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
-                                          : `${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
+                                          : isPastUnbilled
+                                            ? `⚠ Past segment with no milestone linked — needs invoicing\n${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
+                                            : `${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
                                       }
                                       style={{
                                         position: "absolute",
@@ -3673,7 +3678,12 @@ Payment terms:
                                         borderRadius: 8,
                                         fontSize: 12,
                                         color: "white",
-                                        border: conflict ? "2px solid #FCA5A5" : "1px solid rgba(255,255,255,0.15)",
+                                        border: conflict
+                                          ? "2px solid #FCA5A5"
+                                          : isPastUnbilled
+                                            ? "2px dashed #fbbf24"
+                                            : "1px solid rgba(255,255,255,0.15)",
+                                        boxShadow: isPastUnbilled && !conflict ? "0 0 0 1px #854d0e" : undefined,
                                         cursor: isFirstRun ? "grab" : "pointer",
                                         opacity: isBeingMoved || isBeingResized ? 0.65 : 1,
                                         userSelect: "none",
@@ -3695,6 +3705,7 @@ Payment terms:
                                             {s.crews?.name}
                                             {Number(s.capacity_fraction ?? 1) < 1 ? ` (${s.capacity_fraction})` : ""}
                                             {conflict ? " ⚠" : ""}
+                                            {!conflict && isPastUnbilled ? " 💲" : ""}
                                           </span>
                                         </span>
                                       )}
