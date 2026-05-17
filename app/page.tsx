@@ -3638,8 +3638,9 @@ Payment terms:
                             const conflict = conflictInfo.conflict
                             const isBeingMoved = draggingToken === s.id
                             const isBeingResized = draggingToken === `resize:${s.id}`
-                            // Flag past segments with no milestone linked — for invoicing chase-up
-                            const hasMilestoneLinked = milestones.some(m => m.segment_id === s.id)
+                            // Flag past segments with no invoiced/paid milestone linked — for invoicing chase-up.
+                            // A pending milestone doesn't count: it's drafted but not yet billed.
+                            const hasMilestoneLinked = milestones.some(m => m.segment_id === s.id && (m.status === "invoiced" || m.status === "paid"))
                             const isPastUnbilled = todayKey != null && s.end_date < todayKey && !hasMilestoneLinked
                             const top = ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP)
 
