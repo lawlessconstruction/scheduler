@@ -913,26 +913,28 @@ function ClientsListModal({ onClose, clients, projects, contracts, profitability
                 {/* Client header */}
                 <div style={{ padding: "16px 20px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16, alignItems: "center", borderBottom: clientProjects.length > 0 ? "1px solid #1e2a40" : "none" }}>
                   <div>
-                    <div style={{ fontWeight: 800, fontSize: 17, color: "#f0f4ff" }}>{c.name}</div>
-                    {c.company && <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>{c.company}</div>}
-                    <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                    <div style={{ fontWeight: 800, fontSize: 17, color: "#f0f4ff" }}>
+                      {c.name || c.company || c.email || "Unnamed client"}
+                    </div>
+                    {c.company && c.name && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{c.company}</div>}
+                    <div style={{ display: "flex", gap: 10, marginTop: 6, flexWrap: "wrap" }}>
                       {c.email && <a href={`mailto:${c.email}`} style={{ fontSize: 11, color: "#60a5fa", textDecoration: "none" }}>{c.email}</a>}
-                      {c.phone && <span style={{ fontSize: 11, color: "#6b7a9a" }}>{c.phone}</span>}
+                      {c.phone && <span style={{ fontSize: 11, color: "#94a3b8" }}>{c.phone}</span>}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>Total contract value</div>
-                    <div style={{ fontSize: 18, fontWeight: 800, color: "#f0f4ff" }}>{totalContractValue > 0 ? `$${fmt(totalContractValue)}` : "—"}</div>
-                    {totalContractValue > 0 && <div style={{ fontSize: 11, color: "#6b7a9a" }}>${fmt(totalContractValue / 1.1)} ex GST</div>}
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>Total contract value</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: "#ffffff" }}>{totalContractValue > 0 ? `$${fmt(totalContractValue)}` : "—"}</div>
+                    {totalContractValue > 0 && <div style={{ fontSize: 11, color: "#94a3b8" }}>${fmt(totalContractValue / 1.1)} ex GST</div>}
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>Avg margin</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>Avg margin</div>
                     <div style={{ fontSize: 18, fontWeight: 800, color: marginColor }}>{totalMargin != null ? `${totalMargin.toFixed(1)}%` : "—"}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>Projects</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase" as const, letterSpacing: "0.4px" }}>Projects</div>
                     <div style={{ fontSize: 18, fontWeight: 800, color: "#c4b5fd" }}>{clientProjects.length}</div>
-                    <div style={{ fontSize: 11, color: "#6b7a9a" }}>{clientProjects.filter(p => !p.archived).length} active · {clientProjects.filter(p => p.archived).length} archived</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8" }}>{clientProjects.filter(p => !p.archived).length} active · {clientProjects.filter(p => p.archived).length} archived</div>
                   </div>
                 </div>
 
