@@ -910,7 +910,13 @@ function ClientsListModal({ onClose, clients, projects, contracts, profitability
 
             return (
               <div key={c.id} style={{ background: "#141a28", border: "1px solid #252f45", borderRadius: 12, padding: 16, marginBottom: 12 }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", color: "#ffffff" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", color: "#ffffff", tableLayout: "fixed" }}>
+                  <colgroup>
+                    <col style={{ width: "40%" }} />
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "20%" }} />
+                    <col style={{ width: "20%" }} />
+                  </colgroup>
                   <tbody>
                     <tr>
                       <td style={{ verticalAlign: "top", padding: 4 }}>
@@ -935,31 +941,41 @@ function ClientsListModal({ onClose, clients, projects, contracts, profitability
                         <div style={{ fontSize: 11, color: "#94a3b8" }}>{clientProjects.filter(p => !p.archived).length} active · {clientProjects.filter(p => p.archived).length} archived</div>
                       </td>
                     </tr>
+                    {clientProjects.length > 0 && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: "12px 0 0", borderTop: "1px solid #1e2a40" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", color: "#ffffff", tableLayout: "fixed" }}>
+                            <colgroup>
+                              <col style={{ width: "40%" }} />
+                              <col style={{ width: "20%" }} />
+                              <col style={{ width: "20%" }} />
+                              <col style={{ width: "20%" }} />
+                            </colgroup>
+                            <tbody>
+                              {clientProjects.map(p => {
+                                const projContractValue = contracts.filter(ct => ct.project_id === p.id).reduce((s, ct) => s + (ct.value ?? 0), 0)
+                                const prof = profitabilityData.find((r: any) => r.project_id === p.id)
+                                const costs = (prof?.total_labour_true_cost ?? 0) + (prof?.total_materials_cost ?? 0)
+                                const projMargin = projContractValue > 0 ? ((projContractValue - costs) / projContractValue) * 100 : null
+                                const mc = projMargin == null ? "#94a3b8" : projMargin >= 30 ? "#4ade80" : projMargin >= 0 ? "#fbbf24" : "#f87171"
+                                return (
+                                  <tr key={p.id} style={{ borderTop: "1px solid #1a2035" }}>
+                                    <td style={{ padding: "6px 4px", fontWeight: 600, fontSize: 14, color: "#c8d4f0" }}>{p.name}</td>
+                                    <td style={{ padding: "6px 4px", fontSize: 13, fontWeight: 700, color: "#ffffff" }}>{projContractValue > 0 ? `$${fmt(projContractValue)}` : "—"}</td>
+                                    <td style={{ padding: "6px 4px", fontSize: 14, fontWeight: 800, color: mc }}>{projMargin != null ? `${projMargin.toFixed(1)}%` : "—"}</td>
+                                    <td style={{ padding: "6px 4px", fontSize: 11, fontWeight: 700, color: p.archived ? "#94a3b8" : "#4ade80" }}>
+                                      {p.archived ? "Archived" : "Active"}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
-
-                {/* Project rows */}
-                {clientProjects.length > 0 && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #1e2a40" }}>
-                    {clientProjects.map(p => {
-                      const projContractValue = contracts.filter(ct => ct.project_id === p.id).reduce((s, ct) => s + (ct.value ?? 0), 0)
-                      const prof = profitabilityData.find((r: any) => r.project_id === p.id)
-                      const costs = (prof?.total_labour_true_cost ?? 0) + (prof?.total_materials_cost ?? 0)
-                      const projMargin = projContractValue > 0 ? ((projContractValue - costs) / projContractValue) * 100 : null
-                      const mc = projMargin == null ? "#94a3b8" : projMargin >= 30 ? "#4ade80" : projMargin >= 0 ? "#fbbf24" : "#f87171"
-                      return (
-                        <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderTop: "1px solid #1a2035", color: "#ffffff" }}>
-                          <div style={{ fontWeight: 600, fontSize: 14, color: "#c8d4f0", flex: 1 }}>{p.name}</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "#ffffff", minWidth: 120, textAlign: "right" }}>{projContractValue > 0 ? `$${fmt(projContractValue)}` : "—"}</div>
-                          <div style={{ fontSize: 14, fontWeight: 800, color: mc, minWidth: 80, textAlign: "right" }}>{projMargin != null ? `${projMargin.toFixed(1)}%` : "—"}</div>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: p.archived ? "#94a3b8" : "#4ade80", minWidth: 80, textAlign: "right" }}>
-                            {p.archived ? "Archived" : "Active"}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
               </div>
             )
           })}
