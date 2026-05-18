@@ -3852,7 +3852,7 @@ Payment terms:
               })}
             </tbody>
 
-            {showAvailability && crews.map((crew) => {
+            {showAvailability && crews.filter(crew => workers.some(w => w.crew_id === crew.id)).map((crew) => {
               const capacity = Number(crew.capacity ?? 1)
               const dayMap = crewCapacityByDay.get(crew.id) ?? new Map()
               const expanded = expandedCrews.has(crew.id)
