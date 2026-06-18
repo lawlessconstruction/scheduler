@@ -2230,9 +2230,16 @@ export default function Home() {
 
       const unlinkExtras = await supabase.from("extra_items").update({ segment_id: null }).eq("segment_id", segId)
       console.log("[deleteCellSegment] Unlink extras:", unlinkExtras)
-      if (unlinkExtras.error && !/column .*segment_id.* does not exist/i.test(unlinkExtras.error.message)) {
-        showToast(`Error unlinking extras: ${unlinkExtras.error.message}`)
-        return
+      if (unlinkExtras.error) {
+        const msg = unlinkExtras.error.message || ""
+        // Tolerate "column doesn't exist" errors — extra_items may not have segment_id in every install.
+        // Supabase phrases this several ways: "column ... does not exist", "Could not find the 'segment_id' column ... in the schema cache", etc.
+        const columnMissing = /segment_id.*(does not exist|in the schema cache)|could not find.*segment_id.*column/i.test(msg)
+        if (!columnMissing) {
+          showToast(`Error unlinking extras: ${msg}`)
+          return
+        }
+        console.log("[deleteCellSegment] extra_items.segment_id not in schema, skipping unlink")
       }
 
       const result = await supabase.from("segments").delete().eq("id", segId)
