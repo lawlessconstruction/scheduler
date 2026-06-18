@@ -1378,9 +1378,12 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
 
         {/* Sidebar */}
         <div style={{ width: 280, minWidth: 280, borderRight: "1px solid #252f45", padding: 20, display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
             <div style={{ fontSize: 18, fontWeight: 900, color: "#f0f4ff" }}>Extras</div>
-            <button type="button" onClick={createNew} style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid #7c3aed", background: "#1a1a3e", color: "#c4b5fd", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ New</button>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" onClick={createNew} style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid #7c3aed", background: "#1a1a3e", color: "#c4b5fd", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ New</button>
+              <button type="button" onClick={onClose} style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
+            </div>
           </div>
 
           {loading && <div style={{ color: "#6b7a9a", fontSize: 13, textAlign: "center", padding: 20 }}>Loading...</div>}
@@ -1410,10 +1413,6 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
               </div>
             )
           })}
-
-          <div style={{ marginTop: "auto", paddingTop: 12 }}>
-            <button type="button" onClick={onClose} style={{ width: "100%", padding: "12px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Close</button>
-          </div>
         </div>
 
         {/* Right panel */}
