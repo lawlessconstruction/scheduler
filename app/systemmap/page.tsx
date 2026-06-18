@@ -37,7 +37,7 @@ export default function SystemMap() {
     { id: "payroll", label: "Payroll export", sub: "Timesheet to wages", x: 30, y: 840, w: 130, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
     { id: "clientreports", label: "Client reports", sub: "Progress · invoicing", x: 175, y: 840, w: 130, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
     { id: "accounting", label: "Accounting", sub: "Xero · invoices", x: 320, y: 840, w: 130, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
-    { id: "extras", label: "Extras billing", sub: "Hourly · overtime", x: 465, y: 840, w: 130, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
+    { id: "extras", label: "Extras billing", sub: "Variations · rate locking · invoicing", x: 465, y: 840, w: 130, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
     // Mobile app moved left so it doesn't clip
     { id: "mobile", label: "Mobile app", sub: "Crew bosses", x: 605, y: 840, w: 65, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
     { id: "goal", label: "AI business operating system", sub: "Schedule · cashflow · profitability · estimation · crew · quoting — all connected", x: 30, y: 970, w: 640, h: 72, color: core, textColor: coreText, subColor: coreSub, status: "core" },
@@ -135,8 +135,8 @@ export default function SystemMap() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 32 }}>
           {[
-            { title: "Built", color: built, items: ["Gantt scheduler with drag/resize","Projects, contracts & milestones","Clients with contact details","Worker cost build-up & margins","Timesheets with split-day support","Project profitability (labour + materials)","Cashflow timeline + weekly strip","Materials & costs with payment schedules","Estimate storage + UI (line items, versions)","Quoting bot (reads plans + scope)","Quote PDF (framing + steel)","Context API (/api/context)","Supabase database with views"] },
-            { title: "Next to build", color: toBuild, items: ["Bot chat interface","Extras & hourly billing","Payroll export","Xero / accounting integration","Client reports","Mobile app for crew bosses","Webhooks & notifications"] },
+            { title: "Built", color: built, items: ["Gantt scheduler with drag/resize","Projects, contracts & milestones","Clients with contact details + summary view","Worker cost build-up & margins","Move workers between crews","Timesheets with split-day support","Project profitability (labour + materials)","Cashflow timeline + weekly strip (fixed payroll forecast)","Materials & costs with payment schedules","Estimate storage + UI with rate locking","Extras / variations with rate locking + project link","Quoting bot (reads plans + scope)","Quote PDF (framing + steel)","Milestone progress indicators (invoiced/paid)","Past-segment-unbilled visual warnings","Project files & versioning (Supabase Storage)","Context API (/api/context)","Supabase database with views"] },
+            { title: "Next to build", color: toBuild, items: ["Bot chat interface","Payroll export","Xero / accounting integration","Client reports","Mobile app for crew bosses","Webhooks & notifications"] },
           ].map((section) => (
             <div key={section.title} style={{ background: "#0a0a0a", border: `1px solid ${section.color}55`, borderRadius: 10, padding: 18 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
