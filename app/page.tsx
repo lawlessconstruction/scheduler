@@ -4097,18 +4097,16 @@ Payment terms:
                         return s + (e.ordinary_hours ?? 0) * trueCost + (e.ot_hours ?? 0) * (w.ot_rate_hourly ?? 0)
                       }, 0)
 
-                    // Forecast labour out
-                    const forecastOut = segments
-                      .filter(seg => seg.start_date <= weKey && seg.end_date >= wsKey)
-                      .reduce((s, seg) => {
-                        const crewWorkerList = workers.filter(w => w.crew_id === seg.crew_id && w.total_cost_hourly_with_ot != null)
-                        if (crewWorkerList.length === 0) return s
-                        const blended = crewWorkerList.reduce((sum, w) => sum + (w.total_cost_hourly_with_ot ?? 0), 0) / crewWorkerList.length
-                        const start = seg.start_date > wsKey ? seg.start_date : wsKey
-                        const end = seg.end_date < weKey ? seg.end_date : weKey
-                        const days = countWorkingDaysInclusive(start, end)
-                        return s + blended * 9 * crewWorkerList.length * days * (seg.capacity_fraction ?? 1)
+                    // Forecast labour out: fixed weekly payroll (every worker × 40 hr × true cost)
+                    // Pro-rates if the visible window is less than a full week.
+                    const forecastOut = (() => {
+                      const weeklyPayroll = workers.reduce((s, w) => {
+                        const rate = w.total_cost_hourly_with_ot ?? w.base_rate_hourly ?? 0
+                        return s + rate * 40
                       }, 0)
+                      const daysInWindow = countWorkingDaysInclusive(wsKey, weKey)
+                      return weeklyPayroll * (daysInWindow / 5)
+                    })()
 
                     // Materials costs out this week — use effective_date
                     const materialsOut = projectCosts
@@ -6207,7 +6205,6 @@ Payment terms:
 
       {showCashflowModal && (() => {
         const today = todayKey ?? new Date().toISOString().slice(0, 10)
-        const HOURS_PER_DAY = 9
 
         // --- Build period buckets ---
         const allDates = [
@@ -6291,32 +6288,26 @@ Payment terms:
           moneyOutActual[key] = (moneyOutActual[key] ?? 0) + cost
         }
 
-        // --- Money OUT (forecast): future segments × crew blended cost ---
+        // --- Money OUT (forecast): fixed weekly payroll for every employee ---
+        // Cashflow forecast = "what does it cost to keep all employees paid?" — so we use
+        // every worker × 40 hr ordinary × their true cost/hr, regardless of what's scheduled.
+        // (Per-project profitability still uses actual timesheet hours via the project_profitability view.)
+        const HOURS_PER_WEEK = 40
+        const weeklyPayroll = workers.reduce((sum, w) => {
+          const rate = w.total_cost_hourly_with_ot ?? w.base_rate_hourly ?? 0
+          return sum + rate * HOURS_PER_WEEK
+        }, 0)
         const moneyOutForecast: Record<string, number> = {}
-        for (const seg of segments) {
-          if (seg.end_date <= today) continue // already past
-          const crew = crews.find(c => c.id === seg.crew_id)
-          if (!crew) continue
-          const crewWorkerList = workers.filter(w => w.crew_id === crew.id && w.total_cost_hourly_with_ot != null)
-          if (crewWorkerList.length === 0) continue
-          const blended = crewWorkerList.reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / crewWorkerList.length
-          const startKey = seg.start_date > today ? seg.start_date : today
-          const workingDays = countWorkingDaysInclusive(startKey, seg.end_date)
-          const totalCost = blended * HOURS_PER_DAY * crewWorkerList.length * workingDays * (seg.capacity_fraction ?? 1)
-          // Spread evenly across periods the segment covers
-          const segPeriods: string[] = []
-          const sc = parseDate(startKey)
-          const se = parseDate(seg.end_date)
-          const tc = new Date(sc)
-          while (tc <= se) {
-            const k = getPeriodKey(formatDateKey(tc), cashflowView)
-            if (!segPeriods.includes(k)) segPeriods.push(k)
-            tc.setDate(tc.getDate() + 7)
-          }
-          const perPeriod = totalCost / Math.max(segPeriods.length, 1)
-          for (const k of segPeriods) {
-            moneyOutForecast[k] = (moneyOutForecast[k] ?? 0) + perPeriod
-          }
+        for (const key of periodKeys) {
+          // Only count periods that are in the future (or current). Past periods use actuals.
+          // periodKey for monthly is "YYYY-MM", weekly is the start-of-week date "YYYY-MM-DD".
+          const isFutureOrCurrent = cashflowView === "monthly"
+            ? key >= today.slice(0, 7)
+            : key >= today
+          if (!isFutureOrCurrent) continue
+          // Approximate weeks per period: monthly ≈ 52/12, weekly = 1
+          const weeksInPeriod = cashflowView === "monthly" ? 52 / 12 : 1
+          moneyOutForecast[key] = weeklyPayroll * weeksInPeriod
         }
 
         // --- Money OUT (materials/costs): by effective date ---
