@@ -2208,13 +2208,47 @@ export default function Home() {
   }
 
   async function deleteCellSegment() {
-    if (!cellSegmentForm.segmentId) return
+    if (!cellSegmentForm.segmentId) {
+      console.log("[deleteCellSegment] No segmentId in form, bailing")
+      showToast("No segment to delete")
+      return
+    }
     const confirmed = window.confirm("Delete this segment?")
     if (!confirmed) return
 
-    await supabase.from("segments").delete().eq("id", cellSegmentForm.segmentId)
-    await loadData()
-    closeCellEditor()
+    const segId = cellSegmentForm.segmentId
+    console.log("[deleteCellSegment] Deleting segment", segId)
+
+    try {
+      // Clear any references first so the FK doesn't block the delete
+      const unlinkMilestones = await supabase.from("milestones").update({ segment_id: null }).eq("segment_id", segId)
+      console.log("[deleteCellSegment] Unlink milestones:", unlinkMilestones)
+      if (unlinkMilestones.error) {
+        showToast(`Error unlinking milestones: ${unlinkMilestones.error.message}`)
+        return
+      }
+
+      const unlinkExtras = await supabase.from("extra_items").update({ segment_id: null }).eq("segment_id", segId)
+      console.log("[deleteCellSegment] Unlink extras:", unlinkExtras)
+      if (unlinkExtras.error && !/column .*segment_id.* does not exist/i.test(unlinkExtras.error.message)) {
+        showToast(`Error unlinking extras: ${unlinkExtras.error.message}`)
+        return
+      }
+
+      const result = await supabase.from("segments").delete().eq("id", segId)
+      console.log("[deleteCellSegment] Delete result:", result)
+      if (result.error) {
+        showToast(`Error deleting segment: ${result.error.message}`)
+        return
+      }
+
+      await loadData()
+      closeCellEditor()
+      showToast("Segment deleted")
+    } catch (err: any) {
+      console.error("[deleteCellSegment] Exception:", err)
+      showToast(`Exception: ${err?.message ?? String(err)}`)
+    }
   }
 
   async function saveCellLabel() {
