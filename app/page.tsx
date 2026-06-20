@@ -1865,14 +1865,16 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
       <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 1280, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Header */}
-        <div style={{ padding: "20px 28px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+        <div style={{ padding: "16px 24px", borderBottom: "1px solid #252f45" }}>
+          {/* Action row — always on top so buttons are visible even on narrow/zoomed views */}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 10 }}>
+            <button type="button" onClick={() => { setShowAdd(true); setEditingId(null) }} style={{ padding: "10px 18px", borderRadius: 8, border: "1.5px solid #0891b2", background: "#0891b2", color: "white", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>+ New expense</button>
+            <button type="button" onClick={onClose} style={{ padding: "10px 18px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>Close</button>
+          </div>
+          {/* Title row */}
+          <div>
             <div style={{ fontSize: 22, fontWeight: 900, color: "#f0f4ff" }}>🧾 Expenses</div>
             <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>Reimbursements & supplier invoices · oncharge to clients via extras</div>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            <button type="button" onClick={() => { setShowAdd(true); setEditingId(null) }} style={{ padding: "10px 16px", borderRadius: 8, border: "1.5px solid #0891b2", background: "#0891b2", color: "white", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>+ New expense</button>
-            <button type="button" onClick={onClose} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>Close</button>
           </div>
         </div>
 
