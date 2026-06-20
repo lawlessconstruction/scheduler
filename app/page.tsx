@@ -1708,7 +1708,8 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
   initialProjectId: string | null
 }) {
   const [expenses, setExpenses] = useState<Expense[]>([])
-  const [extras, setExtras] = useState<{ id: string; project_id: string | null; title: string; locked_at: string | null }[]>([])
+  const [extras, setExtras] = useState<{ id: string; project_id: string | null; title: string; locked_at: string | null; status: string | null }[]>([])
+  const [extraItems, setExtraItems] = useState<{ id: string; extra_id: string }[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -1719,12 +1720,14 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const [expRes, exRes] = await Promise.all([
+      const [expRes, exRes, itemRes] = await Promise.all([
         supabase.from("expenses").select("*").order("date", { ascending: false }),
-        supabase.from("extras").select("id, project_id, title, locked_at"),
+        supabase.from("extras").select("id, project_id, title, locked_at, status"),
+        supabase.from("extra_items").select("id, extra_id"),
       ])
       setExpenses(((expRes.data ?? []) as Expense[]))
       setExtras((exRes.data ?? []) as any[])
+      setExtraItems((itemRes.data ?? []) as any[])
       setLoading(false)
     }
     load()
@@ -1736,8 +1739,22 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
   }
 
   async function refreshExtras() {
-    const { data } = await supabase.from("extras").select("id, project_id, title, locked_at")
-    setExtras((data ?? []) as any[])
+    const [exRes, itemRes] = await Promise.all([
+      supabase.from("extras").select("id, project_id, title, locked_at, status"),
+      supabase.from("extra_items").select("id, extra_id"),
+    ])
+    setExtras((exRes.data ?? []) as any[])
+    setExtraItems((itemRes.data ?? []) as any[])
+  }
+
+  // Helper: is this expense actually invoiced? (its parent extra has been billed)
+  function isExpenseInvoiced(exp: Expense): boolean {
+    if (!exp.extra_item_id) return false
+    const item = extraItems.find(i => i.id === exp.extra_item_id)
+    if (!item) return false
+    const extra = extras.find(x => x.id === item.extra_id)
+    if (!extra) return false
+    return extra.status === "invoiced" || extra.status === "paid"
   }
 
   async function createExpense(form: Partial<Expense>) {
@@ -1809,8 +1826,9 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
       sort_order: 999,
     }).select().single()
     if (itemErr || !item) { alert(`Error adding line: ${itemErr?.message}`); return }
-    // Mark the expense as routed
-    await updateExpense(exp.id, { extra_item_id: (item as any).id, invoiced_at: new Date().toISOString() })
+    // Mark the expense as routed — but NOT yet invoiced.
+    // invoiced_at gets set later when the extra is actually marked invoiced.
+    await updateExpense(exp.id, { extra_item_id: (item as any).id })
   }
 
   async function unrouteFromExtra(exp: Expense) {
@@ -1841,10 +1859,10 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
       if (e.reimbursed_at) return false
     } else if (statusFilter === "pending_invoice") {
       if (!e.oncharge) return false
-      if (e.invoiced_at) return false
+      if (isExpenseInvoiced(e)) return false
     } else if (statusFilter === "done") {
       const reimbursedOk = e.source !== "reimbursement" || e.reimbursed_at
-      const invoicedOk = !e.oncharge || e.invoiced_at
+      const invoicedOk = !e.oncharge || isExpenseInvoiced(e)
       if (!reimbursedOk || !invoicedOk) return false
     }
     return true
@@ -1852,7 +1870,8 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
 
   // Summary stats
   const totalPendingReimburse = expenses.filter(e => e.source === "reimbursement" && !e.reimbursed_at).reduce((s, e) => s + e.amount, 0)
-  const totalPendingInvoice = expenses.filter(e => e.oncharge && !e.invoiced_at).reduce((s, e) => s + e.amount, 0)
+  // "To invoice clients" = any oncharge expense whose parent extra hasn't been marked invoiced/paid yet.
+  const totalPendingInvoice = expenses.filter(e => e.oncharge && !isExpenseInvoiced(e)).reduce((s, e) => s + e.amount, 0)
 
   const fs: React.CSSProperties = {
     width: "100%", padding: "10px 12px", borderRadius: 8,
@@ -1944,7 +1963,7 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
             const isEditing = editingId === exp.id
             // Status pip
             const reimbursePending = exp.source === "reimbursement" && !exp.reimbursed_at
-            const invoicePending = exp.oncharge && !exp.invoiced_at
+            const invoicePending = exp.oncharge && !isExpenseInvoiced(exp)
             const allDone = !reimbursePending && !invoicePending
             const pipColor = allDone ? "#4ade80" : invoicePending ? "#67e8f9" : reimbursePending ? "#fbbf24" : "#94a3b8"
             return (
@@ -2009,7 +2028,7 @@ function ExpenseForm({ mode, existing, workers, projects, extras, defaultProject
   existing?: Expense
   workers: Worker[]
   projects: { id: string; name: string; archived: boolean | null }[]
-  extras: { id: string; project_id: string | null; title: string; locked_at: string | null }[]
+  extras: { id: string; project_id: string | null; title: string; locked_at: string | null; status: string | null }[]
   defaultProjectId: string | null
   uploadReceipt: (file: File) => Promise<string | null>
   getReceiptUrl?: (path: string) => Promise<string>
