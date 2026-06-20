@@ -36,6 +36,26 @@ type ExtraItem = {
   margin_percent: number
   sort_order: number
   locked_rate: number | null
+  source_expense_id: string | null
+}
+
+type Expense = {
+  id: string
+  created_at: string
+  project_id: string | null
+  source: string                       // 'reimbursement' or 'supplier_invoice'
+  worker_id: string | null
+  supplier: string | null
+  description: string | null
+  amount: number
+  date: string
+  receipt_url: string | null
+  oncharge: boolean
+  oncharge_margin_percent: number | null
+  reimbursed_at: string | null
+  invoiced_at: string | null
+  extra_item_id: string | null
+  notes: string | null
 }
 
 type EstimateTemplate = {
@@ -1677,6 +1697,523 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
   )
 }
 
+// =================================================================
+// ExpensesModal — track reimbursements & supplier invoices,
+// flag onchargeable ones, and route them to extras for invoicing.
+// =================================================================
+function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
+  onClose: () => void
+  projects: { id: string; name: string; archived: boolean | null }[]
+  workers: Worker[]
+  initialProjectId: string | null
+}) {
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [extras, setExtras] = useState<{ id: string; project_id: string | null; title: string; locked_at: string | null }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [showAdd, setShowAdd] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending_reimburse" | "pending_invoice" | "done">("all")
+  const [projectFilter, setProjectFilter] = useState<string>(initialProjectId ?? "all")
+  const [sourceFilter, setSourceFilter] = useState<"all" | "reimbursement" | "supplier_invoice">("all")
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true)
+      const [expRes, exRes] = await Promise.all([
+        supabase.from("expenses").select("*").order("date", { ascending: false }),
+        supabase.from("extras").select("id, project_id, title, locked_at"),
+      ])
+      setExpenses(((expRes.data ?? []) as Expense[]))
+      setExtras((exRes.data ?? []) as any[])
+      setLoading(false)
+    }
+    load()
+  }, [])
+
+  async function refreshExpenses() {
+    const { data } = await supabase.from("expenses").select("*").order("date", { ascending: false })
+    setExpenses((data ?? []) as Expense[])
+  }
+
+  async function refreshExtras() {
+    const { data } = await supabase.from("extras").select("id, project_id, title, locked_at")
+    setExtras((data ?? []) as any[])
+  }
+
+  async function createExpense(form: Partial<Expense>) {
+    const insert = {
+      project_id: form.project_id ?? null,
+      source: form.source ?? "reimbursement",
+      worker_id: form.worker_id ?? null,
+      supplier: form.supplier ?? null,
+      description: form.description ?? null,
+      amount: form.amount ?? 0,
+      date: form.date ?? new Date().toISOString().slice(0, 10),
+      receipt_url: form.receipt_url ?? null,
+      oncharge: form.oncharge ?? false,
+      oncharge_margin_percent: form.oncharge_margin_percent ?? 0,
+      notes: form.notes ?? null,
+    }
+    const { data, error } = await supabase.from("expenses").insert(insert).select().single()
+    if (error) { alert(`Error: ${error.message}`); return null }
+    await refreshExpenses()
+    return data as Expense
+  }
+
+  async function updateExpense(id: string, patch: Partial<Expense>) {
+    const { error } = await supabase.from("expenses").update(patch).eq("id", id)
+    if (error) { alert(`Error: ${error.message}`); return }
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e))
+  }
+
+  async function deleteExpense(id: string) {
+    if (!window.confirm("Delete this expense?")) return
+    const exp = expenses.find(e => e.id === id)
+    // If routed to an extra, unlink the extra_item too
+    if (exp?.extra_item_id) {
+      await supabase.from("extra_items").delete().eq("id", exp.extra_item_id)
+    }
+    const { error } = await supabase.from("expenses").delete().eq("id", id)
+    if (error) { alert(`Error: ${error.message}`); return }
+    setExpenses(prev => prev.filter(e => e.id !== id))
+  }
+
+  async function toggleReimbursed(exp: Expense) {
+    const now = new Date().toISOString()
+    await updateExpense(exp.id, { reimbursed_at: exp.reimbursed_at ? null : now })
+  }
+
+  async function routeToExtra(exp: Expense, extraId: string | "new") {
+    let targetExtraId: string
+    if (extraId === "new") {
+      // Create a new extra on this project
+      if (!exp.project_id) { alert("Pick a project first"); return }
+      const { data: newExtra, error: createErr } = await supabase.from("extras").insert({
+        project_id: exp.project_id, title: "Onchargeable expenses", status: "draft",
+      }).select().single()
+      if (createErr || !newExtra) { alert(`Error creating extra: ${createErr?.message}`); return }
+      await refreshExtras()
+      targetExtraId = (newExtra as any).id
+    } else {
+      targetExtraId = extraId
+    }
+    // Add a line item to the extra
+    const lineDescription = [exp.supplier, exp.description].filter(Boolean).join(" — ") || "Onchargeable expense"
+    const { data: item, error: itemErr } = await supabase.from("extra_items").insert({
+      extra_id: targetExtraId,
+      description: lineDescription,
+      charge_type: "material",
+      unit_cost: exp.amount,
+      margin_percent: exp.oncharge_margin_percent ?? 0,
+      source_expense_id: exp.id,
+      sort_order: 999,
+    }).select().single()
+    if (itemErr || !item) { alert(`Error adding line: ${itemErr?.message}`); return }
+    // Mark the expense as routed
+    await updateExpense(exp.id, { extra_item_id: (item as any).id, invoiced_at: new Date().toISOString() })
+  }
+
+  async function unrouteFromExtra(exp: Expense) {
+    if (!exp.extra_item_id) return
+    if (!window.confirm("Remove this expense from its extra? The line item will be deleted.")) return
+    await supabase.from("extra_items").delete().eq("id", exp.extra_item_id)
+    await updateExpense(exp.id, { extra_item_id: null, invoiced_at: null })
+  }
+
+  async function uploadReceipt(file: File): Promise<string | null> {
+    const path = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`
+    const { error } = await supabase.storage.from("receipts").upload(path, file)
+    if (error) { alert(`Receipt upload failed: ${error.message}`); return null }
+    return path
+  }
+
+  async function getReceiptUrl(path: string): Promise<string> {
+    const { data } = await supabase.storage.from("receipts").createSignedUrl(path, 60 * 60)
+    return data?.signedUrl ?? ""
+  }
+
+  // ---- Filtered view ----
+  const filtered = expenses.filter(e => {
+    if (projectFilter !== "all" && e.project_id !== projectFilter) return false
+    if (sourceFilter !== "all" && e.source !== sourceFilter) return false
+    if (statusFilter === "pending_reimburse") {
+      if (e.source !== "reimbursement") return false
+      if (e.reimbursed_at) return false
+    } else if (statusFilter === "pending_invoice") {
+      if (!e.oncharge) return false
+      if (e.invoiced_at) return false
+    } else if (statusFilter === "done") {
+      const reimbursedOk = e.source !== "reimbursement" || e.reimbursed_at
+      const invoicedOk = !e.oncharge || e.invoiced_at
+      if (!reimbursedOk || !invoicedOk) return false
+    }
+    return true
+  })
+
+  // Summary stats
+  const totalPendingReimburse = expenses.filter(e => e.source === "reimbursement" && !e.reimbursed_at).reduce((s, e) => s + e.amount, 0)
+  const totalPendingInvoice = expenses.filter(e => e.oncharge && !e.invoiced_at).reduce((s, e) => s + e.amount, 0)
+
+  const fs: React.CSSProperties = {
+    width: "100%", padding: "10px 12px", borderRadius: 8,
+    background: "#0f1520", color: "#f0f4ff", border: "1px solid #2e3a58",
+    outline: "none", boxSizing: "border-box", fontSize: 14,
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 1280, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 28px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: "#f0f4ff" }}>🧾 Expenses</div>
+            <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>Reimbursements & supplier invoices · oncharge to clients via extras</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={() => { setShowAdd(true); setEditingId(null) }} style={{ padding: "10px 16px", borderRadius: 8, border: "1.5px solid #0891b2", background: "#0f2030", color: "#67e8f9", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ New expense</button>
+            <button type="button" onClick={onClose} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
+          </div>
+        </div>
+
+        {/* Stats strip */}
+        <div style={{ padding: "12px 28px", borderBottom: "1px solid #252f45", display: "flex", gap: 24, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>Owed to workers</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: totalPendingReimburse > 0 ? "#fbbf24" : "#94a3b8" }}>${totalPendingReimburse.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>To invoice clients</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: totalPendingInvoice > 0 ? "#67e8f9" : "#94a3b8" }}>${totalPendingInvoice.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</div>
+          </div>
+          <div style={{ flex: 1 }} />
+        </div>
+
+        {/* Filters */}
+        <div style={{ padding: "12px 28px", borderBottom: "1px solid #252f45", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} style={{ ...fs, width: "auto" }}>
+            <option value="all">All statuses</option>
+            <option value="pending_reimburse">Pending reimbursement</option>
+            <option value="pending_invoice">Pending invoice</option>
+            <option value="done">Done</option>
+          </select>
+          <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value as any)} style={{ ...fs, width: "auto" }}>
+            <option value="all">All sources</option>
+            <option value="reimbursement">Reimbursement</option>
+            <option value="supplier_invoice">Supplier invoice</option>
+          </select>
+          <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} style={{ ...fs, width: "auto" }}>
+            <option value="all">All projects</option>
+            {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <div style={{ flex: 1 }} />
+          <div style={{ fontSize: 12, color: "#6b7a9a" }}>{filtered.length} of {expenses.length}</div>
+        </div>
+
+        {/* Add form */}
+        {showAdd && (
+          <ExpenseForm
+            mode="create"
+            workers={workers}
+            projects={projects}
+            extras={extras}
+            defaultProjectId={projectFilter !== "all" ? projectFilter : null}
+            uploadReceipt={uploadReceipt}
+            onCancel={() => setShowAdd(false)}
+            onSave={async (form, routing) => {
+              const created = await createExpense(form)
+              if (created && form.oncharge && routing) {
+                await routeToExtra(created, routing)
+              }
+              setShowAdd(false)
+            }}
+          />
+        )}
+
+        {/* List */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+          {loading && <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a" }}>Loading…</div>}
+          {!loading && filtered.length === 0 && (
+            <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a" }}>No expenses match. Try changing filters or click + New expense.</div>
+          )}
+          {!loading && filtered.map(exp => {
+            const proj = projects.find(p => p.id === exp.project_id)
+            const worker = workers.find(w => w.id === exp.worker_id)
+            const isEditing = editingId === exp.id
+            // Status pip
+            const reimbursePending = exp.source === "reimbursement" && !exp.reimbursed_at
+            const invoicePending = exp.oncharge && !exp.invoiced_at
+            const allDone = !reimbursePending && !invoicePending
+            const pipColor = allDone ? "#4ade80" : invoicePending ? "#67e8f9" : reimbursePending ? "#fbbf24" : "#94a3b8"
+            return (
+              <div key={exp.id} style={{ padding: "12px 28px", borderBottom: "1px solid #1a2035" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }} onClick={() => setEditingId(isEditing ? null : exp.id)}>
+                  <div style={{ width: 10, height: 10, borderRadius: 999, background: pipColor, flexShrink: 0 }} title={allDone ? "Done" : reimbursePending && invoicePending ? "Reimburse + invoice pending" : reimbursePending ? "Reimbursement pending" : "Invoice pending"} />
+                  <div style={{ minWidth: 90, fontSize: 12, color: "#94a3b8" }}>{exp.date}</div>
+                  <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "#f0f4ff" }}>
+                    {exp.source === "reimbursement" ? (worker?.name ?? "Worker") : (exp.supplier ?? "Supplier")}
+                    {exp.description ? <span style={{ fontWeight: 400, color: "#94a3b8" }}> — {exp.description}</span> : null}
+                  </div>
+                  <div style={{ minWidth: 140, fontSize: 12, color: "#94a3b8" }}>{proj?.name ?? <span style={{ color: "#6b7a9a", fontStyle: "italic" }}>No project</span>}</div>
+                  <div style={{ minWidth: 90, fontSize: 14, fontWeight: 800, color: "#f0f4ff", textAlign: "right" }}>${exp.amount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</div>
+                  <div style={{ minWidth: 80, fontSize: 11, color: exp.oncharge ? "#67e8f9" : "#6b7a9a", fontWeight: 700, textAlign: "right" }}>
+                    {exp.oncharge ? "Oncharge" : "Absorbed"}
+                  </div>
+                  <div style={{ minWidth: 24, textAlign: "center", fontSize: 14, color: "#6b7a9a" }}>{isEditing ? "▾" : "▸"}</div>
+                </div>
+
+                {isEditing && (
+                  <ExpenseForm
+                    mode="edit"
+                    existing={exp}
+                    workers={workers}
+                    projects={projects}
+                    extras={extras}
+                    defaultProjectId={exp.project_id}
+                    uploadReceipt={uploadReceipt}
+                    getReceiptUrl={getReceiptUrl}
+                    onCancel={() => setEditingId(null)}
+                    onSave={async (patch, routing) => {
+                      await updateExpense(exp.id, patch)
+                      // Routing changes: if oncharge turned on and no extra_item yet, route. If oncharge turned off and there is an extra_item, unroute.
+                      const willOncharge = patch.oncharge ?? exp.oncharge
+                      const currentlyRouted = !!exp.extra_item_id
+                      if (willOncharge && !currentlyRouted && routing) {
+                        await routeToExtra({ ...exp, ...patch }, routing)
+                      } else if (!willOncharge && currentlyRouted) {
+                        await unrouteFromExtra(exp)
+                      }
+                      setEditingId(null)
+                    }}
+                    onDelete={() => deleteExpense(exp.id)}
+                    onToggleReimbursed={() => toggleReimbursed(exp)}
+                    onUnroute={exp.extra_item_id ? () => unrouteFromExtra(exp) : undefined}
+                  />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// =================================================================
+// ExpenseForm — used for both create and edit, inline.
+// =================================================================
+function ExpenseForm({ mode, existing, workers, projects, extras, defaultProjectId, uploadReceipt, getReceiptUrl, onCancel, onSave, onDelete, onToggleReimbursed, onUnroute }: {
+  mode: "create" | "edit"
+  existing?: Expense
+  workers: Worker[]
+  projects: { id: string; name: string; archived: boolean | null }[]
+  extras: { id: string; project_id: string | null; title: string; locked_at: string | null }[]
+  defaultProjectId: string | null
+  uploadReceipt: (file: File) => Promise<string | null>
+  getReceiptUrl?: (path: string) => Promise<string>
+  onCancel: () => void
+  onSave: (form: Partial<Expense>, routingExtraId?: string | "new") => Promise<void>
+  onDelete?: () => void
+  onToggleReimbursed?: () => void
+  onUnroute?: () => void
+}) {
+  const [source, setSource] = useState(existing?.source ?? "reimbursement")
+  const [projectId, setProjectId] = useState(existing?.project_id ?? defaultProjectId ?? "")
+  const [workerId, setWorkerId] = useState(existing?.worker_id ?? "")
+  const [supplier, setSupplier] = useState(existing?.supplier ?? "")
+  const [description, setDescription] = useState(existing?.description ?? "")
+  const [amount, setAmount] = useState<string>(existing ? String(existing.amount) : "")
+  const [date, setDate] = useState(existing?.date ?? new Date().toISOString().slice(0, 10))
+  const [receiptUrl, setReceiptUrl] = useState(existing?.receipt_url ?? "")
+  const [oncharge, setOncharge] = useState(existing?.oncharge ?? false)
+  const [marginPct, setMarginPct] = useState<string>(existing ? String(existing.oncharge_margin_percent ?? 0) : "0")
+  const [notes, setNotes] = useState(existing?.notes ?? "")
+  const [uploading, setUploading] = useState(false)
+  const [extraTargetId, setExtraTargetId] = useState<string | "new" | "">("")
+  const [signedReceiptUrl, setSignedReceiptUrl] = useState<string>("")
+
+  // Load signed URL for receipt preview
+  useEffect(() => {
+    if (receiptUrl && getReceiptUrl) {
+      getReceiptUrl(receiptUrl).then(setSignedReceiptUrl)
+    }
+  }, [receiptUrl, getReceiptUrl])
+
+  // Project extras for routing dropdown (unlocked only)
+  const projectExtras = extras.filter(e => e.project_id === projectId && !e.locked_at)
+  // Default the extra-target to the first unlocked extra (or "new") when oncharge is freshly turned on
+  useEffect(() => {
+    if (oncharge && mode === "create" && !extraTargetId) {
+      setExtraTargetId(projectExtras[0]?.id ?? "new")
+    }
+  }, [oncharge, projectId])
+
+  // Required-field check
+  const canSave = (!!projectId || source === "supplier_invoice") && !!amount && Number(amount) > 0 && !!date && (source === "reimbursement" ? !!workerId : !!supplier)
+
+  async function handleSave() {
+    const patch: Partial<Expense> = {
+      source,
+      project_id: projectId || null,
+      worker_id: source === "reimbursement" ? (workerId || null) : null,
+      supplier: source === "supplier_invoice" ? supplier : null,
+      description: description || null,
+      amount: Number(amount),
+      date,
+      receipt_url: receiptUrl || null,
+      oncharge,
+      oncharge_margin_percent: oncharge ? Number(marginPct) || 0 : 0,
+      notes: notes || null,
+    }
+    // Only pass routing when create or when toggling oncharge ON
+    const routing = oncharge && (mode === "create" || (mode === "edit" && !existing?.extra_item_id))
+      ? (extraTargetId === "" ? "new" : extraTargetId)
+      : undefined
+    await onSave(patch, routing as any)
+  }
+
+  const fs: React.CSSProperties = {
+    width: "100%", padding: "8px 10px", borderRadius: 6,
+    background: "#0f1520", color: "#f0f4ff", border: "1px solid #2e3a58",
+    outline: "none", boxSizing: "border-box", fontSize: 13,
+  }
+
+  return (
+    <div style={{ marginTop: mode === "edit" ? 12 : 0, padding: 16, background: "#141a28", border: "1px solid #2e3650", borderRadius: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Source</div>
+          <select value={source} onChange={e => setSource(e.target.value)} style={fs}>
+            <option value="reimbursement">Worker reimbursement</option>
+            <option value="supplier_invoice">Supplier invoice</option>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Date</div>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={fs} />
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Amount (inc GST)</div>
+          <input type="number" step="0.01" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} style={fs} />
+        </div>
+        <div>
+          <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Project</div>
+          <select value={projectId} onChange={e => setProjectId(e.target.value)} style={fs}>
+            <option value="">— No project —</option>
+            {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10, marginBottom: 10 }}>
+        {source === "reimbursement" ? (
+          <div>
+            <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Worker</div>
+            <select value={workerId} onChange={e => setWorkerId(e.target.value)} style={fs}>
+              <option value="">— Choose worker —</option>
+              {workers.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+          </div>
+        ) : (
+          <div>
+            <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Supplier</div>
+            <input value={supplier} onChange={e => setSupplier(e.target.value)} placeholder="e.g. Bunnings" style={fs} />
+          </div>
+        )}
+        <div>
+          <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Description</div>
+          <input value={description} onChange={e => setDescription(e.target.value)} placeholder="What was bought?" style={fs} />
+        </div>
+      </div>
+
+      {/* Receipt upload */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Receipt</div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input type="file" accept="image/*,application/pdf" onChange={async (e) => {
+            const file = e.target.files?.[0]
+            if (!file) return
+            setUploading(true)
+            const path = await uploadReceipt(file)
+            if (path) setReceiptUrl(path)
+            setUploading(false)
+          }} style={{ ...fs, padding: 6, width: "auto" }} />
+          {uploading && <span style={{ fontSize: 12, color: "#67e8f9" }}>Uploading…</span>}
+          {receiptUrl && !uploading && (
+            <span style={{ fontSize: 12, color: "#4ade80" }}>
+              ✓ Receipt attached
+              {signedReceiptUrl && <a href={signedReceiptUrl} target="_blank" rel="noreferrer" style={{ color: "#67e8f9", marginLeft: 8 }}>View</a>}
+              <button type="button" onClick={() => setReceiptUrl("")} style={{ marginLeft: 8, background: "transparent", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12 }}>Remove</button>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Oncharge */}
+      <div style={{ padding: 12, background: oncharge ? "#0f2030" : "#0a1018", border: `1px solid ${oncharge ? "#0891b2" : "#252f45"}`, borderRadius: 8, marginBottom: 10 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          <input type="checkbox" checked={oncharge} onChange={e => setOncharge(e.target.checked)} />
+          <span style={{ fontWeight: 700, color: oncharge ? "#67e8f9" : "#94a3b8", fontSize: 13 }}>
+            Oncharge this to the client (will be added as a line on an extra)
+          </span>
+        </label>
+        {oncharge && (
+          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Margin %</div>
+              <input type="number" step="0.1" value={marginPct} onChange={e => setMarginPct(e.target.value)} style={fs} />
+              {Number(marginPct) === 0 && (
+                <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 4 }}>⚠ 0% margin — you're absorbing labour cost of pickup/delivery</div>
+              )}
+            </div>
+            {/* Routing dropdown — only show when not already routed */}
+            {(mode === "create" || !existing?.extra_item_id) && (
+              <div>
+                <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Add to extra</div>
+                <select value={extraTargetId} onChange={e => setExtraTargetId(e.target.value as any)} style={fs}>
+                  <option value="">— Pick one —</option>
+                  {projectExtras.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
+                  <option value="new">+ Create new extra ("Onchargeable expenses")</option>
+                </select>
+                {!projectId && <div style={{ fontSize: 11, color: "#f87171", marginTop: 4 }}>Pick a project first</div>}
+              </div>
+            )}
+            {mode === "edit" && existing?.extra_item_id && (
+              <div style={{ fontSize: 12, color: "#67e8f9", alignSelf: "end", paddingBottom: 8 }}>
+                ✓ Already added to an extra.{" "}
+                {onUnroute && <button type="button" onClick={onUnroute} style={{ background: "transparent", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12, textDecoration: "underline" }}>Remove</button>}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Notes */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Notes</div>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...fs, resize: "vertical", fontFamily: "inherit" }} placeholder="Optional..." />
+      </div>
+
+      {/* Bottom actions */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" onClick={handleSave} disabled={!canSave} style={{ padding: "8px 16px", borderRadius: 8, border: "1.5px solid #0891b2", background: canSave ? "#0891b2" : "#1a2a35", color: canSave ? "white" : "#6b7a9a", fontWeight: 700, fontSize: 13, cursor: canSave ? "pointer" : "not-allowed" }}>
+          {mode === "create" ? "Create expense" : "Save changes"}
+        </button>
+        <button type="button" onClick={onCancel} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#94a3b8", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+        {mode === "edit" && existing?.source === "reimbursement" && onToggleReimbursed && (
+          <button type="button" onClick={onToggleReimbursed} style={{ padding: "8px 16px", borderRadius: 8, border: `1.5px solid ${existing.reimbursed_at ? "#4ade80" : "#fbbf24"}`, background: existing.reimbursed_at ? "#14332a" : "#2a200a", color: existing.reimbursed_at ? "#4ade80" : "#fbbf24", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            {existing.reimbursed_at ? `✓ Reimbursed ${existing.reimbursed_at.slice(0, 10)}` : "Mark as reimbursed"}
+          </button>
+        )}
+        <div style={{ flex: 1 }} />
+        {mode === "edit" && onDelete && (
+          <button type="button" onClick={onDelete} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #7f1d1d", background: "#1a0a0a", color: "#f87171", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Delete</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function LoginScreen({ onLogin }: { onLogin: (user: { id: string; name: string; app_role: string; crew_id: string | null }) => void }) {
   const [email, setEmail] = useState("")
   const [pin, setPin] = useState("")
@@ -1761,6 +2298,7 @@ export default function Home() {
   const [estimateItems, setEstimateItems] = useState<EstimateItem[]>([])
   const [showEstimatesModal, setShowEstimatesModal] = useState(false)
   const [showExtrasModal, setShowExtrasModal] = useState(false)
+  const [showExpensesModal, setShowExpensesModal] = useState(false)
   const [quickAddProject, setQuickAddProject] = useState(false)
   const [quickProjectForm, setQuickProjectForm] = useState({ name: "", client_id: "", client: "" })
   const [activeEstimateId, setActiveEstimateId] = useState<string | null>(null)
@@ -3294,6 +3832,10 @@ Payment terms:
             {canSeeAll && <button type="button" onClick={() => setShowExtrasModal(true)} style={{ ...pillBase, background: "#1a1a3e", border: "1.5px solid #7c3aed", color: "#c4b5fd" }}>
               <span style={{ ...iconStyle, background: "#7c3aed22" }}>⚡</span>
               Extras
+            </button>}
+            {canSeeAll && <button type="button" onClick={() => setShowExpensesModal(true)} style={{ ...pillBase, background: "#0f1f2e", border: "1.5px solid #0891b2", color: "#67e8f9" }}>
+              <span style={{ ...iconStyle, background: "#0891b222" }}>🧾</span>
+              Expenses
             </button>}
             {canSeeAll && <button type="button" onClick={() => setShowEstimatesModal(true)} style={pillAmber}>
               <span style={{ ...iconStyle, background: "#c2410c22" }}>📋</span>
@@ -6701,6 +7243,15 @@ Payment terms:
           projects={projects}
           workers={workers}
           classificationRates={classificationRates}
+        />
+      )}
+
+      {showExpensesModal && (
+        <ExpensesModal
+          onClose={() => setShowExpensesModal(false)}
+          projects={projects}
+          workers={workers}
+          initialProjectId={null}
         />
       )}
 
