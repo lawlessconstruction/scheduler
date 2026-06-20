@@ -1866,13 +1866,13 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
 
         {/* Header */}
         <div style={{ padding: "20px 28px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <div>
+          <div style={{ flex: "1 1 auto", minWidth: 0 }}>
             <div style={{ fontSize: 22, fontWeight: 900, color: "#f0f4ff" }}>🧾 Expenses</div>
             <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>Reimbursements & supplier invoices · oncharge to clients via extras</div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" onClick={() => { setShowAdd(true); setEditingId(null) }} style={{ padding: "10px 16px", borderRadius: 8, border: "1.5px solid #0891b2", background: "#0f2030", color: "#67e8f9", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>+ New expense</button>
-            <button type="button" onClick={onClose} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button type="button" onClick={() => { setShowAdd(true); setEditingId(null) }} style={{ padding: "10px 16px", borderRadius: 8, border: "1.5px solid #0891b2", background: "#0891b2", color: "white", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>+ New expense</button>
+            <button type="button" onClick={onClose} style={{ padding: "10px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>Close</button>
           </div>
         </div>
 
