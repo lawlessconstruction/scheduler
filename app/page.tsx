@@ -1969,7 +1969,7 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
             return (
               <div key={exp.id} style={{ padding: "12px 28px", borderBottom: "1px solid #1a2035" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }} onClick={() => setEditingId(isEditing ? null : exp.id)}>
-                  <div style={{ width: 10, height: 10, borderRadius: 999, background: pipColor, flexShrink: 0 }} title={allDone ? "Done" : reimbursePending && invoicePending ? "Reimburse + invoice pending" : reimbursePending ? "Reimbursement pending" : "Invoice pending"} />
+                  <div style={{ width: 10, height: 10, borderRadius: 999, background: pipColor, flexShrink: 0 }} />
                   <div style={{ minWidth: 90, fontSize: 12, color: "#94a3b8" }}>{exp.date}</div>
                   <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "#f0f4ff" }}>
                     {exp.source === "reimbursement" ? (worker?.name ?? "Worker") : (exp.supplier ?? "Supplier")}
@@ -1977,14 +1977,67 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
                   </div>
                   <div style={{ minWidth: 140, fontSize: 12, color: "#94a3b8" }}>{proj?.name ?? <span style={{ color: "#6b7a9a", fontStyle: "italic" }}>No project</span>}</div>
                   <div style={{ minWidth: 90, fontSize: 14, fontWeight: 800, color: "#f0f4ff", textAlign: "right" }}>${exp.amount.toLocaleString("en-AU", { minimumFractionDigits: 2 })}</div>
-                  <div style={{ minWidth: 80, fontSize: 11, color: exp.oncharge ? "#67e8f9" : "#6b7a9a", fontWeight: 700, textAlign: "right" }}>
-                    {exp.oncharge ? "Oncharge" : "Absorbed"}
+                  {/* Status pills */}
+                  <div style={{ display: "flex", gap: 4, minWidth: 200, justifyContent: "flex-end" }}>
+                    {exp.source === "reimbursement" && (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: reimbursePending ? "#3a2a0a" : "#0f2a1a", color: reimbursePending ? "#fbbf24" : "#4ade80", border: `1px solid ${reimbursePending ? "#854d0e" : "#14532d"}` }}>
+                        {reimbursePending ? "💰 To pay back" : "✓ Paid back"}
+                      </span>
+                    )}
+                    {exp.oncharge ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: invoicePending ? "#0f2a35" : "#0f2a1a", color: invoicePending ? "#67e8f9" : "#4ade80", border: `1px solid ${invoicePending ? "#0e7490" : "#14532d"}` }}>
+                        {invoicePending ? "🧾 To invoice" : "✓ Invoiced"}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: "#1a1a1a", color: "#6b7a9a", border: "1px solid #2e3650" }}>
+                        Absorbed
+                      </span>
+                    )}
                   </div>
                   <div style={{ minWidth: 24, textAlign: "center", fontSize: 14, color: "#6b7a9a" }}>{isEditing ? "▾" : "▸"}</div>
                 </div>
 
-                {isEditing && (
-                  <ExpenseForm
+                {isEditing && (() => {
+                  // Resolve the linked extra (if routed) for display
+                  const linkedItem = exp.extra_item_id ? extraItems.find(i => i.id === exp.extra_item_id) : null
+                  const linkedExtra = linkedItem ? extras.find(x => x.id === linkedItem.extra_id) : null
+                  const extraStatusLabel = linkedExtra
+                    ? (linkedExtra.status === "invoiced" ? "Invoiced" : linkedExtra.status === "paid" ? "Paid" : linkedExtra.status === "sent" ? "Sent" : "Draft")
+                    : null
+                  const extraStatusColor = linkedExtra
+                    ? (linkedExtra.status === "invoiced" || linkedExtra.status === "paid" ? "#4ade80" : linkedExtra.status === "sent" ? "#60a5fa" : "#fbbf24")
+                    : "#94a3b8"
+                  return (
+                    <>
+                      <div style={{ marginTop: 12, padding: 12, background: "#0a1018", border: "1px solid #1e2a40", borderRadius: 8, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                        <div style={{ fontSize: 10, color: "#6b7a9a", textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Status</div>
+                        {exp.source === "reimbursement" && (
+                          <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                            <span style={{ color: "#6b7a9a" }}>Reimbursement: </span>
+                            <span style={{ color: reimbursePending ? "#fbbf24" : "#4ade80", fontWeight: 700 }}>
+                              {reimbursePending ? "Not paid back yet" : `✓ Paid back ${exp.reimbursed_at?.slice(0, 10)}`}
+                            </span>
+                          </div>
+                        )}
+                        {exp.oncharge ? (
+                          <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                            <span style={{ color: "#6b7a9a" }}>Invoice: </span>
+                            {linkedExtra ? (
+                              <span style={{ color: extraStatusColor, fontWeight: 700 }}>
+                                On extra "{linkedExtra.title}" — {extraStatusLabel}
+                              </span>
+                            ) : (
+                              <span style={{ color: "#67e8f9", fontWeight: 700 }}>Onchargeable, not yet on an extra</span>
+                            )}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                            <span style={{ color: "#6b7a9a" }}>Invoice: </span>
+                            <span style={{ color: "#94a3b8", fontWeight: 700 }}>Absorbed (not billed to client)</span>
+                          </div>
+                        )}
+                      </div>
+                      <ExpenseForm
                     mode="edit"
                     existing={exp}
                     workers={workers}
@@ -2010,7 +2063,9 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
                     onToggleReimbursed={() => toggleReimbursed(exp)}
                     onUnroute={exp.extra_item_id ? () => unrouteFromExtra(exp) : undefined}
                   />
-                )}
+                    </>
+                  )
+                })()}
               </div>
             )
           })}
