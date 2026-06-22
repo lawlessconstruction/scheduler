@@ -1505,7 +1505,9 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                       setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, project_id: newProjectId } : x))
                     }}>
                     <option value="">No project</option>
-                    {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    {projects.filter(p => !p.archived || p.id === activeExtra.project_id).map(p => (
+                      <option key={p.id} value={p.id}>{p.name}{p.archived ? " (archived)" : ""}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -2176,7 +2178,9 @@ function ExpenseForm({ mode, existing, workers, projects, extras, defaultProject
           <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Project</div>
           <select value={projectId} onChange={e => setProjectId(e.target.value)} style={fs}>
             <option value="">— No project —</option>
-            {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {projects.filter(p => !p.archived || p.id === projectId).map(p => (
+              <option key={p.id} value={p.id}>{p.name}{p.archived ? " (archived)" : ""}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -3100,6 +3104,7 @@ export default function Home() {
       name: "New worker",
       crew_id: crewId ?? null,
       sort_order: existing.length,
+      travel_allowance_hourly: 2.5,  // default $2.50/hr — same as existing workers
     })
     await loadData()
   }
@@ -6032,9 +6037,13 @@ Payment terms:
                       if (!base) { showToast("Enter base rate first"); return }
 
                       const ot = Number((base * 2).toFixed(2))
+                      const travel = w.travel_allowance_hourly ?? 2.5  // default $2.50/hr if unset
+                      // Pull standard charge-out rate from the classification_rates table if the worker has a classification set
+                      const classRate = classificationRates.find(r => r.classification === w.classification)
+                      const scr = w.standard_charge_rate ?? classRate?.rate_ex_gst ?? null
 
                       if (isSub && !subWithOncosts) {
-                        await saveWorker({ ...w, ot_rate_hourly: ot, super_hourly: null, annual_leave_hourly: null, personal_leave_hourly: null, long_service_leave_hourly: null, workcover_hourly: null, public_hols_hourly: null })
+                        await saveWorker({ ...w, ot_rate_hourly: ot, super_hourly: null, annual_leave_hourly: null, personal_leave_hourly: null, long_service_leave_hourly: null, travel_allowance_hourly: travel, workcover_hourly: null, public_hols_hourly: null, standard_charge_rate: scr })
                         showToast(`Oncosts calculated for ${w.name}`)
                         return
                       }
@@ -6048,9 +6057,9 @@ Payment terms:
 
                       if (isSub && subWithOncosts) {
                         // Sub with deemed employee rules — super + workcover only, no leave
-                        await saveWorker({ ...w, ot_rate_hourly: ot, super_hourly: superHr, annual_leave_hourly: null, personal_leave_hourly: null, long_service_leave_hourly: null, workcover_hourly: workcover, public_hols_hourly: null })
+                        await saveWorker({ ...w, ot_rate_hourly: ot, super_hourly: superHr, annual_leave_hourly: null, personal_leave_hourly: null, long_service_leave_hourly: null, travel_allowance_hourly: travel, workcover_hourly: workcover, public_hols_hourly: null, standard_charge_rate: scr })
                       } else {
-                        await saveWorker({ ...w, ot_rate_hourly: ot, super_hourly: superHr, annual_leave_hourly: annualLeave, personal_leave_hourly: personalLeave, long_service_leave_hourly: lsl, workcover_hourly: workcover, public_hols_hourly: pubHols })
+                        await saveWorker({ ...w, ot_rate_hourly: ot, super_hourly: superHr, annual_leave_hourly: annualLeave, personal_leave_hourly: personalLeave, long_service_leave_hourly: lsl, travel_allowance_hourly: travel, workcover_hourly: workcover, public_hols_hourly: pubHols, standard_charge_rate: scr })
                       }
                       showToast(`Oncosts calculated for ${w.name}`)
                     }
@@ -6217,7 +6226,10 @@ Payment terms:
                                 type="number"
                                 defaultValue={w.standard_charge_rate ?? ""}
                                 key={`w-scr-${w.id}`}
-                                placeholder="103"
+                                placeholder={(() => {
+                                  const cr = classificationRates.find(r => r.classification === w.classification)
+                                  return cr?.rate_ex_gst ? String(cr.rate_ex_gst) : "—"
+                                })()}
                                 style={{ ...fieldStyle, padding: "4px 6px", fontSize: 13, fontWeight: 700, color: "#fbbf24" }}
                                 onBlur={async (e) => { await saveWorker({ ...w, standard_charge_rate: e.target.value ? Number(e.target.value) : null }) }}
                               />
