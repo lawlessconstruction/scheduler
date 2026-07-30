@@ -4423,7 +4423,7 @@ Payment terms:
                                   return (
                                     <div
                                       key={`${s.id}-${runIndex}`}
-                                      draggable={isFirstRun}
+                                      draggable={isFirstRun && ganttViewMode === "projects"}
                                       onClick={(e) => {
                                         e.stopPropagation()
                                         openCellEditor(row.projectId, row.projectName, s.start_date, s.id)
@@ -4488,7 +4488,7 @@ Payment terms:
                                         </span>
                                       )}
 
-                                      {isLastRun && (
+                                      {isLastRun && ganttViewMode === "projects" && (
                                         <div
                                           draggable
                                           onClick={(e) => e.stopPropagation()}
