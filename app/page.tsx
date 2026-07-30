@@ -2501,8 +2501,8 @@ export default function Home() {
     setEstimateItems([])
   }
 
-  async function loadData() {
-    setLoading(true)
+  async function loadData(opts?: { initial?: boolean }) {
+    if (opts?.initial) setLoading(true)
 
     const [projectsRes, crewsRes, segmentsRes, labelsRes, milestonesRes, contractsRes, contractTypesRes, contractTypeMilestonesRes, workersRes, classificationRatesRes, clientsRes, allTimesheetsRes, projectCostsRes, estimatesRes, estimateItemsRes, scopeTemplatesRes, estimateTemplatesRes, estimateTemplateItemsRes] = await Promise.all([
       supabase.from("projects").select("*").order("name"),
@@ -2590,7 +2590,7 @@ export default function Home() {
       if (s) setCurrentUser(JSON.parse(s))
     } catch {}
     setAuthChecked(true)
-    loadData()
+    loadData({ initial: true })
     setTodayKey(formatDateKey(new Date()))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -2627,9 +2627,11 @@ export default function Home() {
   const dates = useMemo(() => getDates(minDate, maxDate), [minDate, maxDate])
   const dateIndexMap = useMemo(() => getDateIndexMap(dates), [dates])
 
-  // Scroll to today whenever dates load or change
+  // Scroll to today ONCE on initial mount (once loading finishes)
+  const hasScrolledToTodayRef = useRef(false)
   useEffect(() => {
     if (loading) return
+    if (hasScrolledToTodayRef.current) return
     const scrollToToday = () => {
       if (!ganttScrollRef.current) return
       const todayStr = formatDateKey(new Date())
@@ -2637,8 +2639,8 @@ export default function Home() {
       if (todayIdx === -1) return
       const scrollPos = todayIdx * DAY_COL_WIDTH - 400
       ganttScrollRef.current.scrollLeft = Math.max(0, scrollPos)
+      hasScrolledToTodayRef.current = true
     }
-    // Try immediately, then again after a short delay for production
     scrollToToday()
     const t = setTimeout(scrollToToday, 300)
     return () => clearTimeout(t)
