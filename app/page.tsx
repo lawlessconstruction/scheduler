@@ -4437,13 +4437,17 @@ Payment terms:
                                       onDragEnd={() => {
                                         if (isFirstRun) setDraggingToken(null)
                                       }}
-                                      title={
-                                        conflict
+                                      title={(() => {
+                                        const projectPart = ganttViewMode === "crews"
+                                          ? `${s.projects?.name ?? projects.find(p => p.id === s.project_id)?.name ?? "?"}${s.name ? ` — ${s.name}` : ""}\n`
+                                          : ""
+                                        const conflictPart = conflict
                                           ? `${s.crews?.name} overbooked: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
                                           : isPastUnbilled
                                             ? `⚠ Past segment with no milestone linked — needs invoicing\n${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
                                             : `${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
-                                      }
+                                        return projectPart + conflictPart
+                                      })()}
                                       style={{
                                         position: "absolute",
                                         left: run.startIndex * DAY_COL_WIDTH + 4,
@@ -4472,21 +4476,31 @@ Payment terms:
                                         overflow: "hidden",
                                       }}
                                     >
-                                      {isFirstRun && (
+                                      {isFirstRun && (ganttViewMode === "crews" ? (
+                                        <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                                          <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.95 }}>
+                                            {s.projects?.name ?? projects.find(p => p.id === s.project_id)?.name ?? "?"}
+                                            {Number(s.capacity_fraction ?? 1) === 0 ? " (tentative)" : Number(s.capacity_fraction ?? 1) < 1 ? ` (${s.capacity_fraction})` : ""}
+                                            {conflict ? " ⚠" : ""}
+                                            {!conflict && isPastUnbilled ? " 💲" : ""}
+                                          </span>
+                                          {s.name && (
+                                            <span style={{ fontSize: 10, opacity: 0.7 }}>{s.name}</span>
+                                          )}
+                                        </span>
+                                      ) : (
                                         <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
                                           {s.name && (
                                             <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.95 }}>{s.name}</span>
                                           )}
                                           <span style={{ fontSize: s.name ? 10 : 12, opacity: s.name ? 0.7 : 1 }}>
-                                            {ganttViewMode === "crews"
-                                              ? (s.projects?.name ?? projects.find(p => p.id === s.project_id)?.name ?? "?")
-                                              : s.crews?.name}
+                                            {s.crews?.name}
                                             {Number(s.capacity_fraction ?? 1) === 0 ? " (tentative)" : Number(s.capacity_fraction ?? 1) < 1 ? ` (${s.capacity_fraction})` : ""}
                                             {conflict ? " ⚠" : ""}
                                             {!conflict && isPastUnbilled ? " 💲" : ""}
                                           </span>
                                         </span>
-                                      )}
+                                      ))}
 
                                       {isLastRun && ganttViewMode === "projects" && (
                                         <div
