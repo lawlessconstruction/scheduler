@@ -622,7 +622,7 @@ function getRowHeight(laneCount: number) {
   )
 }
 
-function getSegmentConflictInfo(segment: Segment, allSegments: Segment[], dates: Date[]) {
+function getSegmentConflictInfo(segment: Segment, allSegments: Segment[], dates: Date[], archivedProjectIds?: Set<string>) {
   const crewCapacity = Number(segment.crews?.capacity ?? 1)
   let maxTotalCapacity = 0
 
@@ -636,7 +636,9 @@ function getSegmentConflictInfo(segment: Segment, allSegments: Segment[], dates:
       .filter(
         (other) =>
           other.crew_id === segment.crew_id &&
-          isDateWithinRange(dateKey, other.start_date, other.end_date)
+          isDateWithinRange(dateKey, other.start_date, other.end_date) &&
+          // Ignore segments whose project has been archived — they don't consume capacity
+          !(archivedProjectIds && archivedProjectIds.has(other.project_id))
       )
       .reduce((sum, item) => sum + Number(item.capacity_fraction ?? 1), 0)
 
@@ -2642,13 +2644,20 @@ export default function Home() {
     return () => clearTimeout(t)
   }, [loading, dates])
 
-  // For each crew, for each date: total booked capacity fraction
+  // Ids of projects that have been archived — used to exclude their segments from crew capacity/conflict calculations
+  const archivedProjectIds = useMemo(
+    () => new Set(projects.filter(p => p.archived).map(p => p.id)),
+    [projects]
+  )
+
+  // For each crew, for each date: total booked capacity fraction (excludes archived projects)
   const crewCapacityByDay = useMemo(() => {
     const map = new Map<string, Map<string, number>>()
     for (const crew of crews) {
       map.set(crew.id, new Map())
     }
     for (const seg of segments) {
+      if (archivedProjectIds.has(seg.project_id)) continue
       const crewMap = map.get(seg.crew_id)
       if (!crewMap) continue
       for (const date of dates) {
@@ -2660,7 +2669,7 @@ export default function Home() {
       }
     }
     return map
-  }, [crews, segments, dates])
+  }, [crews, segments, dates, archivedProjectIds])
 
   const projectRows = useMemo(() => {
     const map = new Map<string, { projectId: string; projectName: string; segments: Segment[] }>()
@@ -4315,7 +4324,7 @@ Payment terms:
                             const runs = getWorkingRuns(s.start_date, s.end_date, dates, dateIndexMap)
                             if (runs.length === 0) return null
 
-                            const conflictInfo = getSegmentConflictInfo(s, segments, dates)
+                            const conflictInfo = getSegmentConflictInfo(s, segments, dates, archivedProjectIds)
                             const conflict = conflictInfo.conflict
                             const isBeingMoved = draggingToken === s.id
                             const isBeingResized = draggingToken === `resize:${s.id}`
@@ -4391,7 +4400,7 @@ Payment terms:
                                           )}
                                           <span style={{ fontSize: s.name ? 10 : 12, opacity: s.name ? 0.7 : 1 }}>
                                             {s.crews?.name}
-                                            {Number(s.capacity_fraction ?? 1) < 1 ? ` (${s.capacity_fraction})` : ""}
+                                            {Number(s.capacity_fraction ?? 1) === 0 ? " (tentative)" : Number(s.capacity_fraction ?? 1) < 1 ? ` (${s.capacity_fraction})` : ""}
                                             {conflict ? " ⚠" : ""}
                                             {!conflict && isPastUnbilled ? " 💲" : ""}
                                           </span>
@@ -4946,12 +4955,12 @@ Payment terms:
                   <input
                     type="number"
                     step="0.25"
-                    min="0.25"
+                    min="0"
                     value={segmentForm.capacity_fraction}
                     onChange={(e) => setSegmentForm({ ...segmentForm, capacity_fraction: e.target.value })}
                     style={{ ...fieldStyle, maxWidth: 180 }}
                   />
-                  <div style={helperStyle}>Examples: 1, 0.5, 0.25</div>
+                  <div style={helperStyle}>Examples: 1, 0.5, 0.25, 0 (tentative — doesn't consume crew capacity)</div>
                 </div>
 
                 <div style={sectionCardStyle}>
@@ -5108,7 +5117,7 @@ Payment terms:
                     <input
                       type="number"
                       step="0.25"
-                      min="0.25"
+                      min="0"
                       placeholder="Capacity fraction"
                       value={cellSegmentForm.capacity_fraction}
                       onChange={(e) =>
