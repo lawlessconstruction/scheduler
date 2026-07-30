@@ -2429,6 +2429,7 @@ export default function Home() {
   const [todayKey, setTodayKey] = useState<string | null>(null)
   const [topModal, setTopModal] = useState<TopModalType>(null)
   const [showArchived, setShowArchived] = useState(false)
+  const [ganttViewMode, setGanttViewMode] = useState<"projects" | "crews">("projects")
   const [ganttExtendWeeks, setGanttExtendWeeks] = useState(4)
   const ganttScrollRef = useRef<HTMLDivElement>(null)
 
@@ -2726,6 +2727,23 @@ export default function Home() {
         return a.projectName.localeCompare(b.projectName, undefined, { numeric: true, sensitivity: "base" })
       })
   }, [segments, labels, projects, showArchived])
+
+  // Crew view: same shape as projectRows, but each row is a crew and its 'segments'
+  // are all segments assigned to that crew (from any project — archived excluded).
+  // We name the crew as 'projectName' so the same row-rendering code can be reused.
+  const crewRows = useMemo(() => {
+    const archivedIds = new Set(projects.filter(p => p.archived).map(p => p.id))
+    return crews
+      .filter(c => segments.some(s => s.crew_id === c.id && !archivedIds.has(s.project_id)))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
+      .map(c => ({
+        projectId: c.id,  // reused key — actually the crew id in crew mode
+        projectName: c.name,
+        segments: segments.filter(s => s.crew_id === c.id && !archivedIds.has(s.project_id)),
+      }))
+  }, [crews, segments, projects])
+
+  const activeRows = ganttViewMode === "crews" ? crewRows : projectRows
 
   function openCellEditor(projectId: string, projectName: string, date: string, preferredSegmentId?: string) {
     const existingSegments = segments.filter(
@@ -3928,6 +3946,13 @@ Payment terms:
               {showAvailability ? "Hide Availability" : "Find Availability"}
             </button>
 
+            <button type="button" onClick={() => setGanttViewMode(ganttViewMode === "projects" ? "crews" : "projects")}
+              style={ganttViewMode === "crews" ? { ...pillBase, background: "#0f1f2e", border: "1.5px solid #0891b2", color: "#67e8f9" } : pillBase}
+              title={ganttViewMode === "crews" ? "Switch to project view" : "Switch to crew calendar view"}>
+              <span style={{ ...iconStyle, background: ganttViewMode === "crews" ? "#0891b222" : "#ffffff11" }}>{ganttViewMode === "crews" ? "👷" : "📅"}</span>
+              {ganttViewMode === "crews" ? "Crew view" : "Project view"}
+            </button>
+
             <div style={divider} />
 
             {/* Data views */}
@@ -4065,7 +4090,7 @@ Payment terms:
             </thead>
 
             <tbody>
-              {projectRows.map((row) => {
+              {activeRows.map((row) => {
                 const labelsForRow = labels.filter((l) => l.project_id === row.projectId)
                 const lanes = assignLanes(row.segments)
                 const rowHeight = getRowHeight(Math.max(lanes.length, 1))
@@ -4090,7 +4115,7 @@ Payment terms:
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <div>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                            {(() => {
+                            {ganttViewMode === "projects" && (() => {
                               const proj = projects.find((p) => p.id === row.projectId)
                               const isPinned = !!proj?.pinned
                               return (
@@ -4124,19 +4149,23 @@ Payment terms:
                                 </button>
                               )
                             })()}
-                            {projects.find((p) => p.id === row.projectId)?.archived && (
+                            {ganttViewMode === "projects" && projects.find((p) => p.id === row.projectId)?.archived && (
                               <span style={{ fontSize: 10, background: "#3f3f46", color: "#a1a1aa", borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>
                                 ARCHIVED
                               </span>
                             )}
+                            {ganttViewMode === "crews" && (
+                              <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 999, background: crews.find(c => c.id === row.projectId)?.color ?? "#2563eb" }} />
+                            )}
                             <span style={{ fontSize: 13, fontWeight: 700, color: "#f0f4ff", lineHeight: 1.3 }}>{row.projectName}</span>
                           </div>
-                          {projects.find((p) => p.id === row.projectId)?.client && (
+                          {ganttViewMode === "projects" && projects.find((p) => p.id === row.projectId)?.client && (
                             <div style={{ fontSize: 12, color: "#8899bb", fontWeight: 400, marginTop: 2 }}>
                               {projects.find((p) => p.id === row.projectId)?.client}
                             </div>
                           )}
                         </div>
+                        {ganttViewMode === "projects" && (
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                           <button
                             type="button"
@@ -4222,6 +4251,7 @@ Payment terms:
                             })()}
                           </button>
                         </div>
+                        )}
                       </div>
                     </td>
 
@@ -4243,6 +4273,8 @@ Payment terms:
                           e.preventDefault()
 
                           if (!draggingToken) return
+                          // Read-only in crew mode — don't reassign or resize
+                          if (ganttViewMode === "crews") return
 
                           const container = e.currentTarget as HTMLDivElement
                           const targetDateKey = getDateKeyFromPointer(e.clientX, container, dates)
@@ -4274,6 +4306,7 @@ Payment terms:
                               key={dateKey}
                               onClick={() => {
                                 if (weekend) return
+                                if (ganttViewMode === "crews") return  // read-only
                                 openCellEditor(row.projectId, row.projectName, dateKey)
                               }}
                               style={{
@@ -4445,7 +4478,9 @@ Payment terms:
                                             <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.95 }}>{s.name}</span>
                                           )}
                                           <span style={{ fontSize: s.name ? 10 : 12, opacity: s.name ? 0.7 : 1 }}>
-                                            {s.crews?.name}
+                                            {ganttViewMode === "crews"
+                                              ? (s.projects?.name ?? projects.find(p => p.id === s.project_id)?.name ?? "?")
+                                              : s.crews?.name}
                                             {Number(s.capacity_fraction ?? 1) === 0 ? " (tentative)" : Number(s.capacity_fraction ?? 1) < 1 ? ` (${s.capacity_fraction})` : ""}
                                             {conflict ? " ⚠" : ""}
                                             {!conflict && isPastUnbilled ? " 💲" : ""}
