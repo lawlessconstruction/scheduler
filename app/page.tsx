@@ -11,6 +11,7 @@ type Project = {
   archived: boolean | null
   contract_value: number | null
   profitability_included: boolean | null
+  pinned: boolean | null
 }
 
 type Extra = {
@@ -2714,7 +2715,16 @@ export default function Home() {
         if (project?.archived && !showArchived) return false
         return true
       })
-      .sort((a, b) => a.projectName.localeCompare(b.projectName, undefined, { numeric: true, sensitivity: "base" }))
+      .sort((a, b) => {
+        const projA = projects.find(p => p.id === a.projectId)
+        const projB = projects.find(p => p.id === b.projectId)
+        const pinnedA = projA?.pinned ? 1 : 0
+        const pinnedB = projB?.pinned ? 1 : 0
+        // Pinned first
+        if (pinnedA !== pinnedB) return pinnedB - pinnedA
+        // Then by name (natural numeric sort — 5, 9, 13, 21…)
+        return a.projectName.localeCompare(b.projectName, undefined, { numeric: true, sensitivity: "base" })
+      })
   }, [segments, labels, projects, showArchived])
 
   function openCellEditor(projectId: string, projectName: string, date: string, preferredSegmentId?: string) {
@@ -4080,6 +4090,40 @@ Payment terms:
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <div>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            {(() => {
+                              const proj = projects.find((p) => p.id === row.projectId)
+                              const isPinned = !!proj?.pinned
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={async (e) => {
+                                    e.stopPropagation()
+                                    if (!proj) return
+                                    const newVal = !isPinned
+                                    // Optimistic update
+                                    setProjects(prev => prev.map(p => p.id === proj.id ? { ...p, pinned: newVal } : p))
+                                    const { error } = await supabase.from("projects").update({ pinned: newVal }).eq("id", proj.id)
+                                    if (error) {
+                                      showToast(`Error: ${error.message}`)
+                                      // Roll back
+                                      setProjects(prev => prev.map(p => p.id === proj.id ? { ...p, pinned: !newVal } : p))
+                                    }
+                                  }}
+                                  title={isPinned ? "Unpin from top" : "Pin to top"}
+                                  style={{
+                                    background: "transparent",
+                                    border: "none",
+                                    padding: 0,
+                                    cursor: "pointer",
+                                    fontSize: 16,
+                                    lineHeight: 1,
+                                    color: isPinned ? "#fbbf24" : "#4a5670",
+                                  }}
+                                >
+                                  {isPinned ? "★" : "☆"}
+                                </button>
+                              )
+                            })()}
                             {projects.find((p) => p.id === row.projectId)?.archived && (
                               <span style={{ fontSize: 10, background: "#3f3f46", color: "#a1a1aa", borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>
                                 ARCHIVED
