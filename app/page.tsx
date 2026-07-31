@@ -3893,10 +3893,14 @@ Payment terms:
             // Set the week to this week
             setTimesheetWeekStart(mondayStr)
             setMobileDayOffset(dayOffset)
-            // If user has a specific crew, load it directly; otherwise leave on summary
-            if (userCrewId) {
-              setTimesheetCrewId(userCrewId)
-              await loadTimesheetEntries(mondayStr, userCrewId)
+            // Pick which crew to load:
+            // - If user has an explicit crew_id (worker/crew_boss), use that.
+            // - Otherwise (boss), default to the first crew alphabetically.
+            //   They can switch from the header dropdown.
+            const targetCrewId = userCrewId ?? crews[0]?.id ?? ""
+            if (targetCrewId) {
+              setTimesheetCrewId(targetCrewId)
+              await loadTimesheetEntries(mondayStr, targetCrewId)
             } else {
               setTimesheetCrewId("")
             }
@@ -6562,7 +6566,11 @@ Payment terms:
                         setTimesheetEntries((data ?? []) as TimesheetEntry[])
                       }
                     }}
-                    style={{ ...fieldStyle, width: "auto", fontSize: 13, padding: "6px 10px" }}
+                    style={
+                      isMobile
+                        ? { ...fieldStyle, fontSize: 15, padding: "10px 12px", fontWeight: 700, background: "#0f2030", border: "1.5px solid #0891b2", color: "#67e8f9", minWidth: 150 }
+                        : { ...fieldStyle, width: "auto", fontSize: 13, padding: "6px 10px" }
+                    }
                   >
                     <option value="">{timesheetCrewId ? "← Back to summary" : "Select crew..."}</option>
                     {crews.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
