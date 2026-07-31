@@ -2410,6 +2410,7 @@ export default function Home() {
   const [timesheetCrewId, setTimesheetCrewId] = useState<string>("")
   const [timesheetEntries, setTimesheetEntries] = useState<TimesheetEntry[]>([])
   const [timesheetLoading, setTimesheetLoading] = useState(false)
+  const [mobileLandingDismissed, setMobileLandingDismissed] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [mobileDayOffset, setMobileDayOffset] = useState(0)  // 0=Mon of week, 6=Sun
   useEffect(() => {
@@ -3842,6 +3843,133 @@ Payment terms:
       localStorage.setItem("lc_user", JSON.stringify(user))
       setCurrentUser(user)
     }} />
+  }
+
+  // Mobile landing: show a big Timesheets shortcut when a user first lands on mobile.
+  // Dismissable — "Continue to full app" moves them into the normal scheduler for this session.
+  if (isMobile && !mobileLandingDismissed) {
+    // Figure out which crew(s) the user can enter timesheets for.
+    // - Workers/crew_bosses with a crew_id → default to that crew
+    // - Boss → let them pick (via summary), so we don't preselect a crew
+    const userCrewId = currentUser.crew_id
+    const userCrew = userCrewId ? crews.find(c => c.id === userCrewId) : null
+    const todayStr = new Date().toISOString().slice(0, 10)
+    // Monday-of-this-week (JS: 0=Sun, 1=Mon…6=Sat). Timesheets weeks start Mon.
+    const now = new Date()
+    const daysFromMonday = (now.getDay() + 6) % 7  // Mon=0, Sun=6
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - daysFromMonday)
+    const mondayStr = monday.toISOString().slice(0, 10)
+    const dayOffset = daysFromMonday  // 0 for Mon, 4 for Fri, etc.
+
+    return (
+      <div style={{ background: "#0a0f1e", minHeight: "100vh", color: "white", display: "flex", flexDirection: "column", padding: 20, paddingBottom: 40 }}>
+        {/* Top: logo + user */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30 }}>
+          <img src="/lawless-logo.png" alt="Lawless" style={{ height: 44, filter: "brightness(1.1)" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#c8d4f0" }}>{currentUser.name}</div>
+            <div style={{ fontSize: 10, color: "#4a6080", textTransform: "uppercase" }}>{currentUser.app_role.replace("_", " ")}</div>
+          </div>
+        </div>
+
+        {/* Big greeting */}
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ fontSize: 24, fontWeight: 900, color: "#f0f4ff", marginBottom: 4 }}>
+            G'day {currentUser.name.split(" ")[0]}
+          </div>
+          <div style={{ fontSize: 14, color: "#94a3b8" }}>
+            {new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" })}
+          </div>
+        </div>
+
+        {/* Big timesheet button */}
+        <button
+          type="button"
+          onClick={async () => {
+            // Fetch fresh timesheet data
+            const { data } = await supabase.from("timesheets").select("*").order("date")
+            setTimesheetEntries((data ?? []) as TimesheetEntry[])
+            // Set the week to this week
+            setTimesheetWeekStart(mondayStr)
+            setMobileDayOffset(dayOffset)
+            // If user has a specific crew, load it directly; otherwise leave on summary
+            if (userCrewId) {
+              setTimesheetCrewId(userCrewId)
+              await loadTimesheetEntries(mondayStr, userCrewId)
+            } else {
+              setTimesheetCrewId("")
+            }
+            setMobileLandingDismissed(true)
+            setShowTimesheetModal(true)
+          }}
+          style={{
+            width: "100%",
+            padding: "28px 20px",
+            borderRadius: 16,
+            border: "2px solid #0891b2",
+            background: "linear-gradient(135deg, #0891b2, #0e7490)",
+            color: "white",
+            fontSize: 20,
+            fontWeight: 900,
+            cursor: "pointer",
+            boxShadow: "0 8px 24px rgba(8,145,178,0.35)",
+            marginBottom: 20,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 32 }}>⏱️</span>
+          <span>Enter today's timesheets</span>
+          {userCrew && <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85, letterSpacing: "0.4px" }}>{userCrew.name}</span>}
+        </button>
+
+        {/* Continue link */}
+        <div style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={() => setMobileLandingDismissed(true)}
+          style={{
+            width: "100%",
+            padding: "14px",
+            borderRadius: 10,
+            border: "1px solid #2e3650",
+            background: "transparent",
+            color: "#94a3b8",
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Continue to full app →
+        </button>
+
+        {/* Logout */}
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.removeItem("lc_user")
+            setCurrentUser(null)
+          }}
+          style={{
+            width: "100%",
+            padding: "10px",
+            borderRadius: 10,
+            border: "none",
+            background: "transparent",
+            color: "#4a5670",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+            marginTop: 10,
+          }}
+        >
+          Log out
+        </button>
+      </div>
+    )
   }
 
   return (
