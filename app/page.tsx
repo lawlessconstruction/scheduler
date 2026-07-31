@@ -3988,7 +3988,13 @@ Payment terms:
               <span style={{ ...iconStyle, background: "#ffffff11" }}>👷</span>
               Workers
             </button>}
-            {canSeeTimesheets && <button type="button" onClick={() => setShowTimesheetModal(true)} style={pillBase}>
+            {canSeeTimesheets && <button type="button" onClick={async () => {
+              // Fetch all timesheets fresh so the summary shows accurate data (may have been scoped to a single crew from a previous open)
+              const { data } = await supabase.from("timesheets").select("*").order("date")
+              setTimesheetEntries((data ?? []) as TimesheetEntry[])
+              setTimesheetCrewId("")  // Start on summary
+              setShowTimesheetModal(true)
+            }} style={pillBase}>
               <span style={{ ...iconStyle, background: "#ffffff11" }}>🕐</span>
               Timesheets
             </button>}
@@ -6377,24 +6383,220 @@ Payment terms:
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                 <div style={{ fontSize: 22, fontWeight: 800 }}>Timesheets</div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button type="button" onClick={() => { const d = addCalendarDays(timesheetWeekStart, -7); setTimesheetWeekStart(d); loadTimesheetEntries(d, timesheetCrewId) }} style={{ ...secondaryButtonStyle, padding: "6px 12px" }}>◀</button>
+                  <button type="button" onClick={async () => {
+                    const d = addCalendarDays(timesheetWeekStart, -7)
+                    setTimesheetWeekStart(d)
+                    if (timesheetCrewId) {
+                      loadTimesheetEntries(d, timesheetCrewId)
+                    } else {
+                      // Summary view — refresh all
+                      const { data } = await supabase.from("timesheets").select("*").order("date")
+                      setTimesheetEntries((data ?? []) as TimesheetEntry[])
+                    }
+                  }} style={{ ...secondaryButtonStyle, padding: "6px 12px" }}>◀</button>
                   <span style={{ fontSize: 14, color: "#a1a1aa", minWidth: 160, textAlign: "center" }}>{weekLabel}</span>
-                  <button type="button" onClick={() => { const d = addCalendarDays(timesheetWeekStart, 7); setTimesheetWeekStart(d); loadTimesheetEntries(d, timesheetCrewId) }} style={{ ...secondaryButtonStyle, padding: "6px 12px" }}>▶</button>
+                  <button type="button" onClick={async () => {
+                    const d = addCalendarDays(timesheetWeekStart, 7)
+                    setTimesheetWeekStart(d)
+                    if (timesheetCrewId) {
+                      loadTimesheetEntries(d, timesheetCrewId)
+                    } else {
+                      const { data } = await supabase.from("timesheets").select("*").order("date")
+                      setTimesheetEntries((data ?? []) as TimesheetEntry[])
+                    }
+                  }} style={{ ...secondaryButtonStyle, padding: "6px 12px" }}>▶</button>
                   <select
                     value={timesheetCrewId}
-                    onChange={(e) => { setTimesheetCrewId(e.target.value); loadTimesheetEntries(timesheetWeekStart, e.target.value) }}
+                    onChange={async (e) => {
+                      const newId = e.target.value
+                      setTimesheetCrewId(newId)
+                      if (newId) {
+                        loadTimesheetEntries(timesheetWeekStart, newId)
+                      } else {
+                        // Going back to summary — refresh all
+                        const { data } = await supabase.from("timesheets").select("*").order("date")
+                        setTimesheetEntries((data ?? []) as TimesheetEntry[])
+                      }
+                    }}
                     style={{ ...fieldStyle, width: "auto", fontSize: 13, padding: "6px 10px" }}
                   >
-                    <option value="">Select crew...</option>
+                    <option value="">{timesheetCrewId ? "← Back to summary" : "Select crew..."}</option>
                     {crews.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowTimesheetModal(false)} style={secondaryButtonStyle}>Close</button>
                 </div>
               </div>
 
-              {!timesheetCrewId && (
-                <div style={{ color: "#6b7a9a", fontSize: 14, textAlign: "center", padding: 40 }}>Select a crew to view their timesheet.</div>
-              )}
+              {!timesheetCrewId && (() => {
+                // Summary dashboard — visible when no specific crew is selected.
+                // Uses timesheetEntries as the source (loaded fresh on modal open).
+                const weekEnd = addCalendarDays(timesheetWeekStart, 6)
+                const activeCrews = crews.filter(c => workers.some(w => w.crew_id === c.id))
+                const weekWorkers = workers.filter(w => w.crew_id != null)
+                const entriesInWeek = timesheetEntries.filter(e => e.date >= timesheetWeekStart && e.date <= weekEnd)
+
+                // Detect missing entries: for every weekday & every worker in an active crew, is there at least one entry?
+                type MissingRow = { worker: Worker; crew: Crew; missingDates: string[] }
+                const missing: MissingRow[] = []
+                for (const w of weekWorkers) {
+                  const crew = crews.find(c => c.id === w.crew_id)
+                  if (!crew) continue
+                  const missingDates: string[] = []
+                  for (let i = 0; i < 7; i++) {
+                    const d = addCalendarDays(timesheetWeekStart, i)
+                    if (isWeekend(parseDate(d))) continue  // weekdays only
+                    const hasEntry = entriesInWeek.some(e => e.worker_id === w.id && e.date === d)
+                    if (!hasEntry) missingDates.push(d)
+                  }
+                  if (missingDates.length > 0) missing.push({ worker: w, crew, missingDates })
+                }
+
+                // Total hours + cost this week
+                const weekOrdHours = entriesInWeek.reduce((s, e) => s + (e.ordinary_hours ?? 0), 0)
+                const weekOtHours = entriesInWeek.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
+                const weekCost = entriesInWeek.reduce((s, e) => {
+                  const w = workers.find(ww => ww.id === e.worker_id)
+                  if (!w) return s
+                  const trueCost = w.total_cost_hourly_with_ot ?? w.base_rate_hourly ?? 0
+                  return s + (e.ordinary_hours ?? 0) * trueCost + (e.ot_hours ?? 0) * (w.ot_rate_hourly ?? 0)
+                }, 0)
+
+                // Workers who submitted at least one entry
+                const submittedWorkerIds = new Set(entriesInWeek.map(e => e.worker_id))
+                const submittedCount = weekWorkers.filter(w => submittedWorkerIds.has(w.id)).length
+
+                return (
+                  <div style={{ flex: 1, overflowY: "auto", padding: "8px 4px 24px" }}>
+                    {/* Top stats strip */}
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
+                      <div style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>Workers submitted</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: submittedCount === weekWorkers.length ? "#4ade80" : "#f0f4ff", marginTop: 4 }}>
+                          {submittedCount} <span style={{ fontSize: 14, color: "#6b7a9a" }}>of {weekWorkers.length}</span>
+                        </div>
+                      </div>
+                      <div style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>Hours this week</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: "#f0f4ff", marginTop: 4 }}>
+                          {weekOrdHours.toFixed(1)}
+                          {weekOtHours > 0 && <span style={{ fontSize: 14, color: "#f59e0b", marginLeft: 6 }}>+ {weekOtHours.toFixed(1)} OT</span>}
+                        </div>
+                      </div>
+                      <div style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>Labour cost logged</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: "#f0f4ff", marginTop: 4 }}>${weekCost.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                      </div>
+                      <div style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
+                        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>Missing entries</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: missing.length === 0 ? "#4ade80" : "#f59e0b", marginTop: 4 }}>
+                          {missing.reduce((s, m) => s + m.missingDates.length, 0)}
+                          <span style={{ fontSize: 14, color: "#6b7a9a", marginLeft: 6 }}>{missing.length === 0 ? "all good" : `across ${missing.length} workers`}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Missing entries alert */}
+                    {missing.length > 0 && (
+                      <div style={{ background: "#2a200a", border: "1px solid #854d0e", borderRadius: 10, padding: 16, marginBottom: 16 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: "#fbbf24", marginBottom: 10 }}>
+                          ⚠ Workers with missing entries this week
+                        </div>
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {missing.slice(0, 20).map(m => (
+                            <div key={m.worker.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 10px", background: "#1a1408", borderRadius: 6 }}>
+                              <div style={{ minWidth: 160, fontSize: 13, fontWeight: 700, color: "#fef08a" }}>{m.worker.name}</div>
+                              <div style={{ minWidth: 80, fontSize: 12, color: "#94a3b8" }}>{m.crew.name}</div>
+                              <div style={{ flex: 1, fontSize: 12, color: "#94a3b8" }}>
+                                Missing: {m.missingDates.map(d => parseDate(d).toLocaleDateString("en-AU", { weekday: "short" })).join(", ")}
+                              </div>
+                              <button type="button" onClick={() => { setTimesheetCrewId(m.crew.id); loadTimesheetEntries(timesheetWeekStart, m.crew.id) }}
+                                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #854d0e", background: "#3a2a0a", color: "#fbbf24", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                                Enter for them →
+                              </button>
+                            </div>
+                          ))}
+                          {missing.length > 20 && (
+                            <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", padding: 6 }}>… and {missing.length - 20} more</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Per-crew heatmap grid */}
+                    <div style={{ fontSize: 12, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 8, fontWeight: 700 }}>By crew</div>
+                    <div style={{ display: "grid", gap: 12 }}>
+                      {activeCrews.map(crew => {
+                        const crewWorkers = weekWorkers.filter(w => w.crew_id === crew.id).sort((a, b) => a.sort_order - b.sort_order)
+                        const crewEntries = entriesInWeek.filter(e => crewWorkers.some(w => w.id === e.worker_id))
+                        const crewOrdHours = crewEntries.reduce((s, e) => s + (e.ordinary_hours ?? 0), 0)
+                        const crewOtHours = crewEntries.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
+                        const crewCost = crewEntries.reduce((s, e) => {
+                          const w = workers.find(ww => ww.id === e.worker_id)
+                          if (!w) return s
+                          const trueCost = w.total_cost_hourly_with_ot ?? w.base_rate_hourly ?? 0
+                          return s + (e.ordinary_hours ?? 0) * trueCost + (e.ot_hours ?? 0) * (w.ot_rate_hourly ?? 0)
+                        }, 0)
+                        return (
+                          <div key={crew.id} style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                              <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 999, background: crew.color ?? "#2563eb" }} />
+                              <div style={{ fontSize: 15, fontWeight: 800, color: "#f0f4ff", flex: 1 }}>{crew.name}</div>
+                              <div style={{ fontSize: 12, color: "#94a3b8" }}>{crewOrdHours.toFixed(1)}h{crewOtHours > 0 ? ` + ${crewOtHours.toFixed(1)} OT` : ""} · ${crewCost.toLocaleString("en-AU", { maximumFractionDigits: 0 })}</div>
+                              <button type="button" onClick={() => { setTimesheetCrewId(crew.id); loadTimesheetEntries(timesheetWeekStart, crew.id) }}
+                                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #2e3650", background: "#1e2535", color: "#c4b5fd", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                                Open →
+                              </button>
+                            </div>
+                            {/* Mini heatmap: rows = workers, cols = 7 days */}
+                            <div style={{ display: "grid", gridTemplateColumns: "140px repeat(7, 1fr)", gap: 4, fontSize: 11 }}>
+                              <div />
+                              {Array.from({ length: 7 }, (_, i) => {
+                                const d = addCalendarDays(timesheetWeekStart, i)
+                                const weekend = isWeekend(parseDate(d))
+                                return <div key={d} style={{ textAlign: "center", fontSize: 10, color: weekend ? "#4a5670" : "#8899bb", fontWeight: 700, textTransform: "uppercase" }}>{parseDate(d).toLocaleDateString("en-AU", { weekday: "short" })[0]}</div>
+                              })}
+                              {crewWorkers.map(w => (
+                                <div key={w.id} style={{ display: "contents" }}>
+                                  <div style={{ fontSize: 12, color: "#c8d4f0", fontWeight: 600, paddingRight: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
+                                  {Array.from({ length: 7 }, (_, i) => {
+                                    const d = addCalendarDays(timesheetWeekStart, i)
+                                    const weekend = isWeekend(parseDate(d))
+                                    const entries = entriesInWeek.filter(e => e.worker_id === w.id && e.date === d)
+                                    const hasEntry = entries.length > 0
+                                    const totalHrs = entries.reduce((s, e) => s + (e.ordinary_hours ?? 0) + (e.ot_hours ?? 0), 0)
+                                    const totalOt = entries.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
+                                    // Colours: weekend = dark, missing weekday = red-ish, entry = green, OT = amber
+                                    let bg = "#0f1520"
+                                    let color = "#4a5670"
+                                    let label = ""
+                                    if (weekend) {
+                                      bg = "#0a0f18"; color = "#3a4a60"
+                                      if (hasEntry) { bg = "#3a2a0a"; color = "#fbbf24"; label = totalHrs.toFixed(0) }
+                                    } else if (hasEntry) {
+                                      if (totalOt > 0) { bg = "#3a2a0a"; color = "#fbbf24"; label = totalHrs.toFixed(0) }
+                                      else { bg = "#14332a"; color = "#4ade80"; label = totalHrs.toFixed(0) }
+                                    } else {
+                                      // missing on weekday
+                                      bg = "#2a1010"; color = "#f87171"; label = "—"
+                                    }
+                                    return (
+                                      <div key={d} onClick={() => { setTimesheetCrewId(crew.id); loadTimesheetEntries(timesheetWeekStart, crew.id) }}
+                                        style={{ background: bg, color, borderRadius: 4, padding: "4px 0", textAlign: "center", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                                        title={hasEntry ? `${totalHrs}h${totalOt > 0 ? ` (${totalOt} OT)` : ""}` : weekend ? "Weekend" : "No entry"}>
+                                        {label}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {timesheetCrewId && timesheetLoading && (
                 <div style={{ color: "#6b7a9a", fontSize: 14, textAlign: "center", padding: 40 }}>Loading...</div>
