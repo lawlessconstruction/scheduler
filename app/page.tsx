@@ -6853,7 +6853,7 @@ Payment terms:
                           onChange={async (e) => { if (e.target.value) { await quickFillDay(dayDate, e.target.value); e.target.value = "" } }}
                           style={{ ...bigFieldStyle, background: "linear-gradient(135deg, #1e3a6e, #2563eb)", border: "2px solid #3b82f6", color: "#bfdbfe", fontWeight: 700 }}>
                           <option value="">⚡ Quick fill whole crew…</option>
-                          {projects.filter((p) => !p.archived).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          {projects.filter((p) => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map((p) => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                         </select>
                       </div>
                     )}
@@ -6971,7 +6971,7 @@ Payment terms:
                                     }}
                                   >
                                     <option value="">⚡ Quick fill whole crew...</option>
-                                    {projects.filter((p) => !p.archived).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    {projects.filter((p) => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map((p) => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                                   </select>
                                 )}
                                 {weekend && hasWeekendEntries && (
@@ -7023,7 +7023,7 @@ Payment terms:
                                             style={{ ...fieldStyle, fontSize: 13, padding: "6px 8px", flex: 1, fontWeight: 600 }}
                                           >
                                             <option value="">No site</option>
-                                            {projects.filter((p) => !p.archived).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                            {projects.filter((p) => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map((p) => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                                           </select>
                                           <button type="button" onClick={async () => { await deleteTimesheetEntry(entry.id) }}
                                             style={{ background: "#2a1a1a", border: "1px solid #5a2020", borderRadius: 6, color: "#f87171", cursor: "pointer", fontSize: 14, padding: "4px 8px", lineHeight: 1, flexShrink: 0 }}
@@ -7066,7 +7066,7 @@ Payment terms:
                                       }}
                                         style={{ ...fieldStyle, fontSize: 13, padding: "10px 12px", color: "#6b7a9a", borderStyle: "dashed" }}>
                                         <option value="">+ Add site...</option>
-                                        {projects.filter((p) => !p.archived).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                        {projects.filter((p) => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map((p) => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                                       </select>
                                     )}
                                     {entries.length > 0 && (
