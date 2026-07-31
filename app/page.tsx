@@ -3887,21 +3887,31 @@ Payment terms:
         <button
           type="button"
           onClick={async () => {
-            // Fetch fresh timesheet data
-            const { data } = await supabase.from("timesheets").select("*").order("date")
-            setTimesheetEntries((data ?? []) as TimesheetEntry[])
+            // Fetch fresh timesheets AND crews so we're guaranteed to have both.
+            // (On slow first-load, `crews` state might not have populated yet.)
+            const [tsRes, crewsRes] = await Promise.all([
+              supabase.from("timesheets").select("*").order("date"),
+              supabase.from("crews").select("*").order("name"),
+            ])
+            const freshTs = (tsRes.data ?? []) as TimesheetEntry[]
+            const freshCrews = (crewsRes.data ?? []) as Crew[]
+            setTimesheetEntries(freshTs)
+            setCrews(freshCrews)
+
             // Set the week to this week
             setTimesheetWeekStart(mondayStr)
             setMobileDayOffset(dayOffset)
+
             // Pick which crew to load:
-            // - If user has an explicit crew_id (worker/crew_boss), use that.
-            // - Otherwise (boss), default to the first crew alphabetically.
-            //   They can switch from the header dropdown.
-            const targetCrewId = userCrewId ?? crews[0]?.id ?? ""
+            // - If user has an explicit crew_id, use that.
+            // - Otherwise (boss), default to the first crew alphabetically from freshly fetched list.
+            const targetCrewId = userCrewId ?? freshCrews[0]?.id ?? ""
+
             if (targetCrewId) {
               setTimesheetCrewId(targetCrewId)
               await loadTimesheetEntries(mondayStr, targetCrewId)
             } else {
+              // Genuinely no crews — fall through to summary
               setTimesheetCrewId("")
             }
             setMobileLandingDismissed(true)
