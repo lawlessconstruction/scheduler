@@ -6525,7 +6525,7 @@ Payment terms:
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: isMobile ? 0 : 14, padding: isMobile ? 12 : 24, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column", overflow: "hidden" }}
+              style={{ width: "100%", maxWidth: isMobile ? "100vw" : "calc(100vw - 32px)", background: "#1e2130", border: isMobile ? "none" : "1px solid #2e3650", borderRadius: isMobile ? 0 : 14, padding: isMobile ? 12 : 24, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column", overflow: "hidden" }}
             >
               {/* Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 8, flexWrap: "wrap" }}>
