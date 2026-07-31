@@ -3887,16 +3887,19 @@ Payment terms:
         <button
           type="button"
           onClick={async () => {
-            // Fetch fresh timesheets AND crews so we're guaranteed to have both.
-            // (On slow first-load, `crews` state might not have populated yet.)
-            const [tsRes, crewsRes] = await Promise.all([
+            // Fetch fresh timesheets, crews AND projects so we're guaranteed to have all three.
+            // (On slow first-load, state might not have populated yet.)
+            const [tsRes, crewsRes, projRes] = await Promise.all([
               supabase.from("timesheets").select("*").order("date"),
               supabase.from("crews").select("*").order("name"),
+              supabase.from("projects").select("*").order("name"),
             ])
             const freshTs = (tsRes.data ?? []) as TimesheetEntry[]
             const freshCrews = (crewsRes.data ?? []) as Crew[]
+            const freshProjects = (projRes.data ?? []) as Project[]
             setTimesheetEntries(freshTs)
             setCrews(freshCrews)
+            setProjects(freshProjects)
 
             // Set the week to this week
             setTimesheetWeekStart(mondayStr)
