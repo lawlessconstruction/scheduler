@@ -6423,6 +6423,17 @@ Payment terms:
                     <option value="">{timesheetCrewId ? "← Back to summary" : "Select crew..."}</option>
                     {crews.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
+                  {timesheetCrewId && (
+                    <button type="button"
+                      onClick={async () => {
+                        setTimesheetCrewId("")
+                        const { data } = await supabase.from("timesheets").select("*").order("date")
+                        setTimesheetEntries((data ?? []) as TimesheetEntry[])
+                      }}
+                      style={{ ...secondaryButtonStyle, padding: "6px 12px", background: "#0f2030", border: "1.5px solid #0891b2", color: "#67e8f9", fontWeight: 700 }}>
+                      ← Summary
+                    </button>
+                  )}
                   <button type="button" onClick={() => setShowTimesheetModal(false)} style={secondaryButtonStyle}>Close</button>
                 </div>
               </div>
