@@ -2413,6 +2413,7 @@ export default function Home() {
   const [mobileLandingDismissed, setMobileLandingDismissed] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [mobileDayOffset, setMobileDayOffset] = useState(0)  // 0=Mon of week, 6=Sun
+  const [mobileSearch, setMobileSearch] = useState("")
   useEffect(() => {
     if (typeof window === "undefined") return
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -3198,6 +3199,20 @@ export default function Home() {
     setTimesheetLoading(false)
   }
 
+  // For mobile: load ALL crews' timesheets for a given week
+  async function loadAllTimesheetsForWeek(weekStart: string) {
+    setTimesheetLoading(true)
+    const weekEnd = addCalendarDays(weekStart, 6)
+    const { data } = await supabase
+      .from("timesheets")
+      .select("*")
+      .gte("date", weekStart)
+      .lte("date", weekEnd)
+      .order("date")
+    setTimesheetEntries((data ?? []) as TimesheetEntry[])
+    setTimesheetLoading(false)
+  }
+
   async function saveTimesheetEntry(entry: Partial<TimesheetEntry> & { worker_id: string; date: string }) {
     const existing = timesheetEntries.find(
       (e) => e.worker_id === entry.worker_id && e.date === entry.date && e.project_id === (entry.project_id ?? null)
@@ -3912,11 +3927,11 @@ Payment terms:
 
             if (targetCrewId) {
               setTimesheetCrewId(targetCrewId)
-              await loadTimesheetEntries(mondayStr, targetCrewId)
             } else {
-              // Genuinely no crews — fall through to summary
               setTimesheetCrewId("")
             }
+            // On mobile, load ALL crews' timesheets so the stacked view has data for everyone
+            await loadAllTimesheetsForWeek(mondayStr)
             setMobileLandingDismissed(true)
             setShowTimesheetModal(true)
           }}
@@ -6547,7 +6562,9 @@ Payment terms:
                   <button type="button" onClick={async () => {
                     const d = addCalendarDays(timesheetWeekStart, -7)
                     setTimesheetWeekStart(d)
-                    if (timesheetCrewId) {
+                    if (isMobile) {
+                      await loadAllTimesheetsForWeek(d)
+                    } else if (timesheetCrewId) {
                       loadTimesheetEntries(d, timesheetCrewId)
                     } else {
                       // Summary view — refresh all
@@ -6559,36 +6576,36 @@ Payment terms:
                   <button type="button" onClick={async () => {
                     const d = addCalendarDays(timesheetWeekStart, 7)
                     setTimesheetWeekStart(d)
-                    if (timesheetCrewId) {
+                    if (isMobile) {
+                      await loadAllTimesheetsForWeek(d)
+                    } else if (timesheetCrewId) {
                       loadTimesheetEntries(d, timesheetCrewId)
                     } else {
                       const { data } = await supabase.from("timesheets").select("*").order("date")
                       setTimesheetEntries((data ?? []) as TimesheetEntry[])
                     }
                   }} style={{ ...secondaryButtonStyle, padding: "6px 12px" }}>▶</button>
-                  <select
-                    value={timesheetCrewId}
-                    onChange={async (e) => {
-                      const newId = e.target.value
-                      setTimesheetCrewId(newId)
-                      if (newId) {
-                        loadTimesheetEntries(timesheetWeekStart, newId)
-                      } else {
-                        // Going back to summary — refresh all
-                        const { data } = await supabase.from("timesheets").select("*").order("date")
-                        setTimesheetEntries((data ?? []) as TimesheetEntry[])
-                      }
-                    }}
-                    style={
-                      isMobile
-                        ? { ...fieldStyle, fontSize: 15, padding: "10px 12px", fontWeight: 700, background: "#0f2030", border: "1.5px solid #0891b2", color: "#67e8f9", minWidth: 150 }
-                        : { ...fieldStyle, width: "auto", fontSize: 13, padding: "6px 10px" }
-                    }
-                  >
-                    <option value="">{timesheetCrewId ? "← Back to summary" : "Select crew..."}</option>
-                    {crews.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                  {timesheetCrewId && (
+                  {!isMobile && (
+                    <select
+                      value={timesheetCrewId}
+                      onChange={async (e) => {
+                        const newId = e.target.value
+                        setTimesheetCrewId(newId)
+                        if (newId) {
+                          loadTimesheetEntries(timesheetWeekStart, newId)
+                        } else {
+                          // Going back to summary — refresh all
+                          const { data } = await supabase.from("timesheets").select("*").order("date")
+                          setTimesheetEntries((data ?? []) as TimesheetEntry[])
+                        }
+                      }}
+                      style={{ ...fieldStyle, width: "auto", fontSize: 13, padding: "6px 10px" }}
+                    >
+                      <option value="">{timesheetCrewId ? "← Back to summary" : "Select crew..."}</option>
+                      {crews.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  )}
+                  {!isMobile && timesheetCrewId && (
                     <button type="button"
                       onClick={async () => {
                         setTimesheetCrewId("")
@@ -6603,7 +6620,7 @@ Payment terms:
                 </div>
               </div>
 
-              {!timesheetCrewId && (() => {
+              {!timesheetCrewId && !isMobile && (() => {
                 // Summary dashboard — visible when no specific crew is selected.
                 // Uses timesheetEntries as the source (loaded fresh on modal open).
                 const weekEnd = addCalendarDays(timesheetWeekStart, 6)
@@ -6778,18 +6795,25 @@ Payment terms:
                 <div style={{ color: "#6b7a9a", fontSize: 14, textAlign: "center", padding: 40 }}>Loading...</div>
               )}
 
-              {timesheetCrewId && !timesheetLoading && isMobile && (() => {
-                // MOBILE VIEW — one day at a time, big cards per worker
+              {isMobile && !timesheetLoading && (() => {
+                // MOBILE VIEW — all crews stacked, one day at a time, with search
                 const dayDate = addCalendarDays(timesheetWeekStart, mobileDayOffset)
                 const dayIsWeekend = isWeekend(parseDate(dayDate))
                 const todayKey2 = new Date().toISOString().slice(0, 10)
                 const isToday = dayDate === todayKey2
 
-                // Day totals for this crew
-                const dayEntries = timesheetEntries.filter(e => e.date === dayDate && crewWorkers.some(w => w.id === e.worker_id))
-                const dayOrdHours = dayEntries.reduce((s, e) => s + (e.ordinary_hours ?? 0), 0)
-                const dayOtHours = dayEntries.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
-                const dayCost = dayEntries.reduce((s, e) => {
+                // Filter workers by search string (matches worker name anywhere, case-insensitive)
+                const search = mobileSearch.trim().toLowerCase()
+                const workerMatches = (w: Worker) => !search || w.name.toLowerCase().includes(search)
+
+                // Active crews with any workers
+                const activeCrews = crews.filter(c => workers.some(w => w.crew_id === c.id))
+
+                // Day totals across ALL crews
+                const dayEntriesAll = timesheetEntries.filter(e => e.date === dayDate)
+                const dayOrdHours = dayEntriesAll.reduce((s, e) => s + (e.ordinary_hours ?? 0), 0)
+                const dayOtHours = dayEntriesAll.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
+                const dayCost = dayEntriesAll.reduce((s, e) => {
                   const w = workers.find(ww => ww.id === e.worker_id)
                   if (!w) return s
                   const trueCost = w.total_cost_hourly_with_ot ?? w.base_rate_hourly ?? 0
@@ -6804,39 +6828,55 @@ Payment terms:
 
                 return (
                   <div style={{ flex: 1, overflowY: "auto", padding: "0 0 100px 0", display: "flex", flexDirection: "column" }}>
-                    {/* Day tabs: Mon Tue Wed Thu Fri Sat Sun */}
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 12, position: "sticky", top: 0, background: "#1e2130", zIndex: 5, padding: "8px 0" }}>
-                      {Array.from({ length: 7 }, (_, i) => {
-                        const d = addCalendarDays(timesheetWeekStart, i)
-                        const dObj = parseDate(d)
-                        const weekend = isWeekend(dObj)
-                        const active = i === mobileDayOffset
-                        const dayIsToday = d === todayKey2
-                        return (
-                          <button key={d} type="button" onClick={() => setMobileDayOffset(i)}
-                            style={{
-                              padding: "8px 4px",
-                              borderRadius: 8,
-                              border: active ? "2px solid #0891b2" : "1px solid #252f45",
-                              background: active ? "#0f2030" : (weekend ? "#0a0f18" : "#141c2a"),
-                              color: active ? "#67e8f9" : (weekend ? "#6b7a9a" : "#c8d4f0"),
-                              fontSize: 12,
-                              fontWeight: 700,
-                              cursor: "pointer",
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "center",
-                              gap: 2,
-                              position: "relative",
-                            }}>
-                            <span style={{ fontSize: 10, textTransform: "uppercase", opacity: 0.7 }}>
-                              {dObj.toLocaleDateString("en-AU", { weekday: "short" })}
-                            </span>
-                            <span style={{ fontSize: 16, fontWeight: 900 }}>{dObj.getDate()}</span>
-                            {dayIsToday && <span style={{ position: "absolute", top: 2, right: 4, width: 6, height: 6, borderRadius: 999, background: "#4ade80" }} />}
-                          </button>
-                        )
-                      })}
+                    {/* Day tabs + search — sticky */}
+                    <div style={{ position: "sticky", top: 0, background: "#1e2130", zIndex: 5, padding: "8px 0 12px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
+                        {Array.from({ length: 7 }, (_, i) => {
+                          const d = addCalendarDays(timesheetWeekStart, i)
+                          const dObj = parseDate(d)
+                          const weekend = isWeekend(dObj)
+                          const active = i === mobileDayOffset
+                          const dayIsToday = d === todayKey2
+                          return (
+                            <button key={d} type="button" onClick={() => setMobileDayOffset(i)}
+                              style={{
+                                padding: "8px 4px",
+                                borderRadius: 8,
+                                border: active ? "2px solid #0891b2" : "1px solid #252f45",
+                                background: active ? "#0f2030" : (weekend ? "#0a0f18" : "#141c2a"),
+                                color: active ? "#67e8f9" : (weekend ? "#6b7a9a" : "#c8d4f0"),
+                                fontSize: 12,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                gap: 2,
+                                position: "relative",
+                              }}>
+                              <span style={{ fontSize: 10, textTransform: "uppercase", opacity: 0.7 }}>
+                                {dObj.toLocaleDateString("en-AU", { weekday: "short" })}
+                              </span>
+                              <span style={{ fontSize: 16, fontWeight: 900 }}>{dObj.getDate()}</span>
+                              {dayIsToday && <span style={{ position: "absolute", top: 2, right: 4, width: 6, height: 6, borderRadius: 999, background: "#4ade80" }} />}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {/* Search bar */}
+                      <div style={{ position: "relative", padding: "0 4px" }}>
+                        <input
+                          type="search"
+                          value={mobileSearch}
+                          onChange={(e) => setMobileSearch(e.target.value)}
+                          placeholder="🔍 Search worker (first name works too)…"
+                          style={{ ...bigFieldStyle, padding: "12px 14px", fontSize: 14 }}
+                        />
+                        {mobileSearch && (
+                          <button type="button" onClick={() => setMobileSearch("")}
+                            style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: "#94a3b8", fontSize: 20, cursor: "pointer", padding: "0 6px" }}>×</button>
+                        )}
+                      </div>
                     </div>
 
                     {/* Day heading */}
@@ -6848,91 +6888,135 @@ Payment terms:
                       {dayIsWeekend && <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 4 }}>Weekend — entries optional</div>}
                     </div>
 
-                    {/* Quick fill whole crew */}
-                    {!dayIsWeekend && (
-                      <div style={{ padding: "0 4px 12px" }}>
-                        <select
-                          defaultValue=""
-                          onChange={async (e) => { if (e.target.value) { await quickFillDay(dayDate, e.target.value); e.target.value = "" } }}
-                          style={{ ...bigFieldStyle, background: "linear-gradient(135deg, #1e3a6e, #2563eb)", border: "2px solid #3b82f6", color: "#bfdbfe", fontWeight: 700 }}>
-                          <option value="">⚡ Quick fill whole crew…</option>
-                          {projects.filter((p) => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map((p) => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
-                        </select>
-                      </div>
-                    )}
+                    {/* Crews stacked with workers under each */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 20, padding: "0 4px" }}>
+                      {activeCrews.map(crew => {
+                        const crewWorkersList = workers.filter(w => w.crew_id === crew.id).sort((a, b) => a.sort_order - b.sort_order)
+                        const visibleWorkers = crewWorkersList.filter(workerMatches)
+                        if (search && visibleWorkers.length === 0) return null // hide crew heading if search hides all workers in it
 
-                    {/* Worker cards */}
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "0 4px" }}>
-                      {crewWorkers.map(w => {
-                        const entries = timesheetEntries.filter(e => e.worker_id === w.id && e.date === dayDate)
-                        const missing = entries.length === 0 && !dayIsWeekend && dayDate <= todayKey2
                         return (
-                          <div key={w.id} style={{ background: "#141c2a", border: `1px solid ${missing ? "#854d0e" : "#252f45"}`, borderRadius: 12, padding: 14 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                              <div>
-                                <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f4ff" }}>{w.name}</div>
-                                <div style={{ fontSize: 11, color: "#6b7a9a" }}>{w.role}</div>
-                              </div>
-                              {missing && (
-                                <span style={{ fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "#3a2a0a", color: "#fbbf24", border: "1px solid #854d0e" }}>MISSING</span>
-                              )}
+                          <div key={crew.id}>
+                            {/* Crew heading + quick fill */}
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "8px 0", borderBottom: "1px solid #252f45" }}>
+                              <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 999, background: crew.color ?? "#2563eb" }} />
+                              <div style={{ fontSize: 16, fontWeight: 900, color: "#f0f4ff", flex: 1 }}>{crew.name}</div>
+                              <div style={{ fontSize: 11, color: "#94a3b8" }}>{visibleWorkers.length}/{crewWorkersList.length}</div>
                             </div>
 
-                            {entries.map((entry) => (
-                              <div key={entry.id} style={{ background: "#1a2035", borderRadius: 10, padding: 12, border: "1px solid #2e3a58", marginBottom: 8 }}>
-                                {/* Site */}
-                                <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
-                                  <select
-                                    value={entry.project_id ?? ""}
-                                    onChange={async (e) => {
-                                      await supabase.from("timesheets").update({ project_id: e.target.value || null }).eq("id", entry.id)
-                                      await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
-                                    }}
-                                    style={{ ...bigFieldStyle, flex: 1 }}>
-                                    <option value="">No site</option>
-                                    {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
-                                  </select>
-                                  <button type="button" onClick={async () => { await deleteTimesheetEntry(entry.id) }}
-                                    style={{ background: "#2a1a1a", border: "1px solid #5a2020", borderRadius: 8, color: "#f87171", cursor: "pointer", fontSize: 20, padding: "8px 12px", lineHeight: 1, fontWeight: 700 }}>×</button>
-                                </div>
-                                {/* Hours — big number pad style */}
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Ord hrs</div>
-                                    <input type="number" step="0.5" inputMode="decimal" defaultValue={entry.ordinary_hours} key={`m-ord-${entry.id}`}
-                                      style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px" }}
-                                      onBlur={async (e) => {
-                                        await supabase.from("timesheets").update({ ordinary_hours: Number(e.target.value) }).eq("id", entry.id)
-                                        await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
-                                      }} />
-                                  </div>
-                                  <div>
-                                    <div style={{ fontSize: 10, color: "#f59e0b", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>OT hrs</div>
-                                    <input type="number" step="0.5" inputMode="decimal" defaultValue={entry.ot_hours} key={`m-ot-${entry.id}`}
-                                      style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px", color: entry.ot_hours > 0 ? "#fbbf24" : "#f0f4ff" }}
-                                      onBlur={async (e) => {
-                                        await supabase.from("timesheets").update({ ot_hours: Number(e.target.value) }).eq("id", entry.id)
-                                        await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
-                                      }} />
-                                  </div>
-                                </div>
+                            {!search && !dayIsWeekend && (
+                              <div style={{ marginBottom: 10 }}>
+                                <select
+                                  defaultValue=""
+                                  onChange={async (e) => {
+                                    if (!e.target.value) return
+                                    const projectId = e.target.value
+                                    // Fill the WHOLE crew (this crew only) for this day
+                                    for (const w of crewWorkersList) {
+                                      const existing = timesheetEntries.filter(x => x.worker_id === w.id && x.date === dayDate)
+                                      if (existing.length === 0) {
+                                        await saveTimesheetEntry({ worker_id: w.id, date: dayDate, project_id: projectId, ordinary_hours: 9, ot_hours: 0 })
+                                      }
+                                    }
+                                    e.target.value = ""
+                                    await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                  }}
+                                  style={{ ...bigFieldStyle, background: "linear-gradient(135deg, #1e3a6e, #2563eb)", border: "2px solid #3b82f6", color: "#bfdbfe", fontWeight: 700, fontSize: 14 }}>
+                                  <option value="">⚡ Quick fill {crew.name}…</option>
+                                  {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
+                                </select>
                               </div>
-                            ))}
+                            )}
 
-                            {/* Add site */}
-                            <button type="button" onClick={async () => {
-                              await saveTimesheetEntry({ worker_id: w.id, date: dayDate, project_id: null, ordinary_hours: entries.length === 0 && !dayIsWeekend ? 9 : 0, ot_hours: 0 })
-                            }} style={{ width: "100%", padding: "12px", borderRadius: 10, border: `1.5px dashed ${entries.length === 0 ? "#0891b2" : "#2e3650"}`, background: entries.length === 0 ? "#0f2030" : "transparent", color: entries.length === 0 ? "#67e8f9" : "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-                              {entries.length === 0 ? "+ Add today's hours" : "+ Add another site"}
-                            </button>
+                            {/* Worker cards */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              {visibleWorkers.map(w => {
+                                const entries = timesheetEntries.filter(e => e.worker_id === w.id && e.date === dayDate)
+                                const missing = entries.length === 0 && !dayIsWeekend && dayDate <= todayKey2
+                                return (
+                                  <div key={w.id} style={{ background: "#141c2a", border: `1px solid ${missing ? "#854d0e" : "#252f45"}`, borderRadius: 12, padding: 14 }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                                      <div>
+                                        <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f4ff" }}>{w.name}</div>
+                                        <div style={{ fontSize: 11, color: "#6b7a9a" }}>{w.role}</div>
+                                      </div>
+                                      {missing && (
+                                        <span style={{ fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "#3a2a0a", color: "#fbbf24", border: "1px solid #854d0e" }}>MISSING</span>
+                                      )}
+                                    </div>
+
+                                    {entries.map((entry) => (
+                                      <div key={entry.id} style={{ background: "#1a2035", borderRadius: 10, padding: 12, border: "1px solid #2e3a58", marginBottom: 8 }}>
+                                        {/* Site */}
+                                        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+                                          <select
+                                            value={entry.project_id ?? ""}
+                                            onChange={async (e) => {
+                                              await supabase.from("timesheets").update({ project_id: e.target.value || null }).eq("id", entry.id)
+                                              await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                            }}
+                                            style={{ ...bigFieldStyle, flex: 1 }}>
+                                            <option value="">No site</option>
+                                            {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
+                                          </select>
+                                          <button type="button" onClick={async () => {
+                                            await supabase.from("timesheets").delete().eq("id", entry.id)
+                                            await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                          }}
+                                            style={{ background: "#2a1a1a", border: "1px solid #5a2020", borderRadius: 8, color: "#f87171", cursor: "pointer", fontSize: 20, padding: "8px 12px", lineHeight: 1, fontWeight: 700 }}>×</button>
+                                        </div>
+                                        {/* Hours — big number pad style */}
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                                          <div>
+                                            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Ord hrs</div>
+                                            <input type="number" step="0.5" inputMode="decimal" defaultValue={entry.ordinary_hours} key={`m-ord-${entry.id}`}
+                                              style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px" }}
+                                              onBlur={async (e) => {
+                                                await supabase.from("timesheets").update({ ordinary_hours: Number(e.target.value) }).eq("id", entry.id)
+                                                await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                              }} />
+                                          </div>
+                                          <div>
+                                            <div style={{ fontSize: 10, color: "#f59e0b", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>OT hrs</div>
+                                            <input type="number" step="0.5" inputMode="decimal" defaultValue={entry.ot_hours} key={`m-ot-${entry.id}`}
+                                              style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px", color: entry.ot_hours > 0 ? "#fbbf24" : "#f0f4ff" }}
+                                              onBlur={async (e) => {
+                                                await supabase.from("timesheets").update({ ot_hours: Number(e.target.value) }).eq("id", entry.id)
+                                                await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                              }} />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+
+                                    {/* Add site */}
+                                    <button type="button" onClick={async () => {
+                                      await supabase.from("timesheets").insert({ worker_id: w.id, date: dayDate, project_id: null, ordinary_hours: entries.length === 0 && !dayIsWeekend ? 9 : 0, ot_hours: 0 })
+                                      await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                    }} style={{ width: "100%", padding: "12px", borderRadius: 10, border: `1.5px dashed ${entries.length === 0 ? "#0891b2" : "#2e3650"}`, background: entries.length === 0 ? "#0f2030" : "transparent", color: entries.length === 0 ? "#67e8f9" : "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                                      {entries.length === 0 ? "+ Add today's hours" : "+ Add another site"}
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
                           </div>
                         )
                       })}
+
+                      {search && activeCrews.every(c => workers.filter(w => w.crew_id === c.id).filter(workerMatches).length === 0) && (
+                        <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a" }}>
+                          No workers match "{mobileSearch}"
+                        </div>
+                      )}
                     </div>
 
                     {/* Sticky footer with day totals + prev/next */}
                     <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "#0a1018", borderTop: "1px solid #252f45", padding: "10px 12px", display: "flex", gap: 8, alignItems: "center", boxShadow: "0 -4px 16px rgba(0,0,0,0.4)", zIndex: 10 }}>
-                      <button type="button" onClick={() => setMobileDayOffset(Math.max(0, mobileDayOffset - 1))} disabled={mobileDayOffset === 0}
+                      <button type="button" onClick={async () => {
+                        const next = Math.max(0, mobileDayOffset - 1)
+                        setMobileDayOffset(next)
+                      }} disabled={mobileDayOffset === 0}
                         style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #2e3650", background: "#141c2a", color: mobileDayOffset === 0 ? "#3a4a60" : "#c8d4f0", fontWeight: 700, cursor: mobileDayOffset === 0 ? "not-allowed" : "pointer", fontSize: 14 }}>◀</button>
                       <div style={{ flex: 1, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>
                         <div style={{ color: "#f0f4ff", fontSize: 15, fontWeight: 800 }}>
@@ -6940,7 +7024,10 @@ Payment terms:
                         </div>
                         <div style={{ fontSize: 11 }}>${dayCost.toLocaleString("en-AU", { maximumFractionDigits: 0 })}</div>
                       </div>
-                      <button type="button" onClick={() => setMobileDayOffset(Math.min(6, mobileDayOffset + 1))} disabled={mobileDayOffset === 6}
+                      <button type="button" onClick={async () => {
+                        const next = Math.min(6, mobileDayOffset + 1)
+                        setMobileDayOffset(next)
+                      }} disabled={mobileDayOffset === 6}
                         style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #2e3650", background: "#141c2a", color: mobileDayOffset === 6 ? "#3a4a60" : "#c8d4f0", fontWeight: 700, cursor: mobileDayOffset === 6 ? "not-allowed" : "pointer", fontSize: 14 }}>▶</button>
                     </div>
                   </div>
