@@ -25,11 +25,10 @@ export default function SystemMap() {
     { id: "timesheets", label: "Timesheets", sub: "Actual hours · cost per job", x: 195, y: 340, w: 150, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
     { id: "cashflow", label: "Cashflow timeline", sub: "Money in vs out by week", x: 360, y: 340, w: 150, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
     { id: "materials", label: "Materials & costs", sub: "Per project · per phase", x: 525, y: 340, w: 145, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
-    { id: "estbot", label: "Quoting bot", sub: "Reads plans + scope of works", x: 30, y: 470, w: 150, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
+    { id: "estbot", label: "Quoting bot", sub: "Reads plans + scope of works", x: 30, y: 470, w: 150, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
     { id: "estdb", label: "Estimate storage", sub: "Versions · line items · status", x: 195, y: 470, w: 150, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
-    { id: "estui", label: "Estimation UI", sub: "Review · edit · approve", x: 360, y: 470, w: 150, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
-    // Quote PDF now marked as BUILT (blue)
-    { id: "estpdf", label: "Quote PDF", sub: "Framing + steel · sent to builder", x: 525, y: 470, w: 145, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
+    { id: "estui", label: "Estimation UI", sub: "Review · edit · approve · rate locking", x: 360, y: 470, w: 150, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
+    { id: "estpdf", label: "Quote PDF", sub: "Framing + steel · sent to builder", x: 525, y: 470, w: 145, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
     { id: "db", label: "Supabase database", sub: "projects · segments · milestones · workers · timesheets · estimates · costs · views", x: 30, y: 590, w: 640, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
     { id: "api", label: "Context API", sub: "Rates · history · availability", x: 30, y: 710, w: 185, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
     { id: "botchat", label: "Bot chat interface", sub: "Natural language · actions", x: 240, y: 710, w: 185, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
@@ -38,8 +37,7 @@ export default function SystemMap() {
     { id: "clientreports", label: "Client reports", sub: "Progress · invoicing", x: 175, y: 840, w: 130, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
     { id: "accounting", label: "Accounting", sub: "Xero · invoices", x: 320, y: 840, w: 130, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
     { id: "extras", label: "Extras billing", sub: "Variations · rate locking · invoicing", x: 465, y: 840, w: 130, h: 56, color: built, textColor: builtText, subColor: builtSub, status: "built" },
-    // Mobile app moved left so it doesn't clip
-    { id: "mobile", label: "Mobile app", sub: "Crew bosses", x: 605, y: 840, w: 65, h: 56, color: toBuild, textColor: planText, subColor: planSub, status: "tobuild" },
+    { id: "mobile", label: "Mobile app", sub: "Timesheets ✓ · rest planned", x: 605, y: 840, w: 65, h: 56, color: inProgress, textColor: nextText, subColor: nextSub, status: "inprogress" },
     { id: "goal", label: "AI business operating system", sub: "Schedule · cashflow · profitability · estimation · crew · quoting — all connected", x: 30, y: 970, w: 640, h: 72, color: core, textColor: coreText, subColor: coreSub, status: "core" },
   ]
 
@@ -135,8 +133,36 @@ export default function SystemMap() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 32 }}>
           {[
-            { title: "Built", color: built, items: ["Gantt scheduler with drag/resize","Projects, contracts & milestones","Clients with contact details + summary view","Worker cost build-up & margins","Move workers between crews","Timesheets with split-day support","Project profitability (labour + materials)","Cashflow timeline + weekly strip (fixed payroll forecast)","Materials & costs with payment schedules","Estimate storage + UI with rate locking","Extras / variations with rate locking + project link","Quoting bot (reads plans + scope)","Quote PDF (framing + steel)","Milestone progress indicators (invoiced/paid)","Past-segment-unbilled visual warnings","Project files & versioning (Supabase Storage)","Context API (/api/context)","Supabase database with views"] },
-            { title: "Next to build", color: toBuild, items: ["Bot chat interface","Payroll export","Xero / accounting integration","Client reports","Mobile app for crew bosses","Webhooks & notifications"] },
+            { title: "Built", color: built, items: [
+              "Gantt scheduler with drag/resize + pin favourites",
+              "Project & crew calendar views (toggle between)",
+              "Projects, contracts & milestones",
+              "Clients with contact details + summary view",
+              "Worker cost build-up & margins",
+              "Move workers between crews",
+              "Timesheets with split-day support + mobile view",
+              "Project profitability (labour + materials)",
+              "Cashflow timeline + weekly strip (fixed payroll forecast)",
+              "Materials & costs with payment schedules",
+              "Estimate storage + UI with rate locking",
+              "Extras / variations with rate locking + project link",
+              "Expenses: reimbursements & supplier invoices with oncharge routing",
+              "Milestone progress indicators (invoiced/paid)",
+              "Past-segment-unbilled visual warnings",
+              "Project files & versioning (Supabase Storage)",
+              "Context API (/api/context)",
+              "Supabase database with views",
+            ] },
+            { title: "Next to build", color: toBuild, items: [
+              "Quoting bot (plans + scope → estimate)",
+              "Quote PDF export (framing + steel)",
+              "Bot chat interface",
+              "Payroll export",
+              "Xero / accounting integration",
+              "Client reports",
+              "Full mobile app for crew bosses (beyond timesheets)",
+              "Webhooks & notifications",
+            ] },
           ].map((section) => (
             <div key={section.title} style={{ background: "#0a0a0a", border: `1px solid ${section.color}55`, borderRadius: 10, padding: 18 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
