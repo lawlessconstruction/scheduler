@@ -2867,7 +2867,13 @@ export default function Home() {
     }
 
     if (cellSegmentForm.segmentId) {
+      // Track old project for milestone reattachment if project has changed
+      const existingSegment = segments.find(s => s.id === cellSegmentForm.segmentId)
+      const oldProjectId = existingSegment?.project_id ?? cellEditor.projectId
       await supabase.from("segments").update(payload).eq("id", cellSegmentForm.segmentId)
+      if (oldProjectId !== cellEditor.projectId) {
+        await reattachMilestone(cellSegmentForm.segmentId, oldProjectId, cellEditor.projectId)
+      }
     } else {
       const { data: inserted } = await supabase.from("segments").insert(payload).select().single()
       if (inserted) {
@@ -3826,6 +3832,27 @@ Payment terms:
     await loadData()
   }
 
+  // Crew view: dragging a segment to a different crew row reassigns it, and shifts dates
+  async function moveSegmentToCrew(segmentId: string, targetCrewId: string, targetStartDate: string) {
+    const segment = segments.find((s) => s.id === segmentId)
+    if (!segment) return
+
+    const targetDateObj = parseDate(targetStartDate)
+    if (isWeekend(targetDateObj)) return
+
+    const workingDays = countWorkingDaysInclusive(segment.start_date, segment.end_date)
+    const newStart = targetStartDate
+    const newEnd = addWorkingDaysInclusive(newStart, Math.max(workingDays, 1))
+
+    await supabase
+      .from("segments")
+      .update({ crew_id: targetCrewId, start_date: newStart, end_date: newEnd })
+      .eq("id", segmentId)
+
+    setDraggingToken(null)
+    await loadData()
+  }
+
   async function resizeSegment(segmentId: string, targetEndDate: string) {
     const segment = segments.find((s) => s.id === segmentId)
     if (!segment) return
@@ -4455,8 +4482,6 @@ Payment terms:
                           e.preventDefault()
 
                           if (!draggingToken) return
-                          // Read-only in crew mode — don't reassign or resize
-                          if (ganttViewMode === "crews") return
 
                           const container = e.currentTarget as HTMLDivElement
                           const targetDateKey = getDateKeyFromPointer(e.clientX, container, dates)
@@ -4470,7 +4495,12 @@ Payment terms:
                             return
                           }
 
-                          await moveSegment(draggingToken, row.projectId, targetDateKey)
+                          // In crew view, row.projectId is actually the crew id — reassign crew
+                          if (ganttViewMode === "crews") {
+                            await moveSegmentToCrew(draggingToken, row.projectId, targetDateKey)
+                          } else {
+                            await moveSegment(draggingToken, row.projectId, targetDateKey)
+                          }
                         }}
                         style={{
                           position: "relative",
@@ -4488,7 +4518,14 @@ Payment terms:
                               key={dateKey}
                               onClick={() => {
                                 if (weekend) return
-                                if (ganttViewMode === "crews") return  // read-only
+                                if (ganttViewMode === "crews") {
+                                  // In crew view: row.projectId is the crew_id
+                                  // Open the editor with no project preselected, but crew + date filled
+                                  openCellEditor("", "", dateKey)
+                                  // Override the crew_id in the form to match this row's crew
+                                  setCellSegmentForm(prev => ({ ...prev, crew_id: row.projectId }))
+                                  return
+                                }
                                 openCellEditor(row.projectId, row.projectName, dateKey)
                               }}
                               style={{
@@ -4605,10 +4642,15 @@ Payment terms:
                                   return (
                                     <div
                                       key={`${s.id}-${runIndex}`}
-                                      draggable={isFirstRun && ganttViewMode === "projects"}
+                                      draggable={isFirstRun}
                                       onClick={(e) => {
                                         e.stopPropagation()
-                                        openCellEditor(row.projectId, row.projectName, s.start_date, s.id)
+                                        // In crew view row.projectId is the crew id — use segment.project_id instead
+                                        const projId = ganttViewMode === "crews" ? s.project_id : row.projectId
+                                        const projName = ganttViewMode === "crews"
+                                          ? (projects.find(p => p.id === s.project_id)?.name ?? "")
+                                          : row.projectName
+                                        openCellEditor(projId, projName, s.start_date, s.id)
                                       }}
                                       onDragStart={(e) => {
                                         if (!isFirstRun) return
@@ -4684,7 +4726,7 @@ Payment terms:
                                         </span>
                                       ))}
 
-                                      {isLastRun && ganttViewMode === "projects" && (
+                                      {isLastRun && (
                                         <div
                                           draggable
                                           onClick={(e) => e.stopPropagation()}
@@ -5332,6 +5374,31 @@ Payment terms:
                 <div style={{ fontWeight: 800, marginBottom: 12, fontSize: 18 }}>Crew booking</div>
 
                 <div style={{ display: "grid", gap: 12 }}>
+                  <div>
+                    <FieldLabel>Project</FieldLabel>
+                    <select
+                      value={cellEditor.projectId}
+                      onChange={(e) => {
+                        const newProjectId = e.target.value
+                        const newProject = projects.find(p => p.id === newProjectId)
+                        setCellEditor(prev => ({
+                          ...prev,
+                          projectId: newProjectId,
+                          projectName: newProject?.name ?? "",
+                        }))
+                      }}
+                      style={{ ...fieldStyle, borderColor: cellEditor.projectId ? "#2e3a58" : "#f87171" }}
+                    >
+                      <option value="">Select project...</option>
+                      {projects.filter(p => !p.archived || p.id === cellEditor.projectId).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => (
+                        <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}{p.archived ? " (archived)" : ""}</option>
+                      ))}
+                    </select>
+                    {!cellEditor.projectId && (
+                      <div style={{ ...helperStyle, color: "#f87171" }}>A project is required to save.</div>
+                    )}
+                  </div>
+
                   <div>
                     <FieldLabel>Segment name</FieldLabel>
                     <input
