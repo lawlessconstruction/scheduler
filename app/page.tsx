@@ -1277,7 +1277,7 @@ function WorkerSearch({ workers, getChargeRate, value, onChange, style }: {
 
 function ExtrasModal({ onClose, projects, workers, classificationRates }: {
   onClose: () => void
-  projects: { id: string; name: string; archived: boolean | null }[]
+  projects: { id: string; name: string; archived: boolean | null; pinned: boolean | null }[]
   workers: Worker[]
   classificationRates: ClassificationRate[]
 }) {
@@ -1508,8 +1508,8 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                       setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, project_id: newProjectId } : x))
                     }}>
                     <option value="">No project</option>
-                    {projects.filter(p => !p.archived || p.id === activeExtra.project_id).map(p => (
-                      <option key={p.id} value={p.id}>{p.name}{p.archived ? " (archived)" : ""}</option>
+                    {projects.filter(p => !p.archived || p.id === activeExtra.project_id).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => (
+                      <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}{p.archived ? " (archived)" : ""}</option>
                     ))}
                   </select>
                 </div>
@@ -1708,7 +1708,7 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
 // =================================================================
 function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
   onClose: () => void
-  projects: { id: string; name: string; archived: boolean | null }[]
+  projects: { id: string; name: string; archived: boolean | null; pinned: boolean | null }[]
   workers: Worker[]
   initialProjectId: string | null
 }) {
@@ -1930,7 +1930,7 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
           </select>
           <select value={projectFilter} onChange={e => setProjectFilter(e.target.value)} style={{ ...fs, width: "auto" }}>
             <option value="all">All projects</option>
-            {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
           </select>
           <div style={{ flex: 1 }} />
           <div style={{ fontSize: 12, color: "#6b7a9a" }}>{filtered.length} of {expenses.length}</div>
@@ -2087,7 +2087,7 @@ function ExpenseForm({ mode, existing, workers, projects, extras, defaultProject
   mode: "create" | "edit"
   existing?: Expense
   workers: Worker[]
-  projects: { id: string; name: string; archived: boolean | null }[]
+  projects: { id: string; name: string; archived: boolean | null; pinned: boolean | null }[]
   extras: { id: string; project_id: string | null; title: string; locked_at: string | null; status: string | null }[]
   defaultProjectId: string | null
   uploadReceipt: (file: File) => Promise<string | null>
@@ -2181,8 +2181,8 @@ function ExpenseForm({ mode, existing, workers, projects, extras, defaultProject
           <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>Project</div>
           <select value={projectId} onChange={e => setProjectId(e.target.value)} style={fs}>
             <option value="">— No project —</option>
-            {projects.filter(p => !p.archived || p.id === projectId).map(p => (
-              <option key={p.id} value={p.id}>{p.name}{p.archived ? " (archived)" : ""}</option>
+            {projects.filter(p => !p.archived || p.id === projectId).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => (
+              <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}{p.archived ? " (archived)" : ""}</option>
             ))}
           </select>
         </div>
@@ -6890,7 +6890,7 @@ Payment terms:
                                     }}
                                     style={{ ...bigFieldStyle, flex: 1 }}>
                                     <option value="">No site</option>
-                                    {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                                   </select>
                                   <button type="button" onClick={async () => { await deleteTimesheetEntry(entry.id) }}
                                     style={{ background: "#2a1a1a", border: "1px solid #5a2020", borderRadius: 8, color: "#f87171", cursor: "pointer", fontSize: 20, padding: "8px 12px", lineHeight: 1, fontWeight: 700 }}>×</button>
