@@ -3359,6 +3359,22 @@ export default function Home() {
     return item.quantity * item.unit_cost * (1 + item.margin_percent / 100)
   }
 
+  // Compute the WHOLE crew's cost for one unit (hr / day / week / other).
+  // Sum of all workers' hourly cost, multiplied by hours in that unit.
+  //   hr    = 1  × sum(cost/hr)                  → whole crew for 1 hour
+  //   day   = 9  × sum(cost/hr)                  → whole crew for 1 day (9hr day)
+  //   week  = 45 × sum(cost/hr)                  → whole crew for 1 week (5 × 9hr days)
+  //   other → treat as day equivalent (9hr)
+  // Returns 0 if crew has no workers with recorded costs.
+  function crewCostForUnit(crewId: string | null, unit: string): number {
+    if (!crewId) return 0
+    const crewWorkersWithCost = workers.filter(w => w.crew_id === crewId && w.total_cost_hourly_with_ot != null)
+    if (crewWorkersWithCost.length === 0) return 0
+    const sumHourly = crewWorkersWithCost.reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0)
+    const hoursMultiplier = unit === "hr" ? 1 : unit === "week" ? 45 : /* day / anything else */ 9
+    return sumHourly * hoursMultiplier
+  }
+
   async function createEstimate(projectId?: string, clientId?: string) {
     const project = projects.find(p => p.id === projectId)
     const { data, error } = await supabase.from("estimates").insert({
@@ -3519,14 +3535,15 @@ export default function Home() {
   async function addEstimateItem(estimateId: string, category = "labour") {
     const existing = estimateItems.filter(i => i.estimate_id === estimateId)
     const crew = crews[0]
-    const crewCost = crew ? (workers.filter(w => w.crew_id === crew.id && w.total_cost_hourly_with_ot != null).reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / Math.max(workers.filter(w => w.crew_id === crew.id).length, 1)) * 9 : 0
+    const unit = category === "labour" ? "week" : "allow"
+    const crewCost = category === "labour" && crew ? crewCostForUnit(crew.id, unit) : 0
     const { data } = await supabase.from("estimate_items").insert({
       estimate_id: estimateId,
       category,
       description: category === "labour" ? "Labour — " : "New item",
       crew_id: category === "labour" ? (crew?.id ?? null) : null,
       quantity: 1,
-      unit: category === "labour" ? "week" : "allow",
+      unit,
       unit_cost: category === "labour" ? Math.round(crewCost * 100) / 100 : 0,
       margin_percent: 30,
       sort_order: existing.length,
@@ -8552,9 +8569,7 @@ Payment terms:
 
                         const renderItemRow = (item: EstimateItem) => {
                           const itemTotal = calcItemTotal(item)
-                          const crewBlended = item.crew_id
-                            ? (workers.filter(w => w.crew_id === item.crew_id && w.total_cost_hourly_with_ot != null).reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / Math.max(workers.filter(w => w.crew_id === item.crew_id).length, 1)) * 9
-                            : null
+                          const crewBlended = crewCostForUnit(item.crew_id, item.unit)
                           // Light-mode row input style — same base as emInput but tuned smaller for table density
                           const rowInput: React.CSSProperties = {
                             width: "100%",
@@ -8584,7 +8599,8 @@ Payment terms:
                                       await saveEstimateItem({ ...item, crew_id: crewId })
                                       return
                                     }
-                                    const newCost = crewId ? (workers.filter(w => w.crew_id === crewId && w.total_cost_hourly_with_ot != null).reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / Math.max(workers.filter(w => w.crew_id === crewId).length, 1)) * 9 : item.unit_cost
+                                    // Recompute unit_cost for the WHOLE crew at the current unit (hr/day/week)
+                                    const newCost = crewId ? crewCostForUnit(crewId, item.unit) : item.unit_cost
                                     await saveEstimateItem({ ...item, crew_id: crewId, unit_cost: Math.round(newCost * 100) / 100 })
                                   }}>
                                   <option value="">No crew</option>
@@ -8593,14 +8609,23 @@ Payment terms:
                                 <input type="number" step="0.5" defaultValue={item.quantity} key={`iq-${item.id}`} style={{ ...rowInput, fontSize: 13, textAlign: "right" }}
                                   onBlur={async (e) => { await saveEstimateItem({ ...item, quantity: Number(e.target.value) }) }} />
                                 <select defaultValue={item.unit} key={`iu-${item.id}`} style={{ ...rowInput, fontSize: 12 }}
-                                  onChange={async (e) => { await saveEstimateItem({ ...item, unit: e.target.value }) }}>
+                                  onChange={async (e) => {
+                                    const newUnit = e.target.value
+                                    // If we have a crew and estimate isn't locked, recompute unit_cost for the new unit
+                                    if (item.crew_id && !activeEstimate?.locked_at) {
+                                      const newCost = crewCostForUnit(item.crew_id, newUnit)
+                                      await saveEstimateItem({ ...item, unit: newUnit, unit_cost: Math.round(newCost * 100) / 100 })
+                                    } else {
+                                      await saveEstimateItem({ ...item, unit: newUnit })
+                                    }
+                                  }}>
                                   {ESTIMATE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                                 </select>
                                 <div style={{ position: "relative" }}>
                                   <input type="number" defaultValue={item.unit_cost} key={`iuc-${item.id}`} style={{ ...rowInput, fontSize: 13, textAlign: "right" }}
                                     onBlur={async (e) => { await saveEstimateItem({ ...item, unit_cost: Number(e.target.value) }) }} />
-                                  {crewBlended != null && Math.abs(crewBlended - item.unit_cost) > 10 && !activeEstimate?.locked_at && (
-                                    <div style={{ fontSize: 10, color: "#1d4ed8", position: "absolute", bottom: -14, left: 0, fontWeight: 600 }}>crew: ${Math.round(crewBlended)}</div>
+                                  {crewBlended > 0 && Math.abs(crewBlended - item.unit_cost) > 10 && !activeEstimate?.locked_at && (
+                                    <div style={{ fontSize: 10, color: "#1d4ed8", position: "absolute", bottom: -14, left: 0, fontWeight: 600 }}>crew/{item.unit}: ${Math.round(crewBlended)}</div>
                                   )}
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
