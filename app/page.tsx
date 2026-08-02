@@ -8475,17 +8475,29 @@ Payment terms:
                           const crewBlended = item.crew_id
                             ? (workers.filter(w => w.crew_id === item.crew_id && w.total_cost_hourly_with_ot != null).reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / Math.max(workers.filter(w => w.crew_id === item.crew_id).length, 1)) * 9
                             : null
+                          // Light-mode row input style — same base as emInput but tuned smaller for table density
+                          const rowInput: React.CSSProperties = {
+                            width: "100%",
+                            padding: "8px 10px",
+                            borderRadius: 6,
+                            background: em.card,
+                            color: em.text,
+                            border: `1px solid ${em.cardBorder}`,
+                            outline: "none",
+                            boxSizing: "border-box",
+                            fontSize: 14,
+                          }
                           return (
-                            <div key={item.id} style={{ padding: "6px 10px", borderBottom: "1px solid #1a2035", background: "transparent" }}>
+                            <div key={item.id} style={{ padding: "10px 18px", borderBottom: `1px solid ${em.divider}`, background: em.card }}>
                               {/* Compact grid row */}
-                              <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 110px 60px 60px 90px 65px 90px 26px", gap: 6, alignItems: "center" }}>
-                                <select defaultValue={item.category} key={`ic-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "6px 6px" }}
+                              <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 110px 60px 60px 90px 65px 90px 26px", gap: 8, alignItems: "center" }}>
+                                <select defaultValue={item.category} key={`ic-${item.id}`} style={{ ...rowInput, fontSize: 13 }}
                                   onChange={async (e) => { await saveEstimateItem({ ...item, category: e.target.value }) }}>
                                   {ESTIMATE_ITEM_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
                                 </select>
-                                <input defaultValue={item.description} key={`id-${item.id}`} style={{ ...fieldStyle, fontSize: 13, fontWeight: 600, padding: "6px 8px" }}
+                                <input defaultValue={item.description} key={`id-${item.id}`} style={{ ...rowInput, fontSize: 14, fontWeight: 600 }}
                                   onBlur={async (e) => { await saveEstimateItem({ ...item, description: e.target.value }) }} />
-                                <select defaultValue={item.crew_id ?? ""} key={`iw-${item.id}`} style={{ ...fieldStyle, fontSize: 11, padding: "5px 5px" }}
+                                <select defaultValue={item.crew_id ?? ""} key={`iw-${item.id}`} style={{ ...rowInput, fontSize: 12 }}
                                   onChange={async (e) => {
                                     const crewId = e.target.value || null
                                     if (activeEstimate?.locked_at) {
@@ -8498,35 +8510,38 @@ Payment terms:
                                   <option value="">No crew</option>
                                   {crews.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                 </select>
-                                <input type="number" step="0.5" defaultValue={item.quantity} key={`iq-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "5px 5px", textAlign: "right" }}
+                                <input type="number" step="0.5" defaultValue={item.quantity} key={`iq-${item.id}`} style={{ ...rowInput, fontSize: 13, textAlign: "right" }}
                                   onBlur={async (e) => { await saveEstimateItem({ ...item, quantity: Number(e.target.value) }) }} />
-                                <select defaultValue={item.unit} key={`iu-${item.id}`} style={{ ...fieldStyle, fontSize: 11, padding: "5px 5px" }}
+                                <select defaultValue={item.unit} key={`iu-${item.id}`} style={{ ...rowInput, fontSize: 12 }}
                                   onChange={async (e) => { await saveEstimateItem({ ...item, unit: e.target.value }) }}>
                                   {ESTIMATE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                                 </select>
                                 <div style={{ position: "relative" }}>
-                                  <input type="number" defaultValue={item.unit_cost} key={`iuc-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "5px 5px", textAlign: "right" }}
+                                  <input type="number" defaultValue={item.unit_cost} key={`iuc-${item.id}`} style={{ ...rowInput, fontSize: 13, textAlign: "right" }}
                                     onBlur={async (e) => { await saveEstimateItem({ ...item, unit_cost: Number(e.target.value) }) }} />
                                   {crewBlended != null && Math.abs(crewBlended - item.unit_cost) > 10 && !activeEstimate?.locked_at && (
-                                    <div style={{ fontSize: 9, color: "#60a5fa", position: "absolute", bottom: -14, left: 0 }}>crew: ${Math.round(crewBlended)}</div>
+                                    <div style={{ fontSize: 10, color: "#1d4ed8", position: "absolute", bottom: -14, left: 0, fontWeight: 600 }}>crew: ${Math.round(crewBlended)}</div>
                                   )}
                                 </div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                  <input type="number" defaultValue={item.margin_percent} key={`im-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "5px 4px", textAlign: "right" }}
+                                <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                                  <input type="number" defaultValue={item.margin_percent} key={`im-${item.id}`} style={{ ...rowInput, fontSize: 13, textAlign: "right", padding: "8px 6px" }}
                                     onBlur={async (e) => { await saveEstimateItem({ ...item, margin_percent: Number(e.target.value) }) }} />
-                                  <span style={{ fontSize: 10, color: "#6b7a9a" }}>%</span>
+                                  <span style={{ fontSize: 11, color: em.textMuted, fontWeight: 700 }}>%</span>
                                 </div>
-                                <div style={{ fontWeight: 800, fontSize: 14, color: "#fbbf24", textAlign: "right" }}>${formatMoneyK(itemTotal)}</div>
-                                <button type="button" onClick={() => deleteEstimateItem(item.id)} style={{ background: "none", border: "none", color: "#6b7a9a", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>×</button>
+                                <div style={{ fontWeight: 800, fontSize: 15, color: em.text, textAlign: "right" }}>${formatMoney(itemTotal)}</div>
+                                <button type="button" onClick={() => deleteEstimateItem(item.id)} title="Delete line"
+                                  style={{ background: "none", border: "none", color: "#c0c0c0", cursor: "pointer", fontSize: 18, padding: "0 4px", lineHeight: 1 }}
+                                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#dc2626" }}
+                                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#c0c0c0" }}>×</button>
                               </div>
-                              {/* Scope field (only render if item has scope or we want to expose it — keep it visible for consistency but small) */}
+                              {/* Scope field (only if present) */}
                               {item.scope !== null && (
                                 <textarea
                                   defaultValue={item.scope ?? ""}
                                   key={`scope-${item.id}`}
                                   placeholder="Scope bullet points (one per line)…"
                                   rows={item.scope && item.scope.trim() ? 3 : 1}
-                                  style={{ ...fieldStyle, fontSize: 11, padding: "4px 8px", resize: "vertical", fontFamily: "system-ui", lineHeight: 1.5, marginTop: 4, width: "100%", boxSizing: "border-box" }}
+                                  style={{ ...rowInput, fontSize: 12, padding: "6px 10px", resize: "vertical", fontFamily: "system-ui", lineHeight: 1.5, marginTop: 6, width: "100%", boxSizing: "border-box", background: "#fafafa" }}
                                   onBlur={async (e) => { await saveEstimateItem({ ...item, scope: e.target.value || null }) }}
                                 />
                               )}
