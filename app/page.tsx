@@ -2383,6 +2383,7 @@ export default function Home() {
   const [showExtrasModal, setShowExtrasModal] = useState(false)
   const [showExpensesModal, setShowExpensesModal] = useState(false)
   const [quickAddProject, setQuickAddProject] = useState(false)
+  const [estimateSectionCollapsed, setEstimateSectionCollapsed] = useState<{ labour: boolean; material: boolean; fixed: boolean }>({ labour: false, material: true, fixed: true })
   const [quickProjectForm, setQuickProjectForm] = useState({ name: "", client_id: "", client: "" })
   const [activeEstimateId, setActiveEstimateId] = useState<string | null>(null)
   const [scopeTemplates, setScopeTemplates] = useState<ScopeTemplate[]>([])
@@ -8369,7 +8370,7 @@ Payment terms:
                       </div>
                     </div>
 
-                    {/* Line items */}
+                    {/* Line items — grouped by section, collapsible, with subtotals */}
                     <div style={{ borderTop: "1px solid #252f45", paddingTop: 16, marginBottom: 12 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                         <div style={{ fontWeight: 800, fontSize: 18, color: "#f0f4ff" }}>Line items</div>
@@ -8399,7 +8400,6 @@ Payment terms:
                                 const { data } = await supabase.from("estimate_items").insert(inserts).select()
                                 if (data) setEstimateItems(prev => [...prev, ...(data as EstimateItem[])])
                               }
-                              // Also set quote type from template
                               if (tmpl.quote_type) await saveEstimate({ ...activeEstimate, quote_type: tmpl.quote_type })
                               e.target.value = ""
                               showToast(`Loaded "${tmpl.name}" — ${tmplItems.length} items added`)
@@ -8415,94 +8415,174 @@ Payment terms:
                               <option key={t.id} value={t.id}>{t.name}{t.description ? ` — ${t.description}` : ""}</option>
                             ))}
                           </select>
-                          {ESTIMATE_ITEM_CATEGORIES.map(cat => (
-                            <button key={cat.value} type="button"
-                              onClick={() => addEstimateItem(activeEstimate.id, cat.value)}
-                              style={{ ...secondaryButtonStyle, fontSize: 12, padding: "6px 12px", fontWeight: 600 }}>
-                              + {cat.label}
-                            </button>
-                          ))}
                         </div>
                       </div>
 
-                      {/* Table header */}
-                      <div style={{ display: "grid", gridTemplateColumns: "130px 1fr 150px 80px 80px 110px 90px 110px auto", gap: 10, marginBottom: 10, padding: "8px 14px", background: "#161d2e", borderRadius: 8 }}>
-                        {["Category", "Description", "Crew", "Qty", "Unit", "Unit cost", "Margin", "Total", ""].map(h => (
-                          <div key={h} style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px" }}>{h}</div>
-                        ))}
-                      </div>
+                      {(() => {
+                        // Group categories into three sections
+                        const sectionCategories = {
+                          labour: ["labour"],
+                          material: ["materials", "subcontractor", "equipment"],
+                          fixed: ["prelims", "allowance"],
+                        } as const
+                        const sectionMeta = {
+                          labour: { title: "Labour", icon: "👷", accent: "#3b82f6", bgAccent: "#1e3a6e", subtleBg: "#0f1d35" },
+                          material: { title: "Materials", icon: "🧱", accent: "#d97706", bgAccent: "#431407", subtleBg: "#1c1607" },
+                          fixed: { title: "Fixed", icon: "💰", accent: "#16a34a", bgAccent: "#166534", subtleBg: "#0a1f0f" },
+                        } as const
 
-                      {activeItems.length === 0 && (
-                        <div style={{ fontSize: 12, color: "#6b7a9a", textAlign: "center", padding: "20px 0" }}>
-                          No line items yet — use the buttons above to add
-                        </div>
-                      )}
-
-                      {activeItems.map(item => {
-                        const itemTotal = calcItemTotal(item)
-                        const crewBlended = item.crew_id
-                          ? (workers.filter(w => w.crew_id === item.crew_id && w.total_cost_hourly_with_ot != null).reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / Math.max(workers.filter(w => w.crew_id === item.crew_id).length, 1)) * 9
-                          : null
-
-                        return (
-                          <div key={item.id} style={{ marginBottom: 8, background: "#111827", borderRadius: 6, padding: "6px 0" }}>
-                          <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 120px 70px 70px 90px 80px 90px auto", gap: 6, alignItems: "center" }}>
-                            <select defaultValue={item.category} key={`ic-${item.id}`} style={{ ...fieldStyle, fontSize: 13, padding: "8px 8px" }}
-                              onChange={async (e) => { await saveEstimateItem({ ...item, category: e.target.value }) }}>
-                              {ESTIMATE_ITEM_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                            </select>
-                            <input defaultValue={item.description} key={`id-${item.id}`} style={{ ...fieldStyle, fontSize: 14, fontWeight: 600 }}
-                              onBlur={async (e) => { await saveEstimateItem({ ...item, description: e.target.value }) }} />
-                            <select defaultValue={item.crew_id ?? ""} key={`iw-${item.id}`} style={{ ...fieldStyle, fontSize: 11, padding: "4px 5px" }}
-                              onChange={async (e) => {
-                                const crewId = e.target.value || null
-                                if (activeEstimate?.locked_at) {
-                                  // Locked: just update crew_id, keep the existing unit_cost
-                                  await saveEstimateItem({ ...item, crew_id: crewId })
-                                  return
-                                }
-                                const newCost = crewId ? (workers.filter(w => w.crew_id === crewId && w.total_cost_hourly_with_ot != null).reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / Math.max(workers.filter(w => w.crew_id === crewId).length, 1)) * 9 : item.unit_cost
-                                await saveEstimateItem({ ...item, crew_id: crewId, unit_cost: Math.round(newCost * 100) / 100 })
-                              }}>
-                              <option value="">No crew</option>
-                              {crews.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                            <input type="number" step="0.5" defaultValue={item.quantity} key={`iq-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "4px 6px" }}
-                              onBlur={async (e) => { await saveEstimateItem({ ...item, quantity: Number(e.target.value) }) }} />
-                            <select defaultValue={item.unit} key={`iu-${item.id}`} style={{ ...fieldStyle, fontSize: 11, padding: "4px 5px" }}
-                              onChange={async (e) => { await saveEstimateItem({ ...item, unit: e.target.value }) }}>
-                              {ESTIMATE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                            </select>
-                            <div style={{ position: "relative" }}>
-                              <input type="number" defaultValue={item.unit_cost} key={`iuc-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "4px 6px" }}
-                                onBlur={async (e) => { await saveEstimateItem({ ...item, unit_cost: Number(e.target.value) }) }} />
-                              {crewBlended && Math.abs(crewBlended - item.unit_cost) > 10 && !activeEstimate?.locked_at && (
-                                <div style={{ fontSize: 9, color: "#60a5fa", position: "absolute", bottom: -14, left: 0 }}>crew: ${Math.round(crewBlended)}</div>
+                        const renderItemRow = (item: EstimateItem) => {
+                          const itemTotal = calcItemTotal(item)
+                          const crewBlended = item.crew_id
+                            ? (workers.filter(w => w.crew_id === item.crew_id && w.total_cost_hourly_with_ot != null).reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / Math.max(workers.filter(w => w.crew_id === item.crew_id).length, 1)) * 9
+                            : null
+                          return (
+                            <div key={item.id} style={{ padding: "6px 10px", borderBottom: "1px solid #1a2035", background: "transparent" }}>
+                              {/* Compact grid row */}
+                              <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 110px 60px 60px 90px 65px 90px 26px", gap: 6, alignItems: "center" }}>
+                                <select defaultValue={item.category} key={`ic-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "6px 6px" }}
+                                  onChange={async (e) => { await saveEstimateItem({ ...item, category: e.target.value }) }}>
+                                  {ESTIMATE_ITEM_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                </select>
+                                <input defaultValue={item.description} key={`id-${item.id}`} style={{ ...fieldStyle, fontSize: 13, fontWeight: 600, padding: "6px 8px" }}
+                                  onBlur={async (e) => { await saveEstimateItem({ ...item, description: e.target.value }) }} />
+                                <select defaultValue={item.crew_id ?? ""} key={`iw-${item.id}`} style={{ ...fieldStyle, fontSize: 11, padding: "5px 5px" }}
+                                  onChange={async (e) => {
+                                    const crewId = e.target.value || null
+                                    if (activeEstimate?.locked_at) {
+                                      await saveEstimateItem({ ...item, crew_id: crewId })
+                                      return
+                                    }
+                                    const newCost = crewId ? (workers.filter(w => w.crew_id === crewId && w.total_cost_hourly_with_ot != null).reduce((s, w) => s + (w.total_cost_hourly_with_ot ?? 0), 0) / Math.max(workers.filter(w => w.crew_id === crewId).length, 1)) * 9 : item.unit_cost
+                                    await saveEstimateItem({ ...item, crew_id: crewId, unit_cost: Math.round(newCost * 100) / 100 })
+                                  }}>
+                                  <option value="">No crew</option>
+                                  {crews.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                                <input type="number" step="0.5" defaultValue={item.quantity} key={`iq-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "5px 5px", textAlign: "right" }}
+                                  onBlur={async (e) => { await saveEstimateItem({ ...item, quantity: Number(e.target.value) }) }} />
+                                <select defaultValue={item.unit} key={`iu-${item.id}`} style={{ ...fieldStyle, fontSize: 11, padding: "5px 5px" }}
+                                  onChange={async (e) => { await saveEstimateItem({ ...item, unit: e.target.value }) }}>
+                                  {ESTIMATE_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                </select>
+                                <div style={{ position: "relative" }}>
+                                  <input type="number" defaultValue={item.unit_cost} key={`iuc-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "5px 5px", textAlign: "right" }}
+                                    onBlur={async (e) => { await saveEstimateItem({ ...item, unit_cost: Number(e.target.value) }) }} />
+                                  {crewBlended != null && Math.abs(crewBlended - item.unit_cost) > 10 && !activeEstimate?.locked_at && (
+                                    <div style={{ fontSize: 9, color: "#60a5fa", position: "absolute", bottom: -14, left: 0 }}>crew: ${Math.round(crewBlended)}</div>
+                                  )}
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 1 }}>
+                                  <input type="number" defaultValue={item.margin_percent} key={`im-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "5px 4px", textAlign: "right" }}
+                                    onBlur={async (e) => { await saveEstimateItem({ ...item, margin_percent: Number(e.target.value) }) }} />
+                                  <span style={{ fontSize: 10, color: "#6b7a9a" }}>%</span>
+                                </div>
+                                <div style={{ fontWeight: 800, fontSize: 14, color: "#fbbf24", textAlign: "right" }}>${formatMoneyK(itemTotal)}</div>
+                                <button type="button" onClick={() => deleteEstimateItem(item.id)} style={{ background: "none", border: "none", color: "#6b7a9a", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>×</button>
+                              </div>
+                              {/* Scope field (only render if item has scope or we want to expose it — keep it visible for consistency but small) */}
+                              {item.scope !== null && (
+                                <textarea
+                                  defaultValue={item.scope ?? ""}
+                                  key={`scope-${item.id}`}
+                                  placeholder="Scope bullet points (one per line)…"
+                                  rows={item.scope && item.scope.trim() ? 3 : 1}
+                                  style={{ ...fieldStyle, fontSize: 11, padding: "4px 8px", resize: "vertical", fontFamily: "system-ui", lineHeight: 1.5, marginTop: 4, width: "100%", boxSizing: "border-box" }}
+                                  onBlur={async (e) => { await saveEstimateItem({ ...item, scope: e.target.value || null }) }}
+                                />
                               )}
                             </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-                              <input type="number" defaultValue={item.margin_percent} key={`im-${item.id}`} style={{ ...fieldStyle, fontSize: 12, padding: "4px 6px" }}
-                                onBlur={async (e) => { await saveEstimateItem({ ...item, margin_percent: Number(e.target.value) }) }} />
-                              <span style={{ fontSize: 10, color: "#6b7a9a" }}>%</span>
-                            </div>
-                            <div style={{ fontWeight: 800, fontSize: 16, color: "#fbbf24", textAlign: "right" }}>${formatMoneyK(itemTotal)}</div>
-                            <button type="button" onClick={() => deleteEstimateItem(item.id)} style={{ background: "none", border: "none", color: "#6b7a9a", cursor: "pointer", fontSize: 14, padding: "0 4px" }}>×</button>
-                          </div>
-                          {/* Scope field */}
-                          <div style={{ marginTop: 6, display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "start" }}>
-                            <textarea
-                              defaultValue={item.scope ?? ""}
-                              key={`scope-${item.id}`}
-                              placeholder="Scope bullet points (one per line)..."
-                              rows={3}
-                              style={{ ...fieldStyle, fontSize: 11, padding: "6px 8px", resize: "vertical", fontFamily: "system-ui", lineHeight: 1.5 }}
-                              onBlur={async (e) => { await saveEstimateItem({ ...item, scope: e.target.value || null }) }}
-                            />
+                          )
+                        }
 
-                          </div>
-                          </div>
+                        // Compact column headers (rendered once above sections)
+                        return (
+                          <>
+                            <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 110px 60px 60px 90px 65px 90px 26px", gap: 6, marginBottom: 6, padding: "0 10px", fontSize: 10, color: "#6b7a9a", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                              <div>Type</div>
+                              <div>Description</div>
+                              <div>Crew/Worker</div>
+                              <div style={{ textAlign: "right" }}>Qty</div>
+                              <div>Unit</div>
+                              <div style={{ textAlign: "right" }}>Unit cost</div>
+                              <div style={{ textAlign: "right" }}>Margin</div>
+                              <div style={{ textAlign: "right" }}>Total ex</div>
+                              <div />
+                            </div>
+
+                            {(["labour", "material", "fixed"] as const).map(sectionKey => {
+                              const meta = sectionMeta[sectionKey]
+                              const cats = sectionCategories[sectionKey]
+                              const sectionItems = activeItems.filter(i => (cats as readonly string[]).includes(i.category))
+                              const sectionSubtotal = sectionItems.reduce((s, i) => s + calcItemTotal(i), 0)
+                              const collapsed = estimateSectionCollapsed[sectionKey]
+                              const defaultCategory = cats[0]
+
+                              return (
+                                <div key={sectionKey} style={{ marginBottom: 8, background: "#0f1520", border: `1px solid ${meta.accent}44`, borderRadius: 8, overflow: "hidden" }}>
+                                  {/* Section header — click to toggle */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setEstimateSectionCollapsed(prev => ({ ...prev, [sectionKey]: !prev[sectionKey] }))}
+                                    style={{
+                                      width: "100%",
+                                      display: "flex", alignItems: "center", gap: 10,
+                                      padding: "10px 14px",
+                                      background: meta.subtleBg,
+                                      border: "none",
+                                      borderBottom: collapsed ? "none" : `1px solid ${meta.accent}44`,
+                                      cursor: "pointer",
+                                      textAlign: "left",
+                                      color: "#f0f4ff",
+                                    }}
+                                  >
+                                    <span style={{ fontSize: 14, transition: "transform 0.15s", display: "inline-block", transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", color: meta.accent }}>▾</span>
+                                    <span style={{ fontSize: 16 }}>{meta.icon}</span>
+                                    <span style={{ fontWeight: 800, fontSize: 14, color: "#f0f4ff" }}>{meta.title}</span>
+                                    <span style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 600 }}>{sectionItems.length} {sectionItems.length === 1 ? "item" : "items"}</span>
+                                    <div style={{ flex: 1 }} />
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: meta.accent }}>${formatMoney(sectionSubtotal)}</span>
+                                  </button>
+
+                                  {!collapsed && (
+                                    <>
+                                      {sectionItems.length === 0 ? (
+                                        <div style={{ padding: "12px 14px", fontSize: 12, color: "#6b7a9a", fontStyle: "italic" }}>No items in this section yet.</div>
+                                      ) : (
+                                        sectionItems.map(renderItemRow)
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => addEstimateItem(activeEstimate.id, defaultCategory)}
+                                        style={{
+                                          width: "100%",
+                                          padding: "8px 14px",
+                                          background: "transparent",
+                                          border: "none",
+                                          borderTop: `1px dashed ${meta.accent}55`,
+                                          color: meta.accent,
+                                          fontSize: 12,
+                                          fontWeight: 700,
+                                          cursor: "pointer",
+                                          textAlign: "left",
+                                        }}
+                                      >
+                                        + Add {meta.title.toLowerCase()} line
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              )
+                            })}
+
+                            {activeItems.length === 0 && (
+                              <div style={{ fontSize: 12, color: "#6b7a9a", textAlign: "center", padding: "12px 0" }}>
+                                No line items yet — expand a section above and click "+ Add" to start
+                              </div>
+                            )}
+                          </>
                         )
-                      })}
+                      })()}
                     </div>
 
                     {/* Totals */}
