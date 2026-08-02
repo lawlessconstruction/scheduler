@@ -2384,6 +2384,9 @@ export default function Home() {
   const [showExpensesModal, setShowExpensesModal] = useState(false)
   const [quickAddProject, setQuickAddProject] = useState(false)
   const [estimateSectionCollapsed, setEstimateSectionCollapsed] = useState<{ labour: boolean; material: boolean; fixed: boolean }>({ labour: false, material: true, fixed: true })
+  const [convertToProject, setConvertToProject] = useState<{ open: boolean; estimateId: string | null; templateId: string; crewId: string; startDate: string }>({
+    open: false, estimateId: null, templateId: "ss_full", crewId: "", startDate: new Date().toISOString().slice(0, 10),
+  })
   const [quickProjectForm, setQuickProjectForm] = useState({ name: "", client_id: "", client: "" })
   const [activeEstimateId, setActiveEstimateId] = useState<string | null>(null)
   const [scopeTemplates, setScopeTemplates] = useState<ScopeTemplate[]>([])
@@ -3342,6 +3345,16 @@ export default function Home() {
 
   const ESTIMATE_UNITS = ["week", "day", "hr", "m²", "m³", "lm", "item", "allow", "lot"]
 
+  // Hardcoded project segment templates — sequences of segment names to use
+  // when converting a won estimate into a project. Each stage is 1 week (5 working days),
+  // starting the working day after the previous stage ends. All Mon-Fri.
+  const PROJECT_SEGMENT_TEMPLATES = [
+    { id: "ss_full", label: "Single storey — full frame", stages: ["Subfloor", "GF Walls", "Trusses"] },
+    { id: "ss_slab", label: "Single storey — slab", stages: ["GF Walls", "Trusses"] },
+    { id: "ds_full", label: "Double storey — full frame", stages: ["Subfloor", "GF Walls", "FF Subfloor", "FF Walls", "Trusses"] },
+    { id: "ds_slab", label: "Double storey — slab", stages: ["GF Walls", "FF Subfloor", "FF Walls", "Trusses"] },
+  ]
+
   function calcItemTotal(item: EstimateItem) {
     return item.quantity * item.unit_cost * (1 + item.margin_percent / 100)
   }
@@ -3437,6 +3450,70 @@ export default function Home() {
       setEstimateItems(prev => [...prev, ...newItems])
       setActiveEstimateId(newEst.id)
     }
+  }
+
+  // Convert a won estimate into a project: creates segments from a hardcoded template,
+  // chained Mon-Fri (weekends skipped), each stage 1 week (5 working days).
+  async function convertEstimateToProjectRun(opts: { estimate: Estimate; templateId: string; crewId: string; startDate: string }) {
+    const { estimate, templateId, crewId, startDate } = opts
+    const template = PROJECT_SEGMENT_TEMPLATES.find(t => t.id === templateId)
+    if (!template) { showToast("Template not found"); return }
+    if (!crewId) { showToast("Pick a crew for the segments"); return }
+    if (!startDate) { showToast("Pick a start date"); return }
+    if (isWeekend(parseDate(startDate))) { showToast("Start date must be a weekday"); return }
+
+    // If the estimate has no project attached, create one first using the estimate title.
+    let projectId = estimate.project_id
+    if (!projectId) {
+      const clientName = clients.find(c => c.id === estimate.client_id)?.name ?? null
+      const { data: newProj, error: projErr } = await supabase.from("projects").insert({
+        name: estimate.title || `Project — ${new Date().toISOString().slice(0, 10)}`,
+        client: clientName,
+        client_id: estimate.client_id,
+      }).select().single()
+      if (projErr || !newProj) { showToast(`Project create failed: ${projErr?.message}`); return }
+      projectId = (newProj as Project).id
+      // Link the estimate to the new project
+      await supabase.from("estimates").update({ project_id: projectId }).eq("id", estimate.id)
+    }
+
+    // Build segments chained Mon-Fri, each 5 working days
+    const inserts: { project_id: string; crew_id: string; name: string; start_date: string; end_date: string; capacity_fraction: number }[] = []
+    let cursor = startDate
+    for (const stageName of template.stages) {
+      const endDate = addWorkingDaysInclusive(cursor, 5)
+      inserts.push({
+        project_id: projectId!,
+        crew_id: crewId,
+        name: stageName,
+        start_date: cursor,
+        end_date: endDate,
+        capacity_fraction: 1,
+      })
+      // Next stage starts the next working day after endDate (skipping weekends)
+      cursor = nextWorkingDay(endDate)
+    }
+
+    const { error: segErr } = await supabase.from("segments").insert(inserts)
+    if (segErr) { showToast(`Segment create failed: ${segErr.message}`); return }
+
+    // Mark the estimate as accepted if it isn't already
+    if (estimate.status !== "accepted") {
+      await supabase.from("estimates").update({ status: "accepted" }).eq("id", estimate.id)
+    }
+
+    await loadData()
+    showToast(`Created ${template.stages.length} segments on ${estimate.title || "project"}`)
+    setConvertToProject({ open: false, estimateId: null, templateId: "ss_full", crewId: "", startDate: new Date().toISOString().slice(0, 10) })
+  }
+
+  // Helper: return the next working day after the given date string (skipping weekends).
+  function nextWorkingDay(dateStr: string): string {
+    const d = parseDate(dateStr)
+    do {
+      d.setDate(d.getDate() + 1)
+    } while (d.getDay() === 0 || d.getDay() === 6)
+    return formatDateKey(d)
   }
 
   async function addEstimateItem(estimateId: string, category = "labour") {
@@ -8277,7 +8354,7 @@ Payment terms:
                         onBlur={async (e) => { await saveEstimate({ ...activeEstimate, title: e.target.value }) }} />
                     </div>
                     {/* Row 2: Project + Client + Status + actions */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto auto", gap: 12, marginBottom: 16, alignItems: "end" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto auto auto", gap: 12, marginBottom: 16, alignItems: "end" }}>
                       <div>
                         <div style={emLabelStyle}>Project</div>
                         <div style={{ display: "flex", gap: 6 }}>
@@ -8387,6 +8464,9 @@ Payment terms:
                       </button>
                       <button type="button" onClick={() => duplicateEstimate(activeEstimate)}
                         style={{ fontSize: 13, padding: "10px 14px", fontWeight: 700, background: em.card, color: em.textMuted, border: `1px solid ${em.cardBorder}`, borderRadius: 8, cursor: "pointer" }} title="New version">v+</button>
+                      <button type="button" onClick={() => setConvertToProject({ open: true, estimateId: activeEstimate.id, templateId: "ss_full", crewId: "", startDate: new Date().toISOString().slice(0, 10) })}
+                        style={{ fontSize: 13, padding: "10px 14px", fontWeight: 800, background: "#16a34a", color: "white", border: "none", borderRadius: 8, cursor: "pointer", boxShadow: em.shadow, whiteSpace: "nowrap" }}
+                        title="Create a project with segments based on this estimate">→ Project</button>
                       <button type="button" onClick={() => deleteEstimate(activeEstimate.id)}
                         style={{ fontSize: 13, padding: "10px 14px", fontWeight: 700, background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", borderRadius: 8, cursor: "pointer" }}>×</button>
                     </div>
@@ -8741,6 +8821,86 @@ Payment terms:
                     )}
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Convert-estimate-to-project dialog */}
+      {convertToProject.open && (() => {
+        const est = estimates.find(e => e.id === convertToProject.estimateId)
+        if (!est) return null
+        const tmpl = PROJECT_SEGMENT_TEMPLATES.find(t => t.id === convertToProject.templateId)
+        const stagesCount = tmpl?.stages.length ?? 0
+        const cardBg = "#ffffff"
+        const paperBg = "#f5f1e8"
+        const text = "#1a1a1a"
+        const textMuted = "#5a5a5a"
+        const border = "#e5e0d3"
+        return (
+          <div onClick={() => setConvertToProject(prev => ({ ...prev, open: false }))}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 16 }}>
+            <div onClick={(e) => e.stopPropagation()}
+              style={{ width: "100%", maxWidth: 520, background: paperBg, border: `1px solid ${border}`, borderRadius: 14, padding: 28, color: text, boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
+              <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 6 }}>Convert to project</div>
+              <div style={{ fontSize: 13, color: textMuted, marginBottom: 20 }}>
+                Create {est.project_id ? "segments on the existing project" : "a new project"} using a segment template. Segments chain Mon–Fri from your start date, 1 week each.
+              </div>
+
+              <div style={{ marginBottom: 16, background: cardBg, border: `1px solid ${border}`, borderRadius: 10, padding: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Segment template</div>
+                <select
+                  value={convertToProject.templateId}
+                  onChange={(e) => setConvertToProject(prev => ({ ...prev, templateId: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 8, background: cardBg, color: text, border: `1px solid ${border}`, fontSize: 14 }}
+                >
+                  {PROJECT_SEGMENT_TEMPLATES.map(t => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+                {tmpl && (
+                  <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {tmpl.stages.map((s, i) => (
+                      <span key={i} style={{ fontSize: 11, padding: "4px 8px", background: "#dbeafe", color: "#1e3a8a", borderRadius: 999, fontWeight: 700 }}>{i + 1}. {s}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Crew</div>
+                  <select
+                    value={convertToProject.crewId}
+                    onChange={(e) => setConvertToProject(prev => ({ ...prev, crewId: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, background: cardBg, color: text, border: `1px solid ${convertToProject.crewId ? border : "#f87171"}`, fontSize: 14 }}
+                  >
+                    <option value="">Pick a crew…</option>
+                    {crews.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Start date</div>
+                  <input type="date"
+                    value={convertToProject.startDate}
+                    onChange={(e) => setConvertToProject(prev => ({ ...prev, startDate: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, background: cardBg, color: text, border: `1px solid ${border}`, fontSize: 14 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ fontSize: 12, color: textMuted, marginBottom: 20, padding: 10, background: "#fef3c7", border: "1px solid #fde047", borderRadius: 6 }}>
+                Will create <strong>{stagesCount} segment{stagesCount === 1 ? "" : "s"}</strong>{" "}({stagesCount * 5} working days total = {stagesCount} week{stagesCount === 1 ? "" : "s"}).
+                {est.status !== "accepted" && " Estimate status will also be set to Accepted."}
+              </div>
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button type="button" onClick={() => setConvertToProject(prev => ({ ...prev, open: false }))}
+                  style={{ padding: "10px 16px", background: cardBg, color: textMuted, border: `1px solid ${border}`, borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+                <button type="button" onClick={() => convertEstimateToProjectRun({ estimate: est, templateId: convertToProject.templateId, crewId: convertToProject.crewId, startDate: convertToProject.startDate })}
+                  disabled={!convertToProject.crewId || !convertToProject.startDate}
+                  style={{ padding: "10px 20px", background: (!convertToProject.crewId || !convertToProject.startDate) ? "#a1a1a1" : "#16a34a", color: "white", border: "none", borderRadius: 8, fontWeight: 800, fontSize: 14, cursor: (!convertToProject.crewId || !convertToProject.startDate) ? "not-allowed" : "pointer", boxShadow: "0 2px 8px rgba(22,163,74,0.25)" }}>Create project</button>
               </div>
             </div>
           </div>
