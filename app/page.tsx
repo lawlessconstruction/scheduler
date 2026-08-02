@@ -8157,27 +8157,62 @@ Payment terms:
         const gst = total * 0.1
         const totalIncGst = total + gst
 
+        // ─── Light-mode palette for the Estimates modal ───
+        const em = {
+          paper: "#f5f1e8",          // cream — modal background
+          card: "#ffffff",            // white — cards
+          cardBorder: "#e5e0d3",      // hairline
+          text: "#1a1a1a",            // near-black body text
+          textMuted: "#5a5a5a",       // labels
+          textSubtle: "#8a8a8a",      // helper text
+          divider: "#e5e5e5",
+          sidebarBg: "#ebe5d3",       // slightly darker cream for sidebar
+          sidebarActive: "#ffffff",   // white for active estimate
+          shadow: "0 2px 8px rgba(0,0,0,0.06)",
+          accent: "#c2410c",          // amber accent for primary actions
+        }
+        const emInput: React.CSSProperties = {
+          width: "100%",
+          padding: "10px 12px",
+          borderRadius: 8,
+          background: em.card,
+          color: em.text,
+          border: `1px solid ${em.cardBorder}`,
+          outline: "none",
+          boxSizing: "border-box",
+          fontSize: 14,
+        }
+        const emLabelStyle: React.CSSProperties = {
+          fontSize: 10,
+          fontWeight: 700,
+          color: em.textMuted,
+          textTransform: "uppercase",
+          letterSpacing: "0.5px",
+          marginBottom: 6,
+          display: "block",
+        }
+
         return (
           <div
             onClick={() => setShowEstimatesModal(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", display: "flex", flexDirection: "row", overflow: "hidden" }}
+              style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: em.paper, border: `1px solid ${em.cardBorder}`, borderRadius: 14, color: em.text, boxShadow: "0 20px 60px rgba(0,0,0,0.35)", display: "flex", flexDirection: "row", overflow: "hidden" }}
             >
               {/* Left sidebar — estimate list */}
-              <div style={{ width: 320, minWidth: 320, borderRight: "1px solid #252f45", padding: 20, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
+              <div style={{ width: 320, minWidth: 320, borderRight: `1px solid ${em.cardBorder}`, padding: 20, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", background: em.sidebarBg }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div style={{ fontSize: 20, fontWeight: 900, color: "#f0f4ff" }}>Estimates</div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: em.text }}>Estimates</div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    <button type="button" onClick={() => setShowTemplateManager(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, border: "1.5px solid #4a5680", background: "#1e2535", color: "#8899bb", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>⚙ Templates</button>
-                    <button type="button" onClick={() => createEstimate()} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "1.5px solid #d97706", background: "#431407", color: "#fbbf24", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>＋ New estimate</button>
+                    <button type="button" onClick={() => setShowTemplateManager(true)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, border: `1px solid ${em.cardBorder}`, background: em.card, color: em.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>⚙ Templates</button>
+                    <button type="button" onClick={() => createEstimate()} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 8, border: "none", background: em.accent, color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: em.shadow }}>＋ New estimate</button>
                   </div>
                 </div>
 
                 {estimates.length === 0 && (
-                  <div style={{ fontSize: 12, color: "#6b7a9a", textAlign: "center", padding: "20px 0" }}>No estimates yet</div>
+                  <div style={{ fontSize: 12, color: em.textSubtle, textAlign: "center", padding: "20px 0" }}>No estimates yet</div>
                 )}
 
                 {estimates.map(e => {
@@ -8185,39 +8220,42 @@ Payment terms:
                   const itemCount = estimateItems.filter(i => i.estimate_id === e.id).length
                   const estTotal = estimateItems.filter(i => i.estimate_id === e.id).reduce((s, i) => s + calcItemTotal(i), 0)
                   const project = projects.find(p => p.id === e.project_id)
+                  const isActive = activeEstimateId === e.id
                   return (
                     <div
                       key={e.id}
                       onClick={() => setActiveEstimateId(e.id)}
                       style={{
-                        background: activeEstimateId === e.id ? "#1a1a1a" : "#0b0b0b",
-                        border: `1px solid ${activeEstimateId === e.id ? "#fbbf24" : "#222"}`,
+                        background: isActive ? em.sidebarActive : em.card,
+                        border: `1px solid ${isActive ? em.accent : em.cardBorder}`,
+                        borderLeft: isActive ? `4px solid ${em.accent}` : `1px solid ${em.cardBorder}`,
                         borderRadius: 8, padding: "10px 12px", cursor: "pointer",
+                        boxShadow: isActive ? em.shadow : "none",
                       }}
                     >
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 3 }}>{e.locked_at ? "🔒 " : ""}{e.title}</div>
-                      <div style={{ fontSize: 11, color: "#8899bb", marginBottom: 4 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 3, color: em.text }}>{e.locked_at ? "🔒 " : ""}{e.title}</div>
+                      <div style={{ fontSize: 11, color: em.textSubtle, marginBottom: 4 }}>
                         {project?.name ?? "No project"} · v{e.version}
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 11, color: status?.color ?? "#71717a", background: (status?.color ?? "#71717a") + "22", borderRadius: 4, padding: "2px 6px" }}>{status?.label}</span>
-                        <span style={{ fontSize: 11, color: "#fbbf24", fontWeight: 700 }}>${formatMoneyK(estTotal)}</span>
+                        <span style={{ fontSize: 10, color: status?.color ?? em.textSubtle, background: (status?.color ?? "#a1a1aa") + "22", borderRadius: 4, padding: "2px 6px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.3px" }}>{status?.label}</span>
+                        <span style={{ fontSize: 13, color: em.text, fontWeight: 800 }}>${formatMoneyK(estTotal)}</span>
                       </div>
                     </div>
                   )
                 })}
 
                 <div style={{ marginTop: "auto", paddingTop: 12 }}>
-                  <button type="button" onClick={() => setShowEstimatesModal(false)} style={{ ...secondaryButtonStyle, width: "100%", textAlign: "center", padding: "12px", fontSize: 14, fontWeight: 700 }}>Close</button>
+                  <button type="button" onClick={() => setShowEstimatesModal(false)} style={{ width: "100%", textAlign: "center", padding: "12px", fontSize: 14, fontWeight: 700, background: em.card, color: em.textMuted, border: `1px solid ${em.cardBorder}`, borderRadius: 8, cursor: "pointer" }}>Close</button>
                 </div>
               </div>
 
               {/* Right panel — active estimate */}
-              <div style={{ flex: 1, padding: 28, overflowY: "auto" }}>
+              <div style={{ flex: 1, padding: 28, overflowY: "auto", background: em.paper }}>
                 {!activeEstimate && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16 }}>
-                    <div style={{ fontSize: 14, color: "#6b7a9a" }}>Select an estimate or create a new one</div>
-                    <button type="button" onClick={() => createEstimate()} style={{ ...secondaryButtonStyle, color: "#fbbf24", borderColor: "#854d0e" }}>+ New estimate</button>
+                    <div style={{ fontSize: 14, color: em.textSubtle }}>Select an estimate or create a new one</div>
+                    <button type="button" onClick={() => createEstimate()} style={{ padding: "12px 20px", background: em.accent, color: "white", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", boxShadow: em.shadow }}>+ New estimate</button>
                   </div>
                 )}
 
@@ -8227,23 +8265,23 @@ Payment terms:
                     {/* Row 1: Title full width */}
                     <div style={{ marginBottom: 16 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7a9a", textTransform: "uppercase", letterSpacing: "0.5px" }}>Title</div>
+                        <div style={emLabelStyle}>Title</div>
                         {activeEstimate.locked_at && (
-                          <div style={{ fontSize: 10, fontWeight: 700, color: "#fbbf24", background: "#1c1607", border: "1px solid #854d0e", borderRadius: 999, padding: "2px 8px", letterSpacing: "0.3px" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", background: "#fef3c7", border: "1px solid #f59e0b", borderRadius: 999, padding: "2px 8px", letterSpacing: "0.3px" }}>
                             🔒 RATES LOCKED · {new Date(activeEstimate.locked_at).toLocaleDateString()}
                           </div>
                         )}
                       </div>
                       <input defaultValue={activeEstimate.title} key={`et-${activeEstimate.id}`}
-                        style={{ ...fieldStyle, fontSize: 22, fontWeight: 900, padding: "14px 16px", color: "#f0f4ff" }}
+                        style={{ ...emInput, fontSize: 24, fontWeight: 800, padding: "16px 18px", color: em.text }}
                         onBlur={async (e) => { await saveEstimate({ ...activeEstimate, title: e.target.value }) }} />
                     </div>
                     {/* Row 2: Project + Client + Status + actions */}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto auto", gap: 12, marginBottom: 16, alignItems: "end" }}>
                       <div>
-                        <FieldLabel>Project</FieldLabel>
+                        <div style={emLabelStyle}>Project</div>
                         <div style={{ display: "flex", gap: 6 }}>
-                          <select defaultValue={activeEstimate.project_id ?? ""} key={`ep-${activeEstimate.id}`} style={{ ...fieldStyle, flex: 1 }}
+                          <select defaultValue={activeEstimate.project_id ?? ""} key={`ep-${activeEstimate.id}`} style={{ ...emInput, flex: 1 }}
                             onChange={async (e) => {
                               const projectId = e.target.value || null
                               const project = projects.find(p => p.id === projectId)
@@ -8254,11 +8292,11 @@ Payment terms:
                               await saveEstimate({ ...activeEstimate, project_id: projectId, client_id: clientId, title })
                             }}>
                             <option value="">No project</option>
-                            {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                           </select>
                           <button type="button" title="Add new project"
                             onClick={() => { setQuickAddProject(v => !v); setQuickProjectForm({ name: "", client_id: "", client: "" }) }}
-                            style={{ ...fieldStyle, width: "auto", padding: "0 12px", background: quickAddProject ? "#1e3a6e" : "#141a28", border: "1.5px solid #2563eb", color: "#93c5fd", fontWeight: 700, fontSize: 18, cursor: "pointer", flexShrink: 0 }}>
+                            style={{ ...emInput, width: "auto", padding: "0 12px", background: quickAddProject ? "#dbeafe" : em.card, border: "1px solid #93c5fd", color: "#1d4ed8", fontWeight: 700, fontSize: 18, cursor: "pointer", flexShrink: 0 }}>
                             {quickAddProject ? "×" : "+"}
                           </button>
                         </div>
@@ -8319,61 +8357,62 @@ Payment terms:
                       )}
 
                       <div>
-                        <FieldLabel>Client</FieldLabel>
-                        <select defaultValue={activeEstimate.client_id ?? ""} key={`ec-${activeEstimate.id}`} style={fieldStyle}
+                        <div style={emLabelStyle}>Client</div>
+                        <select defaultValue={activeEstimate.client_id ?? ""} key={`ec-${activeEstimate.id}`} style={emInput}
                           onChange={async (e) => { await saveEstimate({ ...activeEstimate, client_id: e.target.value || null }) }}>
                           <option value="">No client</option>
                           {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
                       </div>
                       <div>
-                        <FieldLabel>Status</FieldLabel>
-                        <select defaultValue={activeEstimate.status} key={`es-${activeEstimate.id}`} style={fieldStyle}
+                        <div style={emLabelStyle}>Status</div>
+                        <select defaultValue={activeEstimate.status} key={`es-${activeEstimate.id}`} style={emInput}
                           onChange={async (e) => { await saveEstimate({ ...activeEstimate, status: e.target.value }) }}>
                           {ESTIMATE_STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
                       </div>
                       <button type="button" onClick={() => toggleEstimateLock(activeEstimate)}
                         style={{
-                          ...secondaryButtonStyle,
                           fontSize: 13,
                           padding: "10px 14px",
                           fontWeight: 700,
-                          color: activeEstimate.locked_at ? "#fbbf24" : "#94a3b8",
-                          borderColor: activeEstimate.locked_at ? "#854d0e" : undefined,
-                          background: activeEstimate.locked_at ? "#1c1607" : undefined,
+                          color: activeEstimate.locked_at ? "#92400e" : em.textMuted,
+                          border: `1px solid ${activeEstimate.locked_at ? "#f59e0b" : em.cardBorder}`,
+                          background: activeEstimate.locked_at ? "#fef3c7" : em.card,
+                          borderRadius: 8,
+                          cursor: "pointer",
                         }}
                         title={activeEstimate.locked_at ? `Unlock (locked ${new Date(activeEstimate.locked_at).toLocaleDateString()})` : "Lock estimate — freeze rates so worker rate changes don't affect this estimate"}>
                         {activeEstimate.locked_at ? "🔒 Locked" : "🔓 Lock"}
                       </button>
                       <button type="button" onClick={() => duplicateEstimate(activeEstimate)}
-                        style={{ ...secondaryButtonStyle, fontSize: 13, padding: "10px 14px", fontWeight: 700 }} title="New version">v+</button>
+                        style={{ fontSize: 13, padding: "10px 14px", fontWeight: 700, background: em.card, color: em.textMuted, border: `1px solid ${em.cardBorder}`, borderRadius: 8, cursor: "pointer" }} title="New version">v+</button>
                       <button type="button" onClick={() => deleteEstimate(activeEstimate.id)}
-                        style={{ ...dangerButtonStyle, fontSize: 13, padding: "10px 14px" }}>×</button>
+                        style={{ fontSize: 13, padding: "10px 14px", fontWeight: 700, background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", borderRadius: 8, cursor: "pointer" }}>×</button>
                     </div>
                     {/* Row 3: dates + notes compact */}
                     <div style={{ display: "grid", gridTemplateColumns: "160px 160px 1fr", gap: 12, marginBottom: 20 }}>
                       <div>
-                        <FieldLabel>Issue date</FieldLabel>
-                        <input type="date" defaultValue={activeEstimate.issued_date ?? ""} key={`ed-${activeEstimate.id}`} style={fieldStyle}
+                        <div style={emLabelStyle}>Issue date</div>
+                        <input type="date" defaultValue={activeEstimate.issued_date ?? ""} key={`ed-${activeEstimate.id}`} style={emInput}
                           onBlur={async (e) => { await saveEstimate({ ...activeEstimate, issued_date: e.target.value || null }) }} />
                       </div>
                       <div>
-                        <FieldLabel>Valid until</FieldLabel>
-                        <input type="date" defaultValue={activeEstimate.valid_until ?? ""} key={`ev-${activeEstimate.id}`} style={fieldStyle}
+                        <div style={emLabelStyle}>Valid until</div>
+                        <input type="date" defaultValue={activeEstimate.valid_until ?? ""} key={`ev-${activeEstimate.id}`} style={emInput}
                           onBlur={async (e) => { await saveEstimate({ ...activeEstimate, valid_until: e.target.value || null }) }} />
                       </div>
                       <div>
-                        <FieldLabel>Internal notes</FieldLabel>
-                        <input defaultValue={activeEstimate.notes ?? ""} key={`en-${activeEstimate.id}`} placeholder="Notes..." style={fieldStyle}
+                        <div style={emLabelStyle}>Internal notes</div>
+                        <input defaultValue={activeEstimate.notes ?? ""} key={`en-${activeEstimate.id}`} placeholder="Notes..." style={emInput}
                           onBlur={async (e) => { await saveEstimate({ ...activeEstimate, notes: e.target.value || null }) }} />
                       </div>
                     </div>
 
                     {/* Line items — grouped by section, collapsible, with subtotals */}
-                    <div style={{ borderTop: "1px solid #252f45", paddingTop: 16, marginBottom: 12 }}>
+                    <div style={{ borderTop: `1px solid ${em.cardBorder}`, paddingTop: 20, marginBottom: 12 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                        <div style={{ fontWeight: 800, fontSize: 18, color: "#f0f4ff" }}>Line items</div>
+                        <div style={{ fontWeight: 800, fontSize: 20, color: em.text }}>Line items</div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                           {/* Load full job template */}
                           <select
@@ -8426,9 +8465,9 @@ Payment terms:
                           fixed: ["prelims", "allowance"],
                         } as const
                         const sectionMeta = {
-                          labour: { title: "Labour", icon: "👷", accent: "#3b82f6", bgAccent: "#1e3a6e", subtleBg: "#0f1d35" },
-                          material: { title: "Materials", icon: "🧱", accent: "#d97706", bgAccent: "#431407", subtleBg: "#1c1607" },
-                          fixed: { title: "Fixed", icon: "💰", accent: "#16a34a", bgAccent: "#166534", subtleBg: "#0a1f0f" },
+                          labour: { title: "Labour", icon: "👷", accent: "#2563eb", bgAccent: "#dbeafe", subtleBg: "#eff6ff" },
+                          material: { title: "Materials", icon: "🧱", accent: "#d97706", bgAccent: "#fef3c7", subtleBg: "#fffbeb" },
+                          fixed: { title: "Fixed", icon: "💰", accent: "#16a34a", bgAccent: "#d1fae5", subtleBg: "#ecfdf5" },
                         } as const
 
                         const renderItemRow = (item: EstimateItem) => {
@@ -8498,7 +8537,7 @@ Payment terms:
                         // Compact column headers (rendered once above sections)
                         return (
                           <>
-                            <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 110px 60px 60px 90px 65px 90px 26px", gap: 6, marginBottom: 6, padding: "0 10px", fontSize: 10, color: "#6b7a9a", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 110px 60px 60px 90px 65px 90px 26px", gap: 6, marginBottom: 6, padding: "0 18px", fontSize: 10, color: em.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px" }}>
                               <div>Type</div>
                               <div>Description</div>
                               <div>Crew/Worker</div>
@@ -8519,7 +8558,7 @@ Payment terms:
                               const defaultCategory = cats[0]
 
                               return (
-                                <div key={sectionKey} style={{ marginBottom: 8, background: "#0f1520", border: `1px solid ${meta.accent}44`, borderRadius: 8, overflow: "hidden" }}>
+                                <div key={sectionKey} style={{ marginBottom: 10, background: em.card, border: `1px solid ${em.cardBorder}`, borderRadius: 10, overflow: "hidden", boxShadow: em.shadow }}>
                                   {/* Section header — click to toggle */}
                                   <button
                                     type="button"
@@ -8527,27 +8566,27 @@ Payment terms:
                                     style={{
                                       width: "100%",
                                       display: "flex", alignItems: "center", gap: 10,
-                                      padding: "10px 14px",
+                                      padding: "14px 18px",
                                       background: meta.subtleBg,
                                       border: "none",
-                                      borderBottom: collapsed ? "none" : `1px solid ${meta.accent}44`,
+                                      borderBottom: collapsed ? "none" : `1px solid ${em.cardBorder}`,
                                       cursor: "pointer",
                                       textAlign: "left",
-                                      color: "#f0f4ff",
+                                      color: em.text,
                                     }}
                                   >
                                     <span style={{ fontSize: 14, transition: "transform 0.15s", display: "inline-block", transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", color: meta.accent }}>▾</span>
-                                    <span style={{ fontSize: 16 }}>{meta.icon}</span>
-                                    <span style={{ fontWeight: 800, fontSize: 14, color: "#f0f4ff" }}>{meta.title}</span>
-                                    <span style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 600 }}>{sectionItems.length} {sectionItems.length === 1 ? "item" : "items"}</span>
+                                    <span style={{ fontSize: 18 }}>{meta.icon}</span>
+                                    <span style={{ fontWeight: 800, fontSize: 16, color: em.text }}>{meta.title}</span>
+                                    <span style={{ fontSize: 12, color: em.textMuted, fontWeight: 600 }}>{sectionItems.length} {sectionItems.length === 1 ? "item" : "items"}</span>
                                     <div style={{ flex: 1 }} />
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: meta.accent }}>${formatMoney(sectionSubtotal)}</span>
+                                    <span style={{ fontSize: 16, fontWeight: 800, color: em.text }}>${formatMoney(sectionSubtotal)}</span>
                                   </button>
 
                                   {!collapsed && (
                                     <>
                                       {sectionItems.length === 0 ? (
-                                        <div style={{ padding: "12px 14px", fontSize: 12, color: "#6b7a9a", fontStyle: "italic" }}>No items in this section yet.</div>
+                                        <div style={{ padding: "14px 18px", fontSize: 13, color: em.textSubtle, fontStyle: "italic" }}>No items in this section yet.</div>
                                       ) : (
                                         sectionItems.map(renderItemRow)
                                       )}
@@ -8556,12 +8595,12 @@ Payment terms:
                                         onClick={() => addEstimateItem(activeEstimate.id, defaultCategory)}
                                         style={{
                                           width: "100%",
-                                          padding: "8px 14px",
+                                          padding: "12px 18px",
                                           background: "transparent",
                                           border: "none",
                                           borderTop: `1px dashed ${meta.accent}55`,
                                           color: meta.accent,
-                                          fontSize: 12,
+                                          fontSize: 13,
                                           fontWeight: 700,
                                           cursor: "pointer",
                                           textAlign: "left",
@@ -8576,7 +8615,7 @@ Payment terms:
                             })}
 
                             {activeItems.length === 0 && (
-                              <div style={{ fontSize: 12, color: "#6b7a9a", textAlign: "center", padding: "12px 0" }}>
+                              <div style={{ fontSize: 13, color: em.textSubtle, textAlign: "center", padding: "16px 0" }}>
                                 No line items yet — expand a section above and click "+ Add" to start
                               </div>
                             )}
@@ -8587,74 +8626,81 @@ Payment terms:
 
                     {/* Totals */}
                     {activeItems.length > 0 && (
-                      <div style={{ borderTop: "1px solid #252f45", paddingTop: 14, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20 }}>
+                      <div style={{ borderTop: `1px solid ${em.cardBorder}`, paddingTop: 20, marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 20 }}>
                         <div style={{ flex: 1 }}>
                           {/* Quote type */}
                           <div style={{ marginBottom: 12 }}>
-                            <FieldLabel>Quote type</FieldLabel>
+                            <div style={emLabelStyle}>Quote type</div>
                             <div style={{ display: "flex", gap: 8 }}>
                               {[
                                 { value: "framing", label: "Framing" },
                                 { value: "steel", label: "Structural Steel" },
-                              ].map(qt => (
-                                <button
-                                  key={qt.value}
-                                  type="button"
-                                  onClick={async () => {
-                                    const terms = qt.value === "framing" ? buildFramingTerms(activeItems) : STEEL_TERMS
-                                    await saveEstimate({ ...activeEstimate, quote_type: qt.value, terms })
-                                  }}
-                                  style={{
-                                    ...secondaryButtonStyle,
-                                    fontSize: 12,
-                                    background: (activeEstimate.quote_type ?? "framing") === qt.value ? "#1d4ed8" : undefined,
-                                    color: (activeEstimate.quote_type ?? "framing") === qt.value ? "white" : undefined,
-                                  }}
-                                >{qt.label}</button>
-                              ))}
+                              ].map(qt => {
+                                const isActive = (activeEstimate.quote_type ?? "framing") === qt.value
+                                return (
+                                  <button
+                                    key={qt.value}
+                                    type="button"
+                                    onClick={async () => {
+                                      const terms = qt.value === "framing" ? buildFramingTerms(activeItems) : STEEL_TERMS
+                                      await saveEstimate({ ...activeEstimate, quote_type: qt.value, terms })
+                                    }}
+                                    style={{
+                                      padding: "8px 14px",
+                                      borderRadius: 8,
+                                      fontSize: 13,
+                                      fontWeight: 700,
+                                      cursor: "pointer",
+                                      background: isActive ? "#2563eb" : em.card,
+                                      color: isActive ? "white" : em.text,
+                                      border: `1px solid ${isActive ? "#2563eb" : em.cardBorder}`,
+                                    }}
+                                  >{qt.label}</button>
+                                )
+                              })}
                               <button
                                 type="button"
                                 onClick={async () => {
                                   const terms = (activeEstimate.quote_type ?? "framing") === "steel" ? STEEL_TERMS : buildFramingTerms(activeItems)
                                   await saveEstimate({ ...activeEstimate, terms })
                                 }}
-                                style={{ ...secondaryButtonStyle, fontSize: 11, padding: "4px 8px", color: "#8899bb" }}
+                                style={{ padding: "6px 10px", fontSize: 12, background: "transparent", color: em.textMuted, border: "none", cursor: "pointer" }}
                               >Reset T&amp;Cs</button>
                             </div>
                           </div>
 
                           {/* T&C editor */}
                           <div>
-                            <FieldLabel>Terms &amp; Conditions</FieldLabel>
+                            <div style={emLabelStyle}>Terms &amp; Conditions</div>
                             <textarea
                               value={activeEstimate.terms ?? ((activeEstimate.quote_type ?? "framing") === "steel" ? STEEL_TERMS : FRAMING_TERMS)}
                               key={`terms-${activeEstimate.id}-${activeEstimate.quote_type}`}
                               rows={12}
-                              style={{ ...fieldStyle, fontSize: 11, padding: "8px 10px", resize: "vertical", fontFamily: "system-ui", lineHeight: 1.6, width: "100%" }}
+                              style={{ ...emInput, fontSize: 12, padding: "10px 12px", resize: "vertical", fontFamily: "system-ui", lineHeight: 1.6, width: "100%" }}
                               onChange={async (e) => { await saveEstimate({ ...activeEstimate, terms: e.target.value }) }}
                             />
-                            <div style={{ fontSize: 10, color: "#6b7a9a", marginTop: 4 }}>One item per line. Lines starting with - are sub-items. Lines containing "charges apply" appear in red.</div>
+                            <div style={{ fontSize: 11, color: em.textSubtle, marginTop: 4 }}>One item per line. Lines starting with - are sub-items. Lines containing "charges apply" appear in red.</div>
                           </div>
                         </div>
 
-                        <div style={{ display: "grid", gap: 6, minWidth: 280 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#8899bb" }}>
+                        <div style={{ background: em.card, border: `1px solid ${em.cardBorder}`, borderRadius: 10, padding: 20, minWidth: 300, boxShadow: em.shadow }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: em.textMuted, marginBottom: 4 }}>
                             <span>Subtotal (ex margin)</span>
                             <span>${formatMoney(subtotal)}</span>
                           </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#8899bb" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: em.textMuted, marginBottom: 8 }}>
                             <span>Margin</span>
                             <span>${formatMoney(total - subtotal)}</span>
                           </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 700, color: "#fbbf24", borderTop: "1px solid #2e3650", paddingTop: 6 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 700, color: em.text, borderTop: `1px solid ${em.divider}`, paddingTop: 8, marginBottom: 4 }}>
                             <span>Total ex GST</span>
                             <span>${formatMoney(total)}</span>
                           </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#8899bb" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: em.textMuted, marginBottom: 8 }}>
                             <span>GST (10%)</span>
                             <span>${formatMoney(gst)}</span>
                           </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 16, fontWeight: 800, color: "#e4e4e7", borderTop: "1px solid #2e3650", paddingTop: 6 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 22, fontWeight: 900, color: em.text, borderTop: `2px solid ${em.text}`, paddingTop: 10, marginTop: 6 }}>
                             <span>TOTAL inc GST</span>
                             <span>${formatMoney(totalIncGst)}</span>
                           </div>
@@ -8664,12 +8710,12 @@ Payment terms:
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{
-                              display: "block", marginTop: 20, padding: "16px 0",
-                              background: "linear-gradient(135deg, #1e3a6e, #2563eb)",
+                              display: "block", marginTop: 20, padding: "14px 0",
+                              background: "#2563eb",
                               color: "white", fontWeight: 800,
                               fontSize: 16, textAlign: "center", borderRadius: 10,
                               textDecoration: "none", cursor: "pointer",
-                              boxShadow: "0 4px 16px rgba(37,99,235,0.4)",
+                              boxShadow: "0 2px 8px rgba(37,99,235,0.25)",
                               letterSpacing: "0.02em",
                             }}
                           >
