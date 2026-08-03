@@ -3210,8 +3210,8 @@ export default function Home() {
   }
 
   // For mobile: load ALL crews' timesheets for a given week
-  async function loadAllTimesheetsForWeek(weekStart: string) {
-    setTimesheetLoading(true)
+  async function loadAllTimesheetsForWeek(weekStart: string, opts?: { silent?: boolean }) {
+    if (!opts?.silent) setTimesheetLoading(true)
     const weekEnd = addCalendarDays(weekStart, 6)
     const { data } = await supabase
       .from("timesheets")
@@ -3220,7 +3220,7 @@ export default function Home() {
       .lte("date", weekEnd)
       .order("date")
     setTimesheetEntries((data ?? []) as TimesheetEntry[])
-    setTimesheetLoading(false)
+    if (!opts?.silent) setTimesheetLoading(false)
   }
 
   async function saveTimesheetEntry(entry: Partial<TimesheetEntry> & { worker_id: string; date: string }) {
@@ -7081,7 +7081,7 @@ Payment terms:
                                       }
                                     }
                                     e.target.value = ""
-                                    await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                    await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                   }}
                                   style={{ ...bigFieldStyle, background: "linear-gradient(135deg, #1e3a6e, #2563eb)", border: "2px solid #3b82f6", color: "#bfdbfe", fontWeight: 700, fontSize: 14 }}>
                                   <option value="">⚡ Quick fill {crew.name}…</option>
@@ -7115,7 +7115,7 @@ Payment terms:
                                             value={entry.project_id ?? ""}
                                             onChange={async (e) => {
                                               await supabase.from("timesheets").update({ project_id: e.target.value || null }).eq("id", entry.id)
-                                              await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                              await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                             }}
                                             style={{ ...bigFieldStyle, flex: 1 }}>
                                             <option value="">No site</option>
@@ -7123,7 +7123,7 @@ Payment terms:
                                           </select>
                                           <button type="button" onClick={async () => {
                                             await supabase.from("timesheets").delete().eq("id", entry.id)
-                                            await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                            await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                           }}
                                             style={{ background: "#2a1a1a", border: "1px solid #5a2020", borderRadius: 8, color: "#f87171", cursor: "pointer", fontSize: 20, padding: "8px 12px", lineHeight: 1, fontWeight: 700 }}>×</button>
                                         </div>
@@ -7135,7 +7135,7 @@ Payment terms:
                                               style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px" }}
                                               onBlur={async (e) => {
                                                 await supabase.from("timesheets").update({ ordinary_hours: Number(e.target.value) }).eq("id", entry.id)
-                                                await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                                await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                               }} />
                                           </div>
                                           <div>
@@ -7144,7 +7144,7 @@ Payment terms:
                                               style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px", color: entry.ot_hours > 0 ? "#fbbf24" : "#f0f4ff" }}
                                               onBlur={async (e) => {
                                                 await supabase.from("timesheets").update({ ot_hours: Number(e.target.value) }).eq("id", entry.id)
-                                                await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                                await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                               }} />
                                           </div>
                                         </div>
@@ -7154,7 +7154,7 @@ Payment terms:
                                     {/* Add site */}
                                     <button type="button" onClick={async () => {
                                       await supabase.from("timesheets").insert({ worker_id: w.id, date: dayDate, project_id: null, ordinary_hours: entries.length === 0 && !dayIsWeekend ? 9 : 0, ot_hours: 0 })
-                                      await loadAllTimesheetsForWeek(timesheetWeekStart)
+                                      await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                     }} style={{ width: "100%", padding: "12px", borderRadius: 10, border: `1.5px dashed ${entries.length === 0 ? "#0891b2" : "#2e3650"}`, background: entries.length === 0 ? "#0f2030" : "transparent", color: entries.length === 0 ? "#67e8f9" : "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
                                       {entries.length === 0 ? "+ Add today's hours" : "+ Add another site"}
                                     </button>
