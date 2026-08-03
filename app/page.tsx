@@ -4859,9 +4859,23 @@ Payment terms:
 
                         {/* Milestone markers — grouped by date, one diamond per date with X/Y or ✔ */}
                         {(() => {
-                          const projectMilestones = milestones
-                            .filter((m) => m.project_id === row.projectId)
-                            .sort((a, b) => a.sort_order - b.sort_order)
+                          // In project view: milestones for this project
+                          // In crew view: milestones linked to any segment this crew is on (or unlinked ones with due_date_override linked to those projects)
+                          const projectMilestones = ganttViewMode === "crews"
+                            ? (() => {
+                                const rowSegmentIds = new Set(row.segments.map(s => s.id))
+                                const rowProjectIds = new Set(row.segments.map(s => s.project_id))
+                                return milestones
+                                  .filter(m => {
+                                    // Show if directly linked to one of this crew's segments
+                                    if (m.segment_id && rowSegmentIds.has(m.segment_id)) return true
+                                    // Show milestones with due_date_override linked to a project this crew is working
+                                    if (!m.segment_id && m.due_date_override && rowProjectIds.has(m.project_id)) return true
+                                    return false
+                                  })
+                                  .sort((a, b) => a.sort_order - b.sort_order)
+                              })()
+                            : milestones.filter((m) => m.project_id === row.projectId).sort((a, b) => a.sort_order - b.sort_order)
                           // Group by date
                           const groups = new Map<string, Milestone[]>()
                           for (const m of projectMilestones) {
@@ -4889,7 +4903,15 @@ Payment terms:
                             return (
                               <div
                                 key={dateKey}
-                                onClick={(e) => { e.stopPropagation(); openMilestoneModal(row.projectId, row.projectName, group[0].id) }}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  // In crew view use the milestone's actual project, not the row (which is a crew)
+                                  const projId = ganttViewMode === "crews" ? group[0].project_id : row.projectId
+                                  const projName = ganttViewMode === "crews"
+                                    ? (projects.find(p => p.id === group[0].project_id)?.name ?? "")
+                                    : row.projectName
+                                  openMilestoneModal(projId, projName, group[0].id)
+                                }}
                                 title={tooltipLines.join("\n")}
                                 style={{
                                   position: "absolute",
