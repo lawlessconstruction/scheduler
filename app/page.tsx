@@ -4876,15 +4876,30 @@ Payment terms:
                                   .sort((a, b) => a.sort_order - b.sort_order)
                               })()
                             : milestones.filter((m) => m.project_id === row.projectId).sort((a, b) => a.sort_order - b.sort_order)
-                          // Group by date
-                          const groups = new Map<string, Milestone[]>()
+
+                          // Build a segment_id → laneIndex map so we can position diamonds in the correct lane
+                          const segmentLane = new Map<string, number>()
+                          lanes.forEach((lane, i) => { for (const s of lane) segmentLane.set(s.id, i) })
+
+                          // Group by (dateKey, laneIndex) in crew mode so different lanes get separate diamonds
+                          // In project view, laneKey is always "" so they group by date as before
+                          type GroupKey = string  // "dateKey::laneIndex" or "dateKey::" for row-bottom (unlinked)
+                          const groups = new Map<GroupKey, { milestones: Milestone[]; laneIndex: number | null; dateKey: string }>()
                           for (const m of projectMilestones) {
                             const dateKey = getMilestoneDate(m)
                             if (!dateKey) continue
-                            if (!groups.has(dateKey)) groups.set(dateKey, [])
-                            groups.get(dateKey)!.push(m)
+                            // In crew view, position by segment's lane. In project view, always row-bottom.
+                            let laneIndex: number | null = null
+                            if (ganttViewMode === "crews" && m.segment_id) {
+                              const li = segmentLane.get(m.segment_id)
+                              if (li !== undefined) laneIndex = li
+                            }
+                            const key: GroupKey = `${dateKey}::${laneIndex ?? ""}`
+                            if (!groups.has(key)) groups.set(key, { milestones: [], laneIndex, dateKey })
+                            groups.get(key)!.milestones.push(m)
                           }
-                          return Array.from(groups.entries()).map(([dateKey, group]) => {
+                          return Array.from(groups.entries()).map(([key, entry]) => {
+                            const { dateKey, laneIndex, milestones: group } = entry
                             const index = dateIndexMap.get(dateKey)
                             if (index === undefined) return null
                             const left = index * DAY_COL_WIDTH + DAY_COL_WIDTH / 2
@@ -4900,9 +4915,13 @@ Payment terms:
                               const percentPart = m.percent ? ` (${m.percent}%)` : ""
                               return `${statusIcon}${m.name ?? "Milestone"}${amountPart}${percentPart} [${status}]`
                             })
+                            // Position: if we know a lane, hang diamond off the bottom edge of that lane's bar; else bottom of row.
+                            const positionStyle: React.CSSProperties = laneIndex !== null
+                              ? { top: ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP) + BAR_HEIGHT + 2, left: left - 10 }
+                              : { bottom: 4, left: left - 10 }
                             return (
                               <div
-                                key={dateKey}
+                                key={key}
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   // In crew view use the milestone's actual project, not the row (which is a crew)
@@ -4915,8 +4934,7 @@ Payment terms:
                                 title={tooltipLines.join("\n")}
                                 style={{
                                   position: "absolute",
-                                  left: left - 10,
-                                  bottom: 4,
+                                  ...positionStyle,
                                   width: 20,
                                   height: 20,
                                   background: contractColor,
