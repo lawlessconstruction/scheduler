@@ -7000,34 +7000,34 @@ Payment terms:
                 }
 
                 return (
-                  <div style={{ flex: 1, overflowY: "auto" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ flex: 1, overflowY: "auto", background: "#f5f1e8", margin: "-16px -16px 0", padding: 24, borderRadius: "10px 10px 0 0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
                       <div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f4ff" }}>Weekly Report — {weekLabel}</div>
-                        <div style={{ fontSize: 12, color: "#8899bb", marginTop: 2 }}>Hours worked by worker + project. Sorted alphabetically.</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: "#1a1a1a", letterSpacing: "-0.01em" }}>Weekly Report</div>
+                        <div style={{ fontSize: 13, color: "#5a5a5a", marginTop: 4, fontWeight: 500 }}>{weekLabel} · Hours worked by worker + project</div>
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button type="button" onClick={() => window.print()}
-                          style={{ ...secondaryButtonStyle, padding: "8px 14px", fontWeight: 700 }}>🖨️ Print</button>
+                          style={{ padding: "10px 16px", background: "#ffffff", color: "#5a5a5a", border: "1px solid #e5e0d3", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>🖨️ Print</button>
                         <button type="button" onClick={downloadCsv}
-                          style={{ padding: "8px 14px", background: "#16a34a", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>↓ Download CSV</button>
+                          style={{ padding: "10px 16px", background: "#16a34a", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,0.25)" }}>↓ Download CSV</button>
                       </div>
                     </div>
 
                     {workerOrder.length === 0 ? (
-                      <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a", fontSize: 14 }}>
+                      <div style={{ padding: 60, textAlign: "center", color: "#8a8a8a", fontSize: 14, background: "#ffffff", border: "1px solid #e5e0d3", borderRadius: 10 }}>
                         No timesheet entries for this week.
                       </div>
                     ) : (
-                      <div style={{ overflowX: "auto", border: "1px solid #252f45", borderRadius: 10 }}>
+                      <div style={{ overflowX: "auto", background: "#ffffff", border: "1px solid #e5e0d3", borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                           <thead>
-                            <tr style={{ background: "#161d2e" }}>
-                              <th style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, color: "#8899bb", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>Worker</th>
-                              <th style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, color: "#8899bb", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>Project</th>
-                              <th style={{ textAlign: "right", padding: "10px 14px", fontSize: 11, color: "#8899bb", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>Ordinary hrs</th>
-                              <th style={{ textAlign: "right", padding: "10px 14px", fontSize: 11, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>OT hrs</th>
-                              <th style={{ textAlign: "right", padding: "10px 14px", fontSize: 11, color: "#8899bb", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>Total</th>
+                            <tr style={{ background: "#faf7ee" }}>
+                              <th style={{ textAlign: "left", padding: "12px 16px", fontSize: 10, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>Worker</th>
+                              <th style={{ textAlign: "left", padding: "12px 16px", fontSize: 10, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>Project</th>
+                              <th style={{ textAlign: "right", padding: "12px 16px", fontSize: 10, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>Ordinary hrs</th>
+                              <th style={{ textAlign: "right", padding: "12px 16px", fontSize: 10, color: "#c2410c", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>OT hrs</th>
+                              <th style={{ textAlign: "right", padding: "12px 16px", fontSize: 10, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>Total</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -7044,37 +7044,37 @@ Payment terms:
                                 const projName = projects.find(p => p.id === r.projectId)?.name ?? "No project"
                                 const isPinned = r.projectId ? projects.find(p => p.id === r.projectId)?.pinned : false
                                 return (
-                                  <tr key={`${workerId}-${r.projectId ?? "none"}`} style={{ borderBottom: "1px solid #1a2035" }}>
-                                    <td style={{ padding: "10px 14px", fontWeight: i === 0 ? 700 : 400, color: i === 0 ? "#f0f4ff" : "transparent", verticalAlign: "top" }}>
+                                  <tr key={`${workerId}-${r.projectId ?? "none"}`} style={{ borderBottom: "1px solid #f0eadc" }}>
+                                    <td style={{ padding: "12px 16px", fontWeight: i === 0 ? 700 : 400, color: i === 0 ? "#1a1a1a" : "transparent", verticalAlign: "top", fontSize: 14 }}>
                                       {i === 0 ? (worker?.name ?? "Unknown") : "\u00A0"}
                                     </td>
-                                    <td style={{ padding: "10px 14px", color: "#c8d4f0" }}>
-                                      {isPinned ? "★ " : ""}{projName}
+                                    <td style={{ padding: "12px 16px", color: "#3a3a3a", fontSize: 13 }}>
+                                      {isPinned && <span style={{ color: "#c2410c" }}>★ </span>}{projName}
                                     </td>
-                                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 600, color: "#f0f4ff", fontVariantNumeric: "tabular-nums" }}>{r.ord.toFixed(1)}</td>
-                                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 600, color: r.ot > 0 ? "#fbbf24" : "#4a5670", fontVariantNumeric: "tabular-nums" }}>{r.ot.toFixed(1)}</td>
-                                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: "#f0f4ff", fontVariantNumeric: "tabular-nums" }}>{(r.ord + r.ot).toFixed(1)}</td>
+                                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{r.ord.toFixed(1)}</td>
+                                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: r.ot > 0 ? "#c2410c" : "#c0c0c0", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{r.ot.toFixed(1)}</td>
+                                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{(r.ord + r.ot).toFixed(1)}</td>
                                   </tr>
                                 )
                               })
                               trs.push(
-                                <tr key={`${workerId}-subtotal`} style={{ background: "#0f1520", borderBottom: "2px solid #2e3650" }}>
-                                  <td style={{ padding: "8px 14px", fontSize: 11, color: "#8899bb", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Subtotal</td>
+                                <tr key={`${workerId}-subtotal`} style={{ background: "#faf7ee", borderBottom: "2px solid #e5e0d3" }}>
+                                  <td style={{ padding: "10px 16px", fontSize: 11, color: "#5a5a5a", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Subtotal</td>
                                   <td></td>
-                                  <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, color: "#f0f4ff", fontVariantNumeric: "tabular-nums" }}>{workerOrdTotal.toFixed(1)}</td>
-                                  <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, color: workerOtTotal > 0 ? "#fbbf24" : "#4a5670", fontVariantNumeric: "tabular-nums" }}>{workerOtTotal.toFixed(1)}</td>
-                                  <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontVariantNumeric: "tabular-nums" }}>{(workerOrdTotal + workerOtTotal).toFixed(1)}</td>
+                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{workerOrdTotal.toFixed(1)}</td>
+                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: workerOtTotal > 0 ? "#c2410c" : "#c0c0c0", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{workerOtTotal.toFixed(1)}</td>
+                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 900, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 15 }}>{(workerOrdTotal + workerOtTotal).toFixed(1)}</td>
                                 </tr>
                               )
                               return trs
                             })}
                             {/* Grand total */}
-                            <tr style={{ background: "#1a2035" }}>
-                              <td style={{ padding: "12px 14px", fontSize: 12, color: "#c4b5fd", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px" }}>Grand total</td>
+                            <tr style={{ background: "#1a1a1a" }}>
+                              <td style={{ padding: "16px", fontSize: 13, color: "#f0f4ff", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.6px" }}>Grand total</td>
                               <td></td>
-                              <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{grandOrd.toFixed(1)}</td>
-                              <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: 900, color: grandOt > 0 ? "#fbbf24" : "#4a5670", fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{grandOt.toFixed(1)}</td>
-                              <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{(grandOrd + grandOt).toFixed(1)}</td>
+                              <td style={{ padding: "16px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{grandOrd.toFixed(1)}</td>
+                              <td style={{ padding: "16px", textAlign: "right", fontWeight: 900, color: grandOt > 0 ? "#fbbf24" : "#4a5670", fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{grandOt.toFixed(1)}</td>
+                              <td style={{ padding: "16px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontSize: 20, fontVariantNumeric: "tabular-nums" }}>{(grandOrd + grandOt).toFixed(1)}</td>
                             </tr>
                           </tbody>
                         </table>
