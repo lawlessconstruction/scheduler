@@ -6984,7 +6984,14 @@ Payment terms:
                     const projName = projects.find(p => p.id === r.projectId)?.name ?? "No project"
                     csvRows.push(`"${worker?.name ?? "Unknown"}","${projName.replace(/"/g, '""')}",${r.ord},${r.ot},${r.ord + r.ot}`)
                   }
+                  // Subtotal row per worker
+                  const workerOrdTotal = rows.reduce((s, r) => s + r.ord, 0)
+                  const workerOtTotal = rows.reduce((s, r) => s + r.ot, 0)
+                  csvRows.push(`"${worker?.name ?? "Unknown"} — SUBTOTAL","",${workerOrdTotal},${workerOtTotal},${workerOrdTotal + workerOtTotal}`)
+                  csvRows.push("") // blank line between workers
                 }
+                // Grand total at the end
+                csvRows.push(`"GRAND TOTAL","",${grandOrd},${grandOt},${grandOrd + grandOt}`)
                 const csvString = csvRows.join("\n")
 
                 const downloadCsv = () => {
