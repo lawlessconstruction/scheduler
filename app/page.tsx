@@ -6653,7 +6653,21 @@ Payment terms:
                           </div>
                           <div>
                             <FieldLabel>Employment type</FieldLabel>
-                            <select defaultValue={w.employment_type ?? "full_time"} key={`w-emp-${w.id}`} style={fieldStyle} onChange={async (e) => { await saveWorker({ ...w, employment_type: e.target.value }) }}>
+                            <select defaultValue={w.employment_type ?? "full_time"} key={`w-emp-${w.id}`} style={fieldStyle} onChange={async (e) => {
+                              const newType = e.target.value
+                              // If worker has a base rate, re-run the full oncost calc so LSL and other leave-type
+                              // fields recompute correctly for the new employment type (e.g. casual has no LSL).
+                              if (w.base_rate_hourly) {
+                                const updated: Worker = { ...w, employment_type: newType }
+                                const oncosts = computeOncostsForWorker(updated)
+                                if (oncosts) {
+                                  await saveWorker({ ...updated, ...oncosts })
+                                  showToast(`Oncosts recalculated for ${newType.replace("_", " ")}`)
+                                  return
+                                }
+                              }
+                              await saveWorker({ ...w, employment_type: newType })
+                            }}>
                               <option value="full_time">Full Time</option>
                               <option value="casual">Casual</option>
                               <option value="subcontractor">Subcontractor</option>
