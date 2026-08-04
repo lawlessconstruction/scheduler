@@ -2419,6 +2419,7 @@ export default function Home() {
   const [mobileDayOffset, setMobileDayOffset] = useState(0)  // 0=Mon of week, 6=Sun
   const [mobileSearch, setMobileSearch] = useState("")
   const [justAddedWorkerId, setJustAddedWorkerId] = useState<string | null>(null)
+  const [showTimesheetReport, setShowTimesheetReport] = useState(false)
   useEffect(() => {
     if (typeof window === "undefined") return
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -6929,11 +6930,161 @@ Payment terms:
                       ← Summary
                     </button>
                   )}
+                  {!isMobile && (
+                    <button type="button" onClick={() => setShowTimesheetReport(v => !v)}
+                      style={{ ...secondaryButtonStyle, padding: "6px 12px", background: showTimesheetReport ? "#0f2030" : undefined, border: showTimesheetReport ? "1.5px solid #0891b2" : undefined, color: showTimesheetReport ? "#67e8f9" : undefined, fontWeight: 700 }}>
+                      {showTimesheetReport ? "← Back to view" : "📊 Weekly report"}
+                    </button>
+                  )}
                   <button type="button" onClick={() => setShowTimesheetModal(false)} style={secondaryButtonStyle}>Close</button>
                 </div>
               </div>
 
-              {!timesheetCrewId && !isMobile && (() => {
+              {showTimesheetReport && (() => {
+                // Weekly report: one row per (worker, project) with ord + OT hour totals for the visible week
+                const weekEnd = addCalendarDays(timesheetWeekStart, 6)
+                const weekEntries = timesheetEntries.filter(e => e.date >= timesheetWeekStart && e.date <= weekEnd)
+
+                // Group by worker_id → project_id (null → "No project")
+                type RowKey = string  // `${workerId}::${projectId ?? "none"}`
+                const rowMap = new Map<RowKey, { workerId: string; projectId: string | null; ord: number; ot: number }>()
+                for (const e of weekEntries) {
+                  const key: RowKey = `${e.worker_id}::${e.project_id ?? "none"}`
+                  const existing = rowMap.get(key) ?? { workerId: e.worker_id, projectId: e.project_id, ord: 0, ot: 0 }
+                  existing.ord += e.ordinary_hours ?? 0
+                  existing.ot += e.ot_hours ?? 0
+                  rowMap.set(key, existing)
+                }
+
+                // Group rows by worker, sort workers alphabetically
+                const rowsByWorker = new Map<string, { worker: Worker | null; rows: { projectId: string | null; ord: number; ot: number }[] }>()
+                for (const r of rowMap.values()) {
+                  const worker = workers.find(w => w.id === r.workerId) ?? null
+                  const bucket = rowsByWorker.get(r.workerId) ?? { worker, rows: [] }
+                  bucket.rows.push({ projectId: r.projectId, ord: r.ord, ot: r.ot })
+                  rowsByWorker.set(r.workerId, bucket)
+                }
+                const workerOrder = Array.from(rowsByWorker.entries()).sort((a, b) =>
+                  (a[1].worker?.name ?? "zzz").localeCompare(b[1].worker?.name ?? "zzz")
+                )
+
+                // Grand totals
+                const grandOrd = weekEntries.reduce((s, e) => s + (e.ordinary_hours ?? 0), 0)
+                const grandOt = weekEntries.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
+
+                // Convert to CSV string for download
+                const csvRows: string[] = ["Worker,Project,Ordinary Hours,Overtime Hours,Total Hours"]
+                for (const [, { worker, rows }] of workerOrder) {
+                  const sortedRows = rows.sort((a, b) => {
+                    const an = projects.find(p => p.id === a.projectId)?.name ?? "zzNo project"
+                    const bn = projects.find(p => p.id === b.projectId)?.name ?? "zzNo project"
+                    return an.localeCompare(bn)
+                  })
+                  for (const r of sortedRows) {
+                    const projName = projects.find(p => p.id === r.projectId)?.name ?? "No project"
+                    csvRows.push(`"${worker?.name ?? "Unknown"}","${projName.replace(/"/g, '""')}",${r.ord},${r.ot},${r.ord + r.ot}`)
+                  }
+                }
+                const csvString = csvRows.join("\n")
+
+                const downloadCsv = () => {
+                  const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement("a")
+                  a.href = url
+                  a.download = `timesheet-report-${timesheetWeekStart}.csv`
+                  document.body.appendChild(a)
+                  a.click()
+                  document.body.removeChild(a)
+                  URL.revokeObjectURL(url)
+                }
+
+                return (
+                  <div style={{ flex: 1, overflowY: "auto" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f4ff" }}>Weekly Report — {weekLabel}</div>
+                        <div style={{ fontSize: 12, color: "#8899bb", marginTop: 2 }}>Hours worked by worker + project. Sorted alphabetically.</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button type="button" onClick={() => window.print()}
+                          style={{ ...secondaryButtonStyle, padding: "8px 14px", fontWeight: 700 }}>🖨️ Print</button>
+                        <button type="button" onClick={downloadCsv}
+                          style={{ padding: "8px 14px", background: "#16a34a", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>↓ Download CSV</button>
+                      </div>
+                    </div>
+
+                    {workerOrder.length === 0 ? (
+                      <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a", fontSize: 14 }}>
+                        No timesheet entries for this week.
+                      </div>
+                    ) : (
+                      <div style={{ overflowX: "auto", border: "1px solid #252f45", borderRadius: 10 }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                          <thead>
+                            <tr style={{ background: "#161d2e" }}>
+                              <th style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, color: "#8899bb", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>Worker</th>
+                              <th style={{ textAlign: "left", padding: "10px 14px", fontSize: 11, color: "#8899bb", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>Project</th>
+                              <th style={{ textAlign: "right", padding: "10px 14px", fontSize: 11, color: "#8899bb", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>Ordinary hrs</th>
+                              <th style={{ textAlign: "right", padding: "10px 14px", fontSize: 11, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>OT hrs</th>
+                              <th style={{ textAlign: "right", padding: "10px 14px", fontSize: 11, color: "#8899bb", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 700, borderBottom: "1px solid #2e3650" }}>Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {workerOrder.map(([workerId, { worker, rows }]) => {
+                              const sortedRows = rows.sort((a, b) => {
+                                const an = projects.find(p => p.id === a.projectId)?.name ?? "zzNo project"
+                                const bn = projects.find(p => p.id === b.projectId)?.name ?? "zzNo project"
+                                return an.localeCompare(bn)
+                              })
+                              const workerOrdTotal = rows.reduce((s, r) => s + r.ord, 0)
+                              const workerOtTotal = rows.reduce((s, r) => s + r.ot, 0)
+                              // Return an array of trs so React can flatten them into the tbody
+                              const trs: React.ReactNode[] = sortedRows.map((r, i) => {
+                                const projName = projects.find(p => p.id === r.projectId)?.name ?? "No project"
+                                const isPinned = r.projectId ? projects.find(p => p.id === r.projectId)?.pinned : false
+                                return (
+                                  <tr key={`${workerId}-${r.projectId ?? "none"}`} style={{ borderBottom: "1px solid #1a2035" }}>
+                                    <td style={{ padding: "10px 14px", fontWeight: i === 0 ? 700 : 400, color: i === 0 ? "#f0f4ff" : "transparent", verticalAlign: "top" }}>
+                                      {i === 0 ? (worker?.name ?? "Unknown") : "\u00A0"}
+                                    </td>
+                                    <td style={{ padding: "10px 14px", color: "#c8d4f0" }}>
+                                      {isPinned ? "★ " : ""}{projName}
+                                    </td>
+                                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 600, color: "#f0f4ff", fontVariantNumeric: "tabular-nums" }}>{r.ord.toFixed(1)}</td>
+                                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 600, color: r.ot > 0 ? "#fbbf24" : "#4a5670", fontVariantNumeric: "tabular-nums" }}>{r.ot.toFixed(1)}</td>
+                                    <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: "#f0f4ff", fontVariantNumeric: "tabular-nums" }}>{(r.ord + r.ot).toFixed(1)}</td>
+                                  </tr>
+                                )
+                              })
+                              trs.push(
+                                <tr key={`${workerId}-subtotal`} style={{ background: "#0f1520", borderBottom: "2px solid #2e3650" }}>
+                                  <td style={{ padding: "8px 14px", fontSize: 11, color: "#8899bb", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Subtotal</td>
+                                  <td></td>
+                                  <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, color: "#f0f4ff", fontVariantNumeric: "tabular-nums" }}>{workerOrdTotal.toFixed(1)}</td>
+                                  <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 700, color: workerOtTotal > 0 ? "#fbbf24" : "#4a5670", fontVariantNumeric: "tabular-nums" }}>{workerOtTotal.toFixed(1)}</td>
+                                  <td style={{ padding: "8px 14px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontVariantNumeric: "tabular-nums" }}>{(workerOrdTotal + workerOtTotal).toFixed(1)}</td>
+                                </tr>
+                              )
+                              return trs
+                            })}
+                            {/* Grand total */}
+                            <tr style={{ background: "#1a2035" }}>
+                              <td style={{ padding: "12px 14px", fontSize: 12, color: "#c4b5fd", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.5px" }}>Grand total</td>
+                              <td></td>
+                              <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{grandOrd.toFixed(1)}</td>
+                              <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: 900, color: grandOt > 0 ? "#fbbf24" : "#4a5670", fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{grandOt.toFixed(1)}</td>
+                              <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontSize: 14, fontVariantNumeric: "tabular-nums" }}>{(grandOrd + grandOt).toFixed(1)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {!showTimesheetReport && !timesheetCrewId && !isMobile && (() => {
                 // Summary dashboard — visible when no specific crew is selected.
                 // Uses timesheetEntries as the source (loaded fresh on modal open).
                 const weekEnd = addCalendarDays(timesheetWeekStart, 6)
@@ -7104,11 +7255,11 @@ Payment terms:
                 )
               })()}
 
-              {timesheetCrewId && timesheetLoading && (
+              {!showTimesheetReport && timesheetCrewId && timesheetLoading && (
                 <div style={{ color: "#6b7a9a", fontSize: 14, textAlign: "center", padding: 40 }}>Loading...</div>
               )}
 
-              {isMobile && !timesheetLoading && (() => {
+              {!showTimesheetReport && isMobile && !timesheetLoading && (() => {
                 // MOBILE VIEW — all crews stacked, one day at a time, with search
                 const dayDate = addCalendarDays(timesheetWeekStart, mobileDayOffset)
                 const dayIsWeekend = isWeekend(parseDate(dayDate))
@@ -7347,7 +7498,7 @@ Payment terms:
                 )
               })()}
 
-              {timesheetCrewId && !timesheetLoading && !isMobile && (
+              {!showTimesheetReport && timesheetCrewId && !timesheetLoading && !isMobile && (
                 <div style={{ overflowX: "auto", overflowY: "auto", flex: 1 }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                     <thead>
