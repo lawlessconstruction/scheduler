@@ -7068,8 +7068,24 @@ Payment terms:
                                 <tr key={`${workerId}-subtotal`} style={{ background: "#faf7ee", borderBottom: "2px solid #e5e0d3" }}>
                                   <td style={{ padding: "10px 16px", fontSize: 11, color: "#5a5a5a", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Subtotal</td>
                                   <td></td>
-                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{workerOrdTotal.toFixed(1)}</td>
-                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: workerOtTotal > 0 ? "#c2410c" : "#c0c0c0", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{workerOtTotal.toFixed(1)}</td>
+                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>
+                                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                      <button type="button"
+                                        title={`Copy ${workerOrdTotal.toFixed(1)} to clipboard`}
+                                        onClick={() => { navigator.clipboard.writeText(workerOrdTotal.toFixed(1)); showToast(`Copied ${workerOrdTotal.toFixed(1)} hrs`) }}
+                                        style={{ background: "transparent", border: "1px solid #d4c9a8", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#5a5a5a", cursor: "pointer", lineHeight: 1 }}>📋</button>
+                                      <span>{workerOrdTotal.toFixed(1)}</span>
+                                    </div>
+                                  </td>
+                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: workerOtTotal > 0 ? "#c2410c" : "#c0c0c0", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>
+                                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                                      <button type="button"
+                                        title={`Copy ${workerOtTotal.toFixed(1)} to clipboard`}
+                                        onClick={() => { navigator.clipboard.writeText(workerOtTotal.toFixed(1)); showToast(`Copied ${workerOtTotal.toFixed(1)} OT hrs`) }}
+                                        style={{ background: "transparent", border: `1px solid ${workerOtTotal > 0 ? "#fbbf24" : "#d4c9a8"}`, borderRadius: 4, padding: "2px 6px", fontSize: 11, color: workerOtTotal > 0 ? "#c2410c" : "#5a5a5a", cursor: "pointer", lineHeight: 1 }}>📋</button>
+                                      <span>{workerOtTotal.toFixed(1)}</span>
+                                    </div>
+                                  </td>
                                   <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 900, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 15 }}>{(workerOrdTotal + workerOtTotal).toFixed(1)}</td>
                                 </tr>
                               )
