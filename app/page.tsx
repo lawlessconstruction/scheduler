@@ -2418,6 +2418,7 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false)
   const [mobileDayOffset, setMobileDayOffset] = useState(0)  // 0=Mon of week, 6=Sun
   const [mobileSearch, setMobileSearch] = useState("")
+  const [justAddedWorkerId, setJustAddedWorkerId] = useState<string | null>(null)
   useEffect(() => {
     if (typeof window === "undefined") return
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -3116,6 +3117,46 @@ export default function Home() {
     { value: "apprentice_1st", label: "1st Year Apprentice" },
   ]
 
+  // Calculate all oncosts for a worker based on their base_rate_hourly + classification + employment_type.
+  // Used by the "Calc" button on each card AND automatically when a new worker's base rate or classification is set.
+  // Returns the updated worker fields (does NOT save — caller decides).
+  function computeOncostsForWorker(w: Worker) {
+    const base = w.base_rate_hourly
+    if (!base) return null
+    const ot = Number((base * 2).toFixed(2))
+    const travel = w.travel_allowance_hourly ?? 2.5
+    const classRate = classificationRates.find(r => r.classification === w.classification)
+    const scr = w.standard_charge_rate ?? classRate?.rate_ex_gst ?? null
+    const isSub = w.employment_type === "subcontractor"
+    const subWithOncosts = isSub && w.sub_super_workcover
+    if (isSub && !subWithOncosts) {
+      return { ot_rate_hourly: ot, super_hourly: null, annual_leave_hourly: null, personal_leave_hourly: null, long_service_leave_hourly: null, travel_allowance_hourly: travel, workcover_hourly: null, public_hols_hourly: null, standard_charge_rate: scr }
+    }
+    const superHr = Number((base * 0.115).toFixed(2))
+    const annualLeave = Number((base * (4 / 52) * 1.175).toFixed(2))
+    const personalLeave = Number((base * (10 / (52 * 5))).toFixed(2))
+    const lsl = w.employment_type === "casual" ? null : Number((base * (1 / 52)).toFixed(2))
+    const workcover = Number((base * 0.055).toFixed(2))
+    const pubHols = Number((base * (11 / (52 * 5))).toFixed(2))
+    if (isSub && subWithOncosts) {
+      return { ot_rate_hourly: ot, super_hourly: superHr, annual_leave_hourly: null, personal_leave_hourly: null, long_service_leave_hourly: null, travel_allowance_hourly: travel, workcover_hourly: workcover, public_hols_hourly: null, standard_charge_rate: scr }
+    }
+    return { ot_rate_hourly: ot, super_hourly: superHr, annual_leave_hourly: annualLeave, personal_leave_hourly: personalLeave, long_service_leave_hourly: lsl, travel_allowance_hourly: travel, workcover_hourly: workcover, public_hols_hourly: pubHols, standard_charge_rate: scr }
+  }
+
+  // Look up a typical base rate for a classification from OTHER existing workers.
+  // Uses the median base_rate_hourly of workers with the same classification (excludes the worker being updated).
+  function medianBaseRateForClassification(classification: string | null, excludeId?: string): number | null {
+    if (!classification) return null
+    const rates = workers
+      .filter(w => w.id !== excludeId && w.classification === classification && w.base_rate_hourly && w.base_rate_hourly > 0)
+      .map(w => w.base_rate_hourly!)
+      .sort((a, b) => a - b)
+    if (rates.length === 0) return null
+    const mid = Math.floor(rates.length / 2)
+    return rates.length % 2 === 0 ? (rates[mid - 1] + rates[mid]) / 2 : rates[mid]
+  }
+
   function calcChargeout(costPerHour: number, margin: number) {
     return costPerHour / (1 - margin)
   }
@@ -3160,13 +3201,16 @@ export default function Home() {
 
   async function addWorker(crewId?: string) {
     const existing = workers.filter((w) => w.crew_id === (crewId ?? null))
-    await supabase.from("workers").insert({
+    const { data, error } = await supabase.from("workers").insert({
       name: "New worker",
       crew_id: crewId ?? null,
       sort_order: existing.length,
       travel_allowance_hourly: 2.5,  // default $2.50/hr — same as existing workers
-    })
+    }).select().single()
+    if (error || !data) { showToast(`Add failed: ${error?.message}`); return }
     await loadData()
+    // Mark this worker as the one just added — a card ref will scroll into view when it renders
+    setJustAddedWorkerId((data as Worker).id)
   }
 
   async function deleteWorker(id: string) {
@@ -6553,7 +6597,26 @@ Payment terms:
                     }
 
                     return (
-                      <div key={w.id} style={{ background: "#161d2e", border: `1px solid ${isSub ? "#422006" : "#222"}`, borderRadius: 10, padding: 14, marginBottom: 10 }}>
+                      <div
+                        key={w.id}
+                        ref={(el) => {
+                          // Scroll into view + apply a brief highlight if this is the worker we just added
+                          if (el && justAddedWorkerId === w.id) {
+                            setTimeout(() => {
+                              el.scrollIntoView({ behavior: "smooth", block: "center" })
+                              // Clear the flag so we don't keep scrolling on subsequent renders
+                              setJustAddedWorkerId(null)
+                            }, 50)
+                          }
+                        }}
+                        style={{
+                          background: "#161d2e",
+                          border: `2px solid ${justAddedWorkerId === w.id ? "#fbbf24" : (isSub ? "#422006" : "#222")}`,
+                          boxShadow: justAddedWorkerId === w.id ? "0 0 0 4px rgba(251,191,36,0.15)" : "none",
+                          borderRadius: 10, padding: 14, marginBottom: 10,
+                          transition: "border-color 0.3s, box-shadow 0.3s",
+                        }}
+                      >
                         {/* Header row */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto auto auto", gap: 10, marginBottom: 10, alignItems: "end" }}>
                           <div>
@@ -6566,7 +6629,24 @@ Payment terms:
                           </div>
                           <div>
                             <FieldLabel>Classification</FieldLabel>
-                            <select defaultValue={w.classification ?? ""} key={`w-class-${w.id}`} style={fieldStyle} onChange={async (e) => { await saveWorker({ ...w, classification: e.target.value || null }) }}>
+                            <select defaultValue={w.classification ?? ""} key={`w-class-${w.id}`} style={fieldStyle} onChange={async (e) => {
+                              const newClassification = e.target.value || null
+                              // If worker has no base rate yet, try to pull the median from other workers of the same classification
+                              // and immediately auto-calc all oncosts.
+                              if (!w.base_rate_hourly && newClassification) {
+                                const suggested = medianBaseRateForClassification(newClassification, w.id)
+                                if (suggested) {
+                                  const updated = { ...w, classification: newClassification, base_rate_hourly: suggested }
+                                  const oncosts = computeOncostsForWorker(updated)
+                                  if (oncosts) {
+                                    await saveWorker({ ...updated, ...oncosts })
+                                    showToast(`Base rate set to $${suggested}/hr (median for ${newClassification.replace("_", " ")}) — oncosts calculated`)
+                                    return
+                                  }
+                                }
+                              }
+                              await saveWorker({ ...w, classification: newClassification })
+                            }}>
                               <option value="">Select...</option>
                               {CLASSIFICATIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                             </select>
@@ -6676,7 +6756,24 @@ Payment terms:
                                   placeholder="0.00"
                                   disabled={dim}
                                   style={{ ...fieldStyle, padding: "4px 6px", fontSize: 15, fontWeight: 700, color: highlight ? "#86efac" : "#e0e8ff", background: "transparent", border: "none", width: "100%", outline: "none" }}
-                                  onBlur={async (e) => { await saveWorker({ ...w, [key]: e.target.value ? Number(e.target.value) : null }) }}
+                                  onBlur={async (e) => {
+                                    const newVal = e.target.value ? Number(e.target.value) : null
+                                    // Special case: when the user sets the base rate on a fresh worker (no super/etc. yet),
+                                    // auto-run the full oncost calc so they don't have to click "Calc" separately.
+                                    if (key === "base_rate_hourly" && newVal) {
+                                      const oncostsEmpty = !w.super_hourly && !w.annual_leave_hourly && !w.workcover_hourly
+                                      if (oncostsEmpty) {
+                                        const updated: Worker = { ...w, base_rate_hourly: newVal }
+                                        const oncosts = computeOncostsForWorker(updated)
+                                        if (oncosts) {
+                                          await saveWorker({ ...updated, ...oncosts })
+                                          showToast(`Oncosts auto-calculated from base rate`)
+                                          return
+                                        }
+                                      }
+                                    }
+                                    await saveWorker({ ...w, [key]: newVal })
+                                  }}
                                 />
                               </div>
                               <div style={{ fontSize: 10, color: "#4a5680", marginTop: 2 }}>/hr</div>
