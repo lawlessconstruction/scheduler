@@ -1502,7 +1502,7 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                   }} />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto", gap: 12, marginBottom: 24, alignItems: "end" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 140px auto auto auto", gap: 12, marginBottom: 24, alignItems: "end" }}>
                 <div>
                   <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 6, fontWeight: 600 }}>Project</div>
                   <select value={activeExtra.project_id ?? ""} key={`p-${activeExtra.id}`} style={fs}
@@ -1580,7 +1580,7 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                   title={activeExtra.locked_at ? `Unlock (locked ${new Date(activeExtra.locked_at).toLocaleDateString()})` : "Lock extra — freeze rates so worker rate changes don't affect this extra"}>
                   {activeExtra.locked_at ? "🔒 Locked" : "🔓 Lock"}
                 </button>
-                <button type="button" onClick={deleteExtra} style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #7f1d1d", background: "#b91c1c", color: "white", fontWeight: 700, cursor: "pointer" }}>×</button>
+                <button type="button" onClick={deleteExtra} style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #7f1d1d", background: "#b91c1c", color: "white", fontWeight: 700, cursor: "pointer", width: 44, fontSize: 16, lineHeight: 1, flexShrink: 0 }}>×</button>
               </div>
 
               {/* Line items */}
