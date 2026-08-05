@@ -254,6 +254,7 @@ type TimesheetEntry = {
   notes: string | null
   entered_by: string | null
   billable_hourly: boolean | null
+  billed_via_extra_id: string | null
 }
 
 type TopModalType = "addProject" | "addSegment" | null
@@ -3583,6 +3584,69 @@ export default function Home() {
       d.setDate(d.getDate() + 1)
     } while (d.getDay() === 0 || d.getDay() === 6)
     return formatDateKey(d)
+  }
+
+  // Create an Extra from a project's billable hourly entries for a given week.
+  // Groups the entries by worker (one line item per worker with their hours + rate),
+  // marks the source timesheet entries with billed_via_extra_id.
+  async function createExtraFromBillableHours(opts: { projectId: string; projectName: string; weekStart: string; weekEnd: string; entries: TimesheetEntry[] }) {
+    const { projectId, projectName, weekStart, weekEnd, entries } = opts
+    if (entries.length === 0) return
+
+    // Format the date range for a readable title
+    const startDateObj = parseDate(weekStart)
+    const endDateObj = parseDate(weekEnd)
+    const shortDate = (d: Date) => d.toLocaleDateString("en-AU", { day: "numeric", month: "short" })
+    const title = `Hourly work — ${shortDate(startDateObj)}–${shortDate(endDateObj)}`
+
+    // Create the Extra
+    const { data: newExtra, error: createErr } = await supabase.from("extras").insert({
+      project_id: projectId,
+      title,
+      status: "draft",
+    }).select().single()
+    if (createErr || !newExtra) { showToast(`Failed to create extra: ${createErr?.message}`); return }
+    const extraId = (newExtra as { id: string }).id
+
+    // Group entries by worker_id → sum of ord + ot hours
+    type WorkerAgg = { workerId: string; ord: number; ot: number; entryIds: string[] }
+    const byWorker = new Map<string, WorkerAgg>()
+    for (const e of entries) {
+      const agg = byWorker.get(e.worker_id) ?? { workerId: e.worker_id, ord: 0, ot: 0, entryIds: [] }
+      agg.ord += e.ordinary_hours ?? 0
+      agg.ot += e.ot_hours ?? 0
+      agg.entryIds.push(e.id)
+      byWorker.set(e.worker_id, agg)
+    }
+
+    // Build line items — one per worker
+    const itemInserts = Array.from(byWorker.values()).map((agg, idx) => {
+      const w = workers.find(ww => ww.id === agg.workerId)
+      const workerName = w?.name ?? "Unknown"
+      // Rate: prefer standard_charge_rate, fall back to blended cost + 30% margin
+      const rate = w?.standard_charge_rate ?? (w?.total_cost_hourly_with_ot ?? 0) * 1.3
+      return {
+        extra_id: extraId,
+        description: `${workerName} — hourly labour`,
+        charge_type: "hourly",
+        worker_id: agg.workerId,
+        ordinary_hours: agg.ord,
+        ot_hours: agg.ot,
+        unit_cost: Math.round(rate * 100) / 100,
+        margin_percent: 0,
+        sort_order: idx,
+      }
+    })
+
+    const { error: itemErr } = await supabase.from("extra_items").insert(itemInserts)
+    if (itemErr) { showToast(`Extra created but items failed: ${itemErr.message}`); return }
+
+    // Mark the timesheet entries as billed via this extra
+    const allEntryIds = Array.from(byWorker.values()).flatMap(a => a.entryIds)
+    await supabase.from("timesheets").update({ billed_via_extra_id: extraId }).in("id", allEntryIds)
+
+    await loadData()
+    showToast(`Created "${title}" with ${itemInserts.length} line ${itemInserts.length === 1 ? "item" : "items"} for ${projectName}`)
   }
 
   async function addEstimateItem(estimateId: string, category = "labour") {
@@ -7134,7 +7198,7 @@ Payment terms:
 
                     {/* Billable Hourly section — groups by client → project → worker */}
                     {(() => {
-                      const billableEntries = weekEntries.filter(e => e.billable_hourly && e.project_id)
+                      const billableEntries = weekEntries.filter(e => e.billable_hourly && e.project_id && !e.billed_via_extra_id)
                       if (billableEntries.length === 0) return null
 
                       // Group: clientId → projectId → workerId → { ord, ot }
@@ -7217,6 +7281,23 @@ Payment terms:
                                           <button type="button"
                                             onClick={() => { navigator.clipboard.writeText(projOrd.toFixed(1)); showToast(`Copied ${projOrd.toFixed(1)} hrs`) }}
                                             style={{ background: "transparent", border: "1px solid #d4c9a8", borderRadius: 3, padding: "1px 5px", fontSize: 10, color: "#5a5a5a", cursor: "pointer" }}>📋</button>
+                                          <button type="button"
+                                            onClick={async () => {
+                                              const projectEntries = billableEntries.filter(e => e.project_id === projId)
+                                              const workerCount = new Set(projectEntries.map(e => e.worker_id)).size
+                                              const totalHrs = projectEntries.reduce((s, e) => s + (e.ordinary_hours ?? 0) + (e.ot_hours ?? 0), 0)
+                                              const confirmed = window.confirm(`Create an Extra on "${pAgg.projectName}" with ${totalHrs.toFixed(1)} hrs (${workerCount} ${workerCount === 1 ? "worker" : "workers"})?\n\nThese timesheet entries will be marked as billed and won't appear in future billable reports.`)
+                                              if (!confirmed) return
+                                              await createExtraFromBillableHours({
+                                                projectId: projId,
+                                                projectName: pAgg.projectName,
+                                                weekStart: timesheetWeekStart,
+                                                weekEnd: addCalendarDays(timesheetWeekStart, 6),
+                                                entries: projectEntries,
+                                              })
+                                            }}
+                                            title={`Create an Extra with these ${projOrd.toFixed(1)}${projOt > 0 ? ` + ${projOt.toFixed(1)} OT` : ""} hours`}
+                                            style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 4, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 4px rgba(22,163,74,0.3)", marginLeft: 4 }}>→ Extra</button>
                                         </div>
                                       </div>
                                       <div style={{ paddingLeft: 12, fontSize: 12, color: "#5a5a5a" }}>
