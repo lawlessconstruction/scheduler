@@ -7593,17 +7593,20 @@ Payment terms:
                                             }}
                                             title={entry.billable_hourly ? "Billable hourly" : "Not billable hourly"}
                                             style={{
-                                              background: entry.billable_hourly ? "#164e63" : "#141a28",
-                                              border: `1px solid ${entry.billable_hourly ? "#0891b2" : "#2e3a58"}`,
+                                              background: entry.billable_hourly ? "#fbbf24" : "#141a28",
+                                              border: entry.billable_hourly ? "2px solid #f59e0b" : "1px solid #2e3a58",
                                               borderRadius: 8,
-                                              color: entry.billable_hourly ? "#67e8f9" : "#6b7a9a",
+                                              color: entry.billable_hourly ? "#1a1a1a" : "#6b7a9a",
                                               cursor: "pointer",
                                               fontSize: 14,
-                                              fontWeight: 800,
+                                              fontWeight: 900,
                                               padding: "8px 12px",
                                               lineHeight: 1,
                                               flexShrink: 0,
-                                            }}>$/hr</button>
+                                              boxShadow: entry.billable_hourly ? "0 0 0 3px rgba(251,191,36,0.35), 0 0 12px rgba(251,191,36,0.6)" : "none",
+                                              transition: "box-shadow 0.2s, background 0.2s",
+                                              letterSpacing: entry.billable_hourly ? "0.03em" : undefined,
+                                            }}>{entry.billable_hourly ? "✓ $/hr" : "$/hr"}</button>
                                           <button type="button" onClick={async () => {
                                             await supabase.from("timesheets").delete().eq("id", entry.id)
                                             await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
@@ -7770,17 +7773,20 @@ Payment terms:
                                             }}
                                             title={entry.billable_hourly ? "Billable hourly — click to unmark" : "Not billable hourly — click to mark billable"}
                                             style={{
-                                              background: entry.billable_hourly ? "#164e63" : "#141a28",
-                                              border: `1px solid ${entry.billable_hourly ? "#0891b2" : "#252f45"}`,
+                                              background: entry.billable_hourly ? "#fbbf24" : "#141a28",
+                                              border: entry.billable_hourly ? "2px solid #f59e0b" : "1px solid #252f45",
                                               borderRadius: 6,
-                                              color: entry.billable_hourly ? "#67e8f9" : "#6b7a9a",
+                                              color: entry.billable_hourly ? "#1a1a1a" : "#6b7a9a",
                                               cursor: "pointer",
                                               fontSize: 12,
-                                              fontWeight: 800,
-                                              padding: "4px 8px",
+                                              fontWeight: 900,
+                                              padding: "3px 8px",
                                               lineHeight: 1,
                                               flexShrink: 0,
-                                            }}>$/hr</button>
+                                              boxShadow: entry.billable_hourly ? "0 0 0 3px rgba(251,191,36,0.35), 0 0 12px rgba(251,191,36,0.6)" : "none",
+                                              transition: "box-shadow 0.2s, background 0.2s",
+                                              letterSpacing: entry.billable_hourly ? "0.03em" : undefined,
+                                            }}>{entry.billable_hourly ? "✓ $/hr" : "$/hr"}</button>
                                           <button type="button" onClick={async () => { await deleteTimesheetEntry(entry.id) }}
                                             style={{ background: "#2a1a1a", border: "1px solid #5a2020", borderRadius: 6, color: "#f87171", cursor: "pointer", fontSize: 14, padding: "4px 8px", lineHeight: 1, flexShrink: 0 }}
                                             title="Remove">×</button>
