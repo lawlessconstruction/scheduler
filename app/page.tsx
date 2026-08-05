@@ -24,6 +24,8 @@ type Extra = {
   notes: string | null
   created_at: string
   locked_at: string | null
+  invoiced_at: string | null
+  paid_at: string | null
 }
 
 type ExtraItem = {
@@ -216,6 +218,8 @@ type ProfitabilityRow = {
   profitability_included: boolean | null
   total_contract_value: number
   total_milestones_value: number
+  total_extras_value: number
+  total_extras_invoiced: number
   total_labour_base_cost: number
   total_labour_true_cost: number
   total_ordinary_hours: number
@@ -1526,14 +1530,46 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
                   <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 6, fontWeight: 600 }}>Status</div>
                   <select value={activeExtra.status} key={`s-${activeExtra.id}`} style={fs}
                     onChange={async e => {
-                      await supabase.from("extras").update({ status: e.target.value }).eq("id", activeExtra.id)
-                      setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, status: e.target.value } : x))
+                      const newStatus = e.target.value
+                      // Auto-set/clear invoiced_at timestamp based on status
+                      const updates: { status: string; invoiced_at?: string | null; paid_at?: string | null } = { status: newStatus }
+                      if (newStatus === "invoiced" && !activeExtra.invoiced_at) {
+                        updates.invoiced_at = new Date().toISOString()
+                      } else if (newStatus === "draft") {
+                        // Reverting to draft clears both timestamps
+                        updates.invoiced_at = null
+                        updates.paid_at = null
+                      }
+                      await supabase.from("extras").update(updates).eq("id", activeExtra.id)
+                      setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, ...updates } as Extra : x))
                     }}>
                     <option value="draft">Draft</option>
                     <option value="sent">Sent</option>
                     <option value="invoiced">Invoiced</option>
+                    <option value="paid">Paid</option>
                   </select>
                 </div>
+                {activeExtra.status === "invoiced" && (
+                  <button type="button" onClick={async () => {
+                    // Toggle paid state
+                    const nowPaid = !activeExtra.paid_at
+                    const updates: { paid_at: string | null; status: string } = {
+                      paid_at: nowPaid ? new Date().toISOString() : null,
+                      status: nowPaid ? "paid" : "invoiced",
+                    }
+                    await supabase.from("extras").update(updates).eq("id", activeExtra.id)
+                    setExtras(prev => prev.map(x => x.id === activeExtra.id ? { ...x, ...updates } as Extra : x))
+                  }}
+                    style={{
+                      padding: "10px 14px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 13,
+                      background: activeExtra.paid_at ? "#14332a" : "#141a28",
+                      border: `1px solid ${activeExtra.paid_at ? "#16a34a" : "#2e3650"}`,
+                      color: activeExtra.paid_at ? "#4ade80" : "#94a3b8",
+                    }}
+                    title={activeExtra.paid_at ? `Paid on ${new Date(activeExtra.paid_at).toLocaleDateString()}` : "Mark as paid"}>
+                    {activeExtra.paid_at ? "✔ Paid" : "Mark paid"}
+                  </button>
+                )}
                 <button type="button" onClick={toggleExtraLock}
                   style={{
                     padding: "10px 14px", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 13,
@@ -2407,6 +2443,9 @@ export default function Home() {
   const [showTimesheetModal, setShowTimesheetModal] = useState(false)
   const [showCashflowModal, setShowCashflowModal] = useState(false)
   const [cashflowView, setCashflowView] = useState<"weekly" | "monthly">("monthly")
+  // Extras + their items — loaded when cashflow modal opens so invoiced extras count as money-in
+  const [cashflowExtras, setCashflowExtras] = useState<Extra[]>([])
+  const [cashflowExtraItems, setCashflowExtraItems] = useState<ExtraItem[]>([])
   const [showProfitabilityModal, setShowProfitabilityModal] = useState(false)
   const [profitabilityData, setProfitabilityData] = useState<ProfitabilityRow[]>([])
   const [selectedProfitProjects, setSelectedProfitProjects] = useState<Set<string>>(new Set())
@@ -4378,7 +4417,16 @@ Payment terms:
               <span style={{ ...iconStyle, background: "#c2410c22" }}>📋</span>
               Estimates {estimates.length > 0 && <span style={{ background: "#c2410c", color: "white", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2 }}>{estimates.length}</span>}
             </button>}
-            {canSeeAll && <button type="button" onClick={() => setShowCashflowModal(true)} style={pillBase}>
+            {canSeeAll && <button type="button" onClick={async () => {
+              setShowCashflowModal(true)
+              // Load extras + their items so invoiced extras count as money-in
+              const [exRes, itemRes] = await Promise.all([
+                supabase.from("extras").select("*"),
+                supabase.from("extra_items").select("*"),
+              ])
+              setCashflowExtras((exRes.data ?? []) as Extra[])
+              setCashflowExtraItems((itemRes.data ?? []) as ExtraItem[])
+            }} style={pillBase}>
               <span style={{ ...iconStyle, background: "#2563eb22" }}>📈</span>
               Cashflow
             </button>}
@@ -5253,7 +5301,15 @@ Payment terms:
                     <div style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 600 }}>Net cashflow</div>
                     <button
                       type="button"
-                      onClick={() => setShowCashflowModal(true)}
+                      onClick={async () => {
+                        setShowCashflowModal(true)
+                        const [exRes, itemRes] = await Promise.all([
+                          supabase.from("extras").select("*"),
+                          supabase.from("extra_items").select("*"),
+                        ])
+                        setCashflowExtras((exRes.data ?? []) as Extra[])
+                        setCashflowExtraItems((itemRes.data ?? []) as ExtraItem[])
+                      }}
                       style={{ fontSize: 10, color: "#60a5fa", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 2 }}
                     >
                       Full view →
@@ -8033,6 +8089,9 @@ Payment terms:
       {showProfitabilityModal && (() => {
         const selectedRows = profitabilityData.filter((r) => selectedProfitProjects.has(r.project_id))
         const totalContractValue = selectedRows.reduce((s, r) => s + r.total_contract_value, 0)
+        const totalExtrasValue = selectedRows.reduce((s, r) => s + (r.total_extras_value ?? 0), 0)
+        const totalExtrasInvoiced = selectedRows.reduce((s, r) => s + (r.total_extras_invoiced ?? 0), 0)
+        const totalRevenue = totalContractValue + totalExtrasValue
         const totalLabourCost = selectedRows.reduce((s, r) => s + r.total_labour_true_cost, 0)
         const totalMaterialsCost = selectedRows.reduce((s, r) => s + (r.total_materials_cost ?? 0), 0)
         const totalAllCosts = totalLabourCost + totalMaterialsCost
@@ -8071,13 +8130,14 @@ Payment terms:
               </div>
 
               {/* Company summary bar — only selected projects */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 24, marginTop: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 24, marginTop: 16 }}>
                 {[
-                  { label: "Total contract value", value: `$${formatMoney(totalContractValue)}`, sub: `$${formatMoney(totalContractValue / 1.1)} ex. GST`, color: "#e4e4e7" },
+                  { label: "Contract value", value: `$${formatMoney(totalContractValue)}`, sub: `$${formatMoney(totalContractValue / 1.1)} ex. GST`, color: "#e4e4e7" },
+                  { label: "Extras revenue", value: `$${formatMoney(totalExtrasValue)}`, sub: totalExtrasValue > 0 ? `$${formatMoney(totalExtrasInvoiced)} invoiced` : "no extras yet", color: totalExtrasValue > 0 ? "#67e8f9" : "#6b7a9a" },
                   { label: "Labour cost (true)", value: `$${formatMoney(totalLabourCost)}`, sub: `${totalHours.toFixed(1)} hrs logged`, color: "#f87171" },
-                  { label: "Materials & other costs", value: `$${formatMoney(totalMaterialsCost)}`, sub: "subcon · equip · prelims", color: "#fbbf24" },
-                  { label: "Gross profit", value: `$${formatMoney(totalContractValue - totalAllCosts)}`, sub: totalContractValue > 0 ? `${(((totalContractValue - totalAllCosts) / totalContractValue) * 100).toFixed(1)}% margin` : "—", color: totalContractValue > totalAllCosts ? "#4ade80" : "#f87171" },
-                  { label: "Total costs % of contract", value: totalContractValue > 0 ? `${((totalAllCosts / totalContractValue) * 100).toFixed(1)}%` : "—", sub: "labour + materials", color: totalContractValue > 0 && totalAllCosts / totalContractValue < 0.7 ? "#4ade80" : "#f87171" },
+                  { label: "Materials & other", value: `$${formatMoney(totalMaterialsCost)}`, sub: "subcon · equip · prelims", color: "#fbbf24" },
+                  { label: "Gross profit", value: `$${formatMoney(totalRevenue - totalAllCosts)}`, sub: totalRevenue > 0 ? `${(((totalRevenue - totalAllCosts) / totalRevenue) * 100).toFixed(1)}% margin` : "—", color: totalRevenue > totalAllCosts ? "#4ade80" : "#f87171" },
+                  { label: "Costs % of revenue", value: totalRevenue > 0 ? `${((totalAllCosts / totalRevenue) * 100).toFixed(1)}%` : "—", sub: "labour + materials", color: totalRevenue > 0 && totalAllCosts / totalRevenue < 0.7 ? "#4ade80" : "#f87171" },
                 ].map((stat) => (
                   <div key={stat.label} style={{ background: "#141a28", border: "1px solid #252f45", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 6 }}>{stat.label}</div>
@@ -8102,19 +8162,20 @@ Payment terms:
                         style={{ width: 14, height: 14 }}
                       />
                     </th>
-                    {["Project", "Client", "Contract value", "Labour cost", "Materials", "Gross profit", "Margin %", "Hours", "Cost/hr"].map((h) => (
+                    {["Project", "Client", "Contract value", "Extras", "Labour cost", "Materials", "Gross profit", "Margin %", "Hours", "Cost/hr"].map((h) => (
                       <th key={h} style={{ textAlign: h === "Project" || h === "Client" ? "left" : "right", padding: "8px 12px", color: "#8899bb", fontWeight: 600, fontSize: 11 }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {profitabilityData
-                    .sort((a, b) => b.total_contract_value - a.total_contract_value)
+                {profitabilityData
+                    .sort((a, b) => (b.total_contract_value + (b.total_extras_value ?? 0)) - (a.total_contract_value + (a.total_extras_value ?? 0)))
                     .map((row) => {
                       const included = selectedProfitProjects.has(row.project_id)
-                      const grossProfit = row.total_contract_value - row.total_labour_true_cost - (row.total_materials_cost ?? 0)
+                      const projectRevenue = row.total_contract_value + (row.total_extras_value ?? 0)
+                      const grossProfit = projectRevenue - row.total_labour_true_cost - (row.total_materials_cost ?? 0)
                       const totalAllCostsRow = row.total_labour_true_cost + (row.total_materials_cost ?? 0)
-                      const margin = row.total_contract_value > 0 ? (grossProfit / row.total_contract_value) * 100 : null
+                      const margin = projectRevenue > 0 ? (grossProfit / projectRevenue) * 100 : null
                       const totalHrs = row.total_ordinary_hours + row.total_ot_hours
                       const costPerHr = totalHrs > 0 ? row.total_labour_true_cost / totalHrs : null
                       const hasLabour = row.total_labour_true_cost > 0
@@ -8149,6 +8210,14 @@ Payment terms:
                                 <div style={{ fontSize: 11, color: "#6b7a9a" }}>${formatMoney(row.total_contract_value / 1.1)} ex. GST</div>
                               </>
                             ) : <span style={{ color: "#6b7a9a" }}>No contract</span>}
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                            {(row.total_extras_value ?? 0) > 0 ? (
+                              <>
+                                <div style={{ fontWeight: 600, color: "#67e8f9" }}>${formatMoney(row.total_extras_value)}</div>
+                                <div style={{ fontSize: 11, color: "#6b7a9a" }}>${formatMoney(row.total_extras_invoiced ?? 0)} invoiced</div>
+                              </>
+                            ) : <span style={{ color: "#6b7a9a" }}>—</span>}
                           </td>
                           <td style={{ padding: "10px 12px", textAlign: "right" }}>
                             {hasLabour ? (
@@ -8392,6 +8461,29 @@ Payment terms:
           if (dueDate < today) {
             const proj = projects.find(p => p.id === m.project_id)
             outstanding.push({ name: m.name ?? "Milestone", project: proj?.name ?? "", amount: m.amount, dueDate })
+          }
+        }
+
+        // --- Money IN: extras that have been invoiced ---
+        // For each invoiced extra, sum line item values (inc. GST) and anchor to invoiced_at date.
+        // Extras that aren't yet invoiced don't count — they're still speculative.
+        for (const ex of cashflowExtras) {
+          if (!ex.invoiced_at) continue
+          const items = cashflowExtraItems.filter(i => i.extra_id === ex.id)
+          const totalExGst = items.reduce((s, i) => {
+            const base = i.charge_type === "hourly"
+              ? ((i.ordinary_hours ?? 0) + (i.ot_hours ?? 0)) * i.unit_cost
+              : i.unit_cost
+            return s + base * (1 + (i.margin_percent ?? 0) / 100)
+          }, 0)
+          const totalIncGst = totalExGst * 1.1
+          const invoiceDate = ex.invoiced_at.slice(0, 10)
+          const key = getPeriodKey(invoiceDate, cashflowView)
+          moneyIn[key] = (moneyIn[key] ?? 0) + totalIncGst
+          // Outstanding if invoiced but not yet paid AND date is in the past
+          if (!ex.paid_at && invoiceDate < today) {
+            const proj = projects.find(p => p.id === ex.project_id)
+            outstanding.push({ name: ex.title || "Extra", project: proj?.name ?? "", amount: totalIncGst, dueDate: invoiceDate })
           }
         }
 
