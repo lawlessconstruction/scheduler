@@ -12,6 +12,7 @@ type Project = {
   contract_value: number | null
   profitability_included: boolean | null
   pinned: boolean | null
+  default_billable_hourly: boolean | null
 }
 
 type Extra = {
@@ -252,6 +253,7 @@ type TimesheetEntry = {
   ot_hours: number
   notes: string | null
   entered_by: string | null
+  billable_hourly: boolean | null
 }
 
 type TopModalType = "addProject" | "addSegment" | null
@@ -311,6 +313,7 @@ type ProjectEditorState = {
   client_id: string | null
   archived: boolean
   contract_value: string
+  default_billable_hourly: boolean
 }
 
 const DAY_COL_WIDTH = 80
@@ -2458,6 +2461,7 @@ export default function Home() {
     client_id: null,
     archived: false,
     contract_value: "",
+    default_billable_hourly: false,
   })
 
   const [segmentForm, setSegmentForm] = useState({
@@ -3281,6 +3285,9 @@ export default function Home() {
         notes: entry.notes ?? existing.notes,
       }).eq("id", existing.id)
     } else {
+      // For new entries, if the project has default_billable_hourly on, pre-flag the entry.
+      const project = entry.project_id ? projects.find(p => p.id === entry.project_id) : null
+      const billable = entry.billable_hourly ?? project?.default_billable_hourly ?? false
       await supabase.from("timesheets").insert({
         date: entry.date,
         worker_id: entry.worker_id,
@@ -3289,6 +3296,7 @@ export default function Home() {
         ordinary_hours: entry.ordinary_hours ?? 9,
         ot_hours: entry.ot_hours ?? 0,
         notes: entry.notes ?? null,
+        billable_hourly: billable,
       })
     }
     await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
@@ -3826,11 +3834,12 @@ Payment terms:
       client_id: project.client_id ?? null,
       archived: project.archived ?? false,
       contract_value: project.contract_value != null ? String(project.contract_value) : "",
+      default_billable_hourly: project.default_billable_hourly ?? false,
     })
   }
 
   function closeProjectEditor() {
-    setProjectEditor({ open: false, projectId: "", name: "", client: "", client_id: null, archived: false, contract_value: "" })
+    setProjectEditor({ open: false, projectId: "", name: "", client: "", client_id: null, archived: false, contract_value: "", default_billable_hourly: false })
   }
 
   async function saveProject() {
@@ -3858,6 +3867,7 @@ Payment terms:
         client_id: clientId,
         archived: projectEditor.archived,
         contract_value: projectEditor.contract_value ? Number(projectEditor.contract_value) : null,
+        default_billable_hourly: projectEditor.default_billable_hourly,
       })
       .eq("id", projectEditor.projectId)
     await loadData()
@@ -5996,6 +6006,24 @@ Payment terms:
                 )}
               </div>
 
+              {/* Billable hourly default toggle */}
+              <div style={{ ...sectionCardStyle, display: "flex", alignItems: "center", gap: 12 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1 }}>
+                  <input
+                    type="checkbox"
+                    checked={projectEditor.default_billable_hourly}
+                    onChange={(e) => setProjectEditor(prev => ({ ...prev, default_billable_hourly: e.target.checked }))}
+                    style={{ width: 18, height: 18, cursor: "pointer" }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Bill hourly by default</div>
+                    <div style={{ fontSize: 11, color: "#8899bb", marginTop: 2 }}>
+                      When on, new timesheet entries on this project are automatically flagged as "billable hourly" — invoiced to the builder by the hour rather than covered under a fixed quote.
+                    </div>
+                  </div>
+                </label>
+              </div>
+
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", paddingTop: 4 }}>
                 <button type="button" onClick={saveProject} style={baseButtonStyle}>
                   Save changes
@@ -7103,6 +7131,114 @@ Payment terms:
                         </table>
                       </div>
                     )}
+
+                    {/* Billable Hourly section — groups by client → project → worker */}
+                    {(() => {
+                      const billableEntries = weekEntries.filter(e => e.billable_hourly && e.project_id)
+                      if (billableEntries.length === 0) return null
+
+                      // Group: clientId → projectId → workerId → { ord, ot }
+                      type WorkerAgg = { ord: number; ot: number }
+                      type ProjAgg = { projectName: string; pinned: boolean; workers: Map<string, WorkerAgg> }
+                      type ClientAgg = { clientName: string; projects: Map<string, ProjAgg> }
+                      const byClient = new Map<string, ClientAgg>()
+                      for (const e of billableEntries) {
+                        const proj = projects.find(p => p.id === e.project_id)
+                        if (!proj) continue
+                        const clientId = proj.client_id ?? "unknown"
+                        const clientName = clients.find(c => c.id === proj.client_id)?.name ?? proj.client ?? "No client"
+
+                        let cAgg = byClient.get(clientId)
+                        if (!cAgg) { cAgg = { clientName, projects: new Map() }; byClient.set(clientId, cAgg) }
+
+                        let pAgg = cAgg.projects.get(proj.id)
+                        if (!pAgg) { pAgg = { projectName: proj.name, pinned: proj.pinned ?? false, workers: new Map() }; cAgg.projects.set(proj.id, pAgg) }
+
+                        const wAgg = pAgg.workers.get(e.worker_id) ?? { ord: 0, ot: 0 }
+                        wAgg.ord += e.ordinary_hours ?? 0
+                        wAgg.ot += e.ot_hours ?? 0
+                        pAgg.workers.set(e.worker_id, wAgg)
+                      }
+
+                      // Sort clients alphabetically
+                      const clientEntries = Array.from(byClient.entries()).sort((a, b) => a[1].clientName.localeCompare(b[1].clientName))
+
+                      // Totals across all billable entries
+                      const totalOrd = billableEntries.reduce((s, e) => s + (e.ordinary_hours ?? 0), 0)
+                      const totalOt = billableEntries.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
+
+                      return (
+                        <div style={{ marginTop: 28, background: "#ffffff", border: "1px solid #e5e0d3", borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", padding: 20 }}>
+                          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
+                            <div>
+                              <div style={{ fontSize: 18, fontWeight: 900, color: "#1a1a1a" }}>Billable Hourly Work</div>
+                              <div style={{ fontSize: 12, color: "#5a5a5a", marginTop: 3 }}>Grouped by builder (client) → project → worker</div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 11, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Total billable</div>
+                              <div style={{ fontSize: 20, fontWeight: 900, color: "#0891b2", fontVariantNumeric: "tabular-nums" }}>{totalOrd.toFixed(1)}h{totalOt > 0 ? ` + ${totalOt.toFixed(1)} OT` : ""}</div>
+                            </div>
+                          </div>
+
+                          {clientEntries.map(([clientId, cAgg]) => {
+                            const clientOrd = Array.from(cAgg.projects.values()).reduce((s, p) => s + Array.from(p.workers.values()).reduce((ss, w) => ss + w.ord, 0), 0)
+                            const clientOt = Array.from(cAgg.projects.values()).reduce((s, p) => s + Array.from(p.workers.values()).reduce((ss, w) => ss + w.ot, 0), 0)
+                            return (
+                              <div key={clientId} style={{ marginBottom: 20, background: "#faf7ee", border: "1px solid #e5e0d3", borderRadius: 8, padding: 14 }}>
+                                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10, paddingBottom: 8, borderBottom: "1px solid #e5e0d3" }}>
+                                  <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a1a" }}>{cAgg.clientName}</div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", fontVariantNumeric: "tabular-nums" }}>{clientOrd.toFixed(1)}h ord</div>
+                                    <button type="button"
+                                      onClick={() => { navigator.clipboard.writeText(clientOrd.toFixed(1)); showToast(`Copied ${clientOrd.toFixed(1)} hrs`) }}
+                                      style={{ background: "transparent", border: "1px solid #d4c9a8", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#5a5a5a", cursor: "pointer" }}>📋</button>
+                                    {clientOt > 0 && (
+                                      <>
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: "#c2410c", fontVariantNumeric: "tabular-nums", marginLeft: 4 }}>{clientOt.toFixed(1)}h OT</div>
+                                        <button type="button"
+                                          onClick={() => { navigator.clipboard.writeText(clientOt.toFixed(1)); showToast(`Copied ${clientOt.toFixed(1)} OT hrs`) }}
+                                          style={{ background: "transparent", border: "1px solid #fbbf24", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#c2410c", cursor: "pointer" }}>📋</button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {Array.from(cAgg.projects.entries()).sort((a, b) => a[1].projectName.localeCompare(b[1].projectName)).map(([projId, pAgg]) => {
+                                  const projOrd = Array.from(pAgg.workers.values()).reduce((s, w) => s + w.ord, 0)
+                                  const projOt = Array.from(pAgg.workers.values()).reduce((s, w) => s + w.ot, 0)
+                                  return (
+                                    <div key={projId} style={{ marginBottom: 10, paddingLeft: 8 }}>
+                                      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: "#3a3a3a" }}>
+                                          {pAgg.pinned && <span style={{ color: "#c2410c" }}>★ </span>}{pAgg.projectName}
+                                        </div>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                          <div style={{ fontSize: 12, fontWeight: 600, color: "#3a3a3a", fontVariantNumeric: "tabular-nums" }}>{projOrd.toFixed(1)}h{projOt > 0 ? ` + ${projOt.toFixed(1)} OT` : ""}</div>
+                                          <button type="button"
+                                            onClick={() => { navigator.clipboard.writeText(projOrd.toFixed(1)); showToast(`Copied ${projOrd.toFixed(1)} hrs`) }}
+                                            style={{ background: "transparent", border: "1px solid #d4c9a8", borderRadius: 3, padding: "1px 5px", fontSize: 10, color: "#5a5a5a", cursor: "pointer" }}>📋</button>
+                                        </div>
+                                      </div>
+                                      <div style={{ paddingLeft: 12, fontSize: 12, color: "#5a5a5a" }}>
+                                        {Array.from(pAgg.workers.entries()).map(([wId, wAgg]) => {
+                                          const wName = workers.find(w => w.id === wId)?.name ?? "Unknown"
+                                          return (
+                                            <div key={wId} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}>
+                                              <span>{wName}</span>
+                                              <span style={{ fontVariantNumeric: "tabular-nums" }}>{wAgg.ord.toFixed(1)}h{wAgg.ot > 0 ? ` + ${wAgg.ot.toFixed(1)} OT` : ""}</span>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )
               })()}
@@ -7439,13 +7575,35 @@ Payment terms:
                                           <select
                                             value={entry.project_id ?? ""}
                                             onChange={async (e) => {
-                                              await supabase.from("timesheets").update({ project_id: e.target.value || null }).eq("id", entry.id)
+                                              const newProjectId = e.target.value || null
+                                              const newProj = newProjectId ? projects.find(p => p.id === newProjectId) : null
+                                              // Re-apply project's default_billable_hourly when project changes
+                                              await supabase.from("timesheets").update({ project_id: newProjectId, billable_hourly: newProj?.default_billable_hourly ?? entry.billable_hourly ?? false }).eq("id", entry.id)
                                               await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                             }}
                                             style={{ ...bigFieldStyle, flex: 1 }}>
                                             <option value="">No site</option>
                                             {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                                           </select>
+                                          <button type="button"
+                                            onClick={async () => {
+                                              const next = !(entry.billable_hourly ?? false)
+                                              await supabase.from("timesheets").update({ billable_hourly: next }).eq("id", entry.id)
+                                              await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
+                                            }}
+                                            title={entry.billable_hourly ? "Billable hourly" : "Not billable hourly"}
+                                            style={{
+                                              background: entry.billable_hourly ? "#164e63" : "#141a28",
+                                              border: `1px solid ${entry.billable_hourly ? "#0891b2" : "#2e3a58"}`,
+                                              borderRadius: 8,
+                                              color: entry.billable_hourly ? "#67e8f9" : "#6b7a9a",
+                                              cursor: "pointer",
+                                              fontSize: 14,
+                                              fontWeight: 800,
+                                              padding: "8px 12px",
+                                              lineHeight: 1,
+                                              flexShrink: 0,
+                                            }}>$/hr</button>
                                           <button type="button" onClick={async () => {
                                             await supabase.from("timesheets").delete().eq("id", entry.id)
                                             await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
@@ -7594,7 +7752,9 @@ Payment terms:
                                           <select
                                             value={entry.project_id ?? ""}
                                             onChange={async (e) => {
-                                              await supabase.from("timesheets").update({ project_id: e.target.value || null }).eq("id", entry.id)
+                                              const newProjectId = e.target.value || null
+                                              const newProj = newProjectId ? projects.find(p => p.id === newProjectId) : null
+                                              await supabase.from("timesheets").update({ project_id: newProjectId, billable_hourly: newProj?.default_billable_hourly ?? entry.billable_hourly ?? false }).eq("id", entry.id)
                                               await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
                                             }}
                                             style={{ ...fieldStyle, fontSize: 13, padding: "6px 8px", flex: 1, fontWeight: 600 }}
@@ -7602,6 +7762,25 @@ Payment terms:
                                             <option value="">No site</option>
                                             {projects.filter((p) => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map((p) => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                                           </select>
+                                          <button type="button"
+                                            onClick={async () => {
+                                              const next = !(entry.billable_hourly ?? false)
+                                              await supabase.from("timesheets").update({ billable_hourly: next }).eq("id", entry.id)
+                                              await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+                                            }}
+                                            title={entry.billable_hourly ? "Billable hourly — click to unmark" : "Not billable hourly — click to mark billable"}
+                                            style={{
+                                              background: entry.billable_hourly ? "#164e63" : "#141a28",
+                                              border: `1px solid ${entry.billable_hourly ? "#0891b2" : "#252f45"}`,
+                                              borderRadius: 6,
+                                              color: entry.billable_hourly ? "#67e8f9" : "#6b7a9a",
+                                              cursor: "pointer",
+                                              fontSize: 12,
+                                              fontWeight: 800,
+                                              padding: "4px 8px",
+                                              lineHeight: 1,
+                                              flexShrink: 0,
+                                            }}>$/hr</button>
                                           <button type="button" onClick={async () => { await deleteTimesheetEntry(entry.id) }}
                                             style={{ background: "#2a1a1a", border: "1px solid #5a2020", borderRadius: 6, color: "#f87171", cursor: "pointer", fontSize: 14, padding: "4px 8px", lineHeight: 1, flexShrink: 0 }}
                                             title="Remove">×</button>
@@ -7638,7 +7817,8 @@ Payment terms:
                                     {entries.length === 0 && (
                                       <select value="" onChange={async (e) => {
                                         if (!e.target.value) return
-                                        await supabase.from("timesheets").insert({ date: d, worker_id: w.id, project_id: e.target.value, ordinary_hours: 9, ot_hours: 0 })
+                                        const proj = projects.find(p => p.id === e.target.value)
+                                        await supabase.from("timesheets").insert({ date: d, worker_id: w.id, project_id: e.target.value, ordinary_hours: 9, ot_hours: 0, billable_hourly: proj?.default_billable_hourly ?? false })
                                         await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
                                       }}
                                         style={{ ...fieldStyle, fontSize: 13, padding: "10px 12px", color: "#6b7a9a", borderStyle: "dashed" }}>
