@@ -259,6 +259,7 @@ type TimesheetEntry = {
   entered_by: string | null
   billable_hourly: boolean | null
   billed_via_extra_id: string | null
+  unplanned_ignored: boolean | null
 }
 
 type TopModalType = "addProject" | "addSegment" | null
@@ -2463,6 +2464,7 @@ export default function Home() {
   const [mobileSearch, setMobileSearch] = useState("")
   const [justAddedWorkerId, setJustAddedWorkerId] = useState<string | null>(null)
   const [showTimesheetReport, setShowTimesheetReport] = useState(false)
+  const [unplannedModal, setUnplannedModal] = useState<{ open: boolean; weekStart: string | null }>({ open: false, weekStart: null })
   useEffect(() => {
     if (typeof window === "undefined") return
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -2688,6 +2690,53 @@ export default function Home() {
   }, [dateStrings, ganttExtendWeeks])
 
   const dates = useMemo(() => getDates(minDate, maxDate), [minDate, maxDate])
+
+  // Detect "unplanned" timesheet entries: entries with a project_id whose project has NO segment
+  // covering that date. These are cases where work happened somewhere the plan didn't expect.
+  // Skips weekends (usually callouts) and entries already ignored.
+  // Also skips entries with no project (no meaningful check possible).
+  const unplannedEntries = useMemo(() => {
+    if (dates.length === 0) return [] as TimesheetEntry[]
+    const rangeStart = formatDateKey(dates[0])
+    const rangeEnd = formatDateKey(dates[dates.length - 1])
+    // Build a fast lookup: projectId → array of segments (start_date, end_date)
+    const segsByProject = new Map<string, { start_date: string; end_date: string }[]>()
+    for (const s of segments) {
+      const arr = segsByProject.get(s.project_id) ?? []
+      arr.push({ start_date: s.start_date, end_date: s.end_date })
+      segsByProject.set(s.project_id, arr)
+    }
+    const result: TimesheetEntry[] = []
+    for (const t of timesheetEntries) {
+      if (!t.project_id) continue
+      if (t.unplanned_ignored) continue
+      if (t.date < rangeStart || t.date > rangeEnd) continue
+      const d = parseDate(t.date)
+      if (isWeekend(d)) continue
+      const segs = segsByProject.get(t.project_id)
+      const covered = segs?.some(s => t.date >= s.start_date && t.date <= s.end_date) ?? false
+      if (!covered) result.push(t)
+    }
+    return result
+  }, [timesheetEntries, segments, dates])
+
+  // Group unplanned entries by week (Monday date as key) for the banner
+  const unplannedByWeek = useMemo(() => {
+    const m = new Map<string, TimesheetEntry[]>()
+    for (const t of unplannedEntries) {
+      // Find Monday of the week containing t.date
+      const d = parseDate(t.date)
+      const day = d.getDay()
+      const diffToMon = day === 0 ? -6 : 1 - day  // 0=Sun -> -6, 1=Mon -> 0, ...
+      const monday = new Date(d)
+      monday.setDate(d.getDate() + diffToMon)
+      const monKey = formatDateKey(monday)
+      const arr = m.get(monKey) ?? []
+      arr.push(t)
+      m.set(monKey, arr)
+    }
+    return m
+  }, [unplannedEntries])
   const dateIndexMap = useMemo(() => getDateIndexMap(dates), [dates])
 
   // Scroll to today ONCE on initial mount (once loading finishes)
@@ -4505,6 +4554,55 @@ Payment terms:
             }}
           >
             <thead>
+              {unplannedByWeek.size > 0 && (() => {
+                // Build week groups from the visible dates array.
+                // Each group: an array of consecutive dates belonging to one Mon-Sun week.
+                const groups: { monday: string; count: number; entries: TimesheetEntry[] }[] = []
+                let cursor = -1
+                let currentMonday = ""
+                for (let i = 0; i < dates.length; i++) {
+                  const d = dates[i]
+                  const day = d.getDay()
+                  const diffToMon = day === 0 ? -6 : 1 - day
+                  const mon = new Date(d)
+                  mon.setDate(d.getDate() + diffToMon)
+                  const monKey = formatDateKey(mon)
+                  if (monKey !== currentMonday) {
+                    currentMonday = monKey
+                    cursor++
+                    const entries = unplannedByWeek.get(monKey) ?? []
+                    groups.push({ monday: monKey, count: 1, entries })
+                  } else if (groups[cursor]) {
+                    groups[cursor].count++
+                  }
+                }
+                return (
+                  <tr>
+                    <th style={{ padding: 0, background: "#1e2130", position: "sticky", left: 0, zIndex: 5, border: "1px solid #2e3650" }} />
+                    {groups.map((g, gi) => {
+                      const hasIssues = g.entries.length > 0
+                      if (!hasIssues) return <th key={`wb-${gi}`} colSpan={g.count} style={{ padding: 0, background: "#0b0e15", border: "1px solid #2e3650" }} />
+                      return (
+                        <th key={`wb-${gi}`} colSpan={g.count} style={{ padding: "4px 8px", background: "#0b0e15", border: "1px solid #2e3650", textAlign: "left" }}>
+                          <button type="button"
+                            onClick={() => setUnplannedModal({ open: true, weekStart: g.monday })}
+                            title="Timesheet entries with no matching segment — click to review"
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 6,
+                              background: "#3a2a0a", border: "1px solid #b45309",
+                              borderRadius: 999, padding: "3px 10px",
+                              color: "#fbbf24", fontSize: 11, fontWeight: 700,
+                              cursor: "pointer",
+                              boxShadow: "0 0 0 3px rgba(251,191,36,0.12)",
+                            }}>
+                            ⚠ {g.entries.length} unplanned {g.entries.length === 1 ? "entry" : "entries"} · click to review
+                          </button>
+                        </th>
+                      )
+                    })}
+                  </tr>
+                )
+              })()}
               <tr>
                 <th
                   style={{
@@ -9530,6 +9628,95 @@ Payment terms:
                     )}
                   </>
                 )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Unplanned timesheet entries modal — click a week banner in the gantt to open */}
+      {unplannedModal.open && (() => {
+        // Show ALL unplanned entries currently visible (across all weeks) grouped by date.
+        // The clicked week is just the entry point — reviewer can see everything at once.
+        const grouped = new Map<string, TimesheetEntry[]>()
+        for (const t of unplannedEntries) {
+          const arr = grouped.get(t.date) ?? []
+          arr.push(t)
+          grouped.set(t.date, arr)
+        }
+        const dateKeys = Array.from(grouped.keys()).sort()
+        return (
+          <div onClick={() => setUnplannedModal({ open: false, weekStart: null })}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 16 }}>
+            <div onClick={(e) => e.stopPropagation()}
+              style={{ width: "100%", maxWidth: 720, maxHeight: "85vh", background: "#1e2130", border: "1px solid #b45309", borderRadius: 14, padding: 24, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.55)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: "#fbbf24" }}>⚠ Unplanned timesheet entries</div>
+                  <div style={{ fontSize: 12, color: "#8899bb", marginTop: 3 }}>Work logged on projects that don't have a segment on that day. Review, fix, or dismiss.</div>
+                </div>
+                <button type="button" onClick={() => setUnplannedModal({ open: false, weekStart: null })}
+                  style={{ padding: "6px 12px", background: "#141a28", color: "#c8d4f0", border: "1px solid #2e3650", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: "auto", marginTop: 14, background: "#141a28", border: "1px solid #252f45", borderRadius: 10 }}>
+                {dateKeys.length === 0 ? (
+                  <div style={{ padding: 40, textAlign: "center", color: "#8899bb" }}>Nothing unplanned in the visible range. 🎉</div>
+                ) : (
+                  dateKeys.map(dateKey => {
+                    const entriesForDay = grouped.get(dateKey)!
+                    const d = parseDate(dateKey)
+                    const dayLabel = d.toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short" })
+                    return (
+                      <div key={dateKey} style={{ borderBottom: "1px solid #252f45" }}>
+                        <div style={{ padding: "8px 14px", background: "#0f1520", fontSize: 12, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          {dayLabel}
+                        </div>
+                        {entriesForDay.map(t => {
+                          const worker = workers.find(w => w.id === t.worker_id)
+                          const project = projects.find(p => p.id === t.project_id)
+                          const totalHrs = (t.ordinary_hours ?? 0) + (t.ot_hours ?? 0)
+                          return (
+                            <div key={t.id} style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid #1a2035" }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: "#f0f4ff" }}>{worker?.name ?? "Unknown"}</div>
+                                <div style={{ fontSize: 12, color: "#c8d4f0", marginTop: 2 }}>
+                                  {totalHrs.toFixed(1)}h @ {project?.name ?? "No project"}
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                                <button type="button"
+                                  onClick={async () => {
+                                    // Open the cell editor for the entry's project + date, so user can create a segment
+                                    setUnplannedModal({ open: false, weekStart: null })
+                                    openCellEditor(t.project_id!, project?.name ?? "", t.date)
+                                  }}
+                                  title="Create a segment for this project on this day"
+                                  style={{ padding: "6px 10px", background: "#0f2030", border: "1px solid #0891b2", borderRadius: 6, color: "#67e8f9", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                  + Segment
+                                </button>
+                                <button type="button"
+                                  onClick={async () => {
+                                    // Dismiss just this entry
+                                    await supabase.from("timesheets").update({ unplanned_ignored: true }).eq("id", t.id)
+                                    setTimesheetEntries(prev => prev.map(x => x.id === t.id ? { ...x, unplanned_ignored: true } : x))
+                                  }}
+                                  title="Mark this entry as intentionally unplanned (won't warn again)"
+                                  style={{ padding: "6px 10px", background: "#141a28", border: "1px solid #2e3650", borderRadius: 6, color: "#8899bb", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                  Ignore
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+
+              <div style={{ marginTop: 14, fontSize: 11, color: "#6b7a9a", textAlign: "center" }}>
+                <strong>+ Segment</strong> opens the segment editor pre-filled for that project + date · <strong>Ignore</strong> hides the entry from future warnings
               </div>
             </div>
           </div>
