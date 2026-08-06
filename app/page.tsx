@@ -5153,9 +5153,10 @@ Payment terms:
                           for (const m of projectMilestones) {
                             const dateKey = getMilestoneDate(m)
                             if (!dateKey) continue
-                            // In crew view, position by segment's lane. In project view, always row-bottom.
+                            // Position by the linked segment's lane in BOTH views.
+                            // If no segment_id (date-override milestone), laneIndex stays null → renders at row bottom.
                             let laneIndex: number | null = null
-                            if (ganttViewMode === "crews" && m.segment_id) {
+                            if (m.segment_id) {
                               const li = segmentLane.get(m.segment_id)
                               if (li !== undefined) laneIndex = li
                             }
@@ -5180,9 +5181,11 @@ Payment terms:
                               const percentPart = m.percent ? ` (${m.percent}%)` : ""
                               return `${statusIcon}${m.name ?? "Milestone"}${amountPart}${percentPart} [${status}]`
                             })
-                            // Position: if we know a lane, hang diamond off the bottom edge of that lane's bar; else bottom of row.
+                            // Position: if we know a lane, sit diamond half-in half-out of that lane's bar bottom edge.
+                            // Diamond is 20×20, so top = bar_bottom - 10 places its centre on the bar's bottom line.
+                            // Else (date-override milestone with no segment): fall back to row bottom.
                             const positionStyle: React.CSSProperties = laneIndex !== null
-                              ? { top: ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP) + BAR_HEIGHT + 2, left: left - 10 }
+                              ? { top: ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP) + BAR_HEIGHT - 10, left: left - 10 }
                               : { bottom: 4, left: left - 10 }
                             return (
                               <div
