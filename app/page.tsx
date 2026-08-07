@@ -7559,7 +7559,20 @@ Payment terms:
                           ⚠ Workers with missing entries this week
                         </div>
                         <div style={{ display: "grid", gap: 8 }}>
-                          {missing.slice(0, 20).map(m => (
+                          {missing
+                            .slice()
+                            .sort((a, b) => {
+                              // Primary: crew name alphabetically
+                              const crewCmp = a.crew.name.localeCompare(b.crew.name, undefined, { numeric: true, sensitivity: "base" })
+                              if (crewCmp !== 0) return crewCmp
+                              // Within crew: bosses (crew leaders) first
+                              const aBoss = a.worker.classification === "boss" ? 0 : 1
+                              const bBoss = b.worker.classification === "boss" ? 0 : 1
+                              if (aBoss !== bBoss) return aBoss - bBoss
+                              // Then by worker name alphabetically
+                              return a.worker.name.localeCompare(b.worker.name, undefined, { numeric: true, sensitivity: "base" })
+                            })
+                            .slice(0, 20).map(m => (
                             <div key={m.worker.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 10px", background: "#1a1408", borderRadius: 6 }}>
                               <div style={{ minWidth: 160, fontSize: 13, fontWeight: 700, color: "#fef08a" }}>{m.worker.name}</div>
                               <div style={{ minWidth: 80, fontSize: 12, color: "#94a3b8" }}>{m.crew.name}</div>
