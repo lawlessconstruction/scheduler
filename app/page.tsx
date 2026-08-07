@@ -7489,7 +7489,9 @@ Payment terms:
                 const weekWorkers = workers.filter(w => w.crew_id != null)
                 const entriesInWeek = timesheetEntries.filter(e => e.date >= timesheetWeekStart && e.date <= weekEnd)
 
-                // Detect missing entries: for every weekday & every worker in an active crew, is there at least one entry?
+                // Detect missing entries: for every past weekday (up to yesterday) & every worker in an active crew,
+                // is there at least one entry? Today + future dates are excluded — workers can't have logged them yet.
+                const todayKey = new Date().toISOString().slice(0, 10)
                 type MissingRow = { worker: Worker; crew: Crew; missingDates: string[] }
                 const missing: MissingRow[] = []
                 for (const w of weekWorkers) {
@@ -7499,6 +7501,7 @@ Payment terms:
                   for (let i = 0; i < 7; i++) {
                     const d = addCalendarDays(timesheetWeekStart, i)
                     if (isWeekend(parseDate(d))) continue  // weekdays only
+                    if (d >= todayKey) continue  // skip today + future — can't be late yet
                     const hasEntry = entriesInWeek.some(e => e.worker_id === w.id && e.date === d)
                     if (!hasEntry) missingDates.push(d)
                   }
