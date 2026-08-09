@@ -4636,7 +4636,7 @@ Payment terms:
                       style={{
                         border: "1px solid #e5e7eb",
                         padding: 6,
-                        background: isToday ? "#fef3c7" : isWeekend(date) ? "#f3f4f6" : "#ffffff",
+                        background: isToday ? "#fef3c7" : isWeekend(date) ? "#f3f4f6" : "#f7faf7",
                         color: isWeekend(date) ? "#9ca3af" : "#3a3a3a",
                         minWidth: DAY_COL_WIDTH,
                         width: DAY_COL_WIDTH,
@@ -4835,7 +4835,7 @@ Payment terms:
                       style={{
                         padding: 0,
                         border: "1px solid #e5e7eb",
-                        background: "#fafafa",
+                        background: "#f7faf7",
                         position: "relative",
                       }}
                     >
@@ -4902,7 +4902,7 @@ Payment terms:
                                 height: rowHeight,
                                 boxSizing: "border-box",
                                 borderRight: "1px solid #e5e7eb",
-                                background: weekend ? "#f3f4f6" : "#ffffff",
+                                background: weekend ? "#f3f4f6" : "#f7faf7",
                                 cursor: weekend ? "default" : "pointer",
                               }}
                             >
