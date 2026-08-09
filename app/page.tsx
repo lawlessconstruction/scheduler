@@ -7116,18 +7116,67 @@ Payment terms:
           return `${formatDateLabel(start)} – ${formatDateLabel(end)}`
         })()
 
+        // ── Light-mode palette (Google Drive inspired) ────────────────────
+        // Scoped to the timesheets modal only — does not touch the global
+        // dark styles (fieldStyle / secondaryButtonStyle) used elsewhere.
+        const ts = {
+          paper: "#ffffff",              // main content
+          panel: "#f8f9fa",              // secondary panels
+          panelAlt: "#f1f3f4",           // tertiary / zebra rows
+          border: "#e5e7eb",             // hairlines
+          borderStrong: "#d2d5da",       // emphasised rules
+          text: "#1a1a1a",               // primary text
+          textMuted: "#5f6368",          // secondary text
+          textSubtle: "#80868b",         // tertiary
+          accent: "#1a73e8",             // Google Drive blue
+          accentText: "#174ea6",         // readable blue on accentBg / white
+          accentBg: "#e8f0fe",           // blue soft bg
+          accentBorder: "#a8c7fa",
+          amber: "#f59e0b",              // warnings (borders / marks)
+          amberText: "#b45309",          // readable amber on light bg
+          amberBg: "#fef3c7",
+          amberBorder: "#fcd34d",
+          danger: "#dc2626",
+          dangerText: "#b3261e",         // readable red on dangerBg
+          dangerBg: "#fee2e2",
+          dangerBorder: "#fca5a5",
+          success: "#16a34a",
+          successText: "#137333",        // readable green on light bg
+          successBg: "#e6f4ea",
+          successBorder: "#a8e0b8",
+        }
+
+        const tsBtn: React.CSSProperties = {
+          padding: "8px 14px", borderRadius: 8, border: `1px solid ${ts.border}`,
+          background: ts.paper, color: ts.text, fontWeight: 600, fontSize: 13,
+          cursor: "pointer", boxShadow: "0 1px 2px rgba(60,64,67,0.10)",
+        }
+        const tsBtnPrimary: React.CSSProperties = {
+          ...tsBtn, background: ts.accent, borderColor: ts.accent, color: "#ffffff",
+          fontWeight: 700, boxShadow: "0 1px 3px rgba(26,115,232,0.35)",
+        }
+        const tsBtnActive: React.CSSProperties = {
+          ...tsBtn, background: ts.accentBg, borderColor: ts.accentBorder,
+          color: ts.accentText, fontWeight: 700,
+        }
+        const tsField: React.CSSProperties = {
+          width: "100%", padding: "8px 10px", borderRadius: 8,
+          background: ts.paper, color: ts.text, border: `1px solid ${ts.borderStrong}`,
+          outline: "none", boxSizing: "border-box", fontSize: 13,
+        }
+
         return (
           <div
             onClick={() => setShowTimesheetModal(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.80)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: isMobile ? 0 : 16 }}
+            style={{ position: "fixed", inset: 0, background: "rgba(32,33,36,0.55)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: isMobile ? 0 : 16 }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: isMobile ? "100vw" : "calc(100vw - 32px)", background: "#1e2130", border: isMobile ? "none" : "1px solid #2e3650", borderRadius: isMobile ? 0 : 14, padding: isMobile ? 12 : 24, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column", overflow: "hidden" }}
+              style={{ width: "100%", maxWidth: isMobile ? "100vw" : "calc(100vw - 32px)", background: ts.panel, border: isMobile ? "none" : `1px solid ${ts.border}`, borderRadius: isMobile ? 0 : 14, padding: isMobile ? 12 : 24, color: ts.text, boxShadow: "0 20px 60px rgba(60,64,67,0.28)", display: "flex", flexDirection: "column", overflow: "hidden" }}
             >
               {/* Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 8, flexWrap: "wrap" }}>
-                <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800 }}>Timesheets</div>
+                <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: ts.text, letterSpacing: "-0.01em" }}>Timesheets</div>
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                   <button type="button" onClick={async () => {
                     const d = addCalendarDays(timesheetWeekStart, -7)
@@ -7141,8 +7190,8 @@ Payment terms:
                       const { data } = await supabase.from("timesheets").select("*").order("date")
                       setTimesheetEntries((data ?? []) as TimesheetEntry[])
                     }
-                  }} style={{ ...secondaryButtonStyle, padding: "6px 12px" }}>◀</button>
-                  <span style={{ fontSize: 14, color: "#a1a1aa", minWidth: 160, textAlign: "center" }}>{weekLabel}</span>
+                  }} style={{ ...tsBtn, padding: "6px 12px" }}>◀</button>
+                  <span style={{ fontSize: 14, color: ts.textMuted, minWidth: 160, textAlign: "center", fontWeight: 600 }}>{weekLabel}</span>
                   <button type="button" onClick={async () => {
                     const d = addCalendarDays(timesheetWeekStart, 7)
                     setTimesheetWeekStart(d)
@@ -7154,7 +7203,7 @@ Payment terms:
                       const { data } = await supabase.from("timesheets").select("*").order("date")
                       setTimesheetEntries((data ?? []) as TimesheetEntry[])
                     }
-                  }} style={{ ...secondaryButtonStyle, padding: "6px 12px" }}>▶</button>
+                  }} style={{ ...tsBtn, padding: "6px 12px" }}>▶</button>
                   {!isMobile && (
                     <select
                       value={timesheetCrewId}
@@ -7169,7 +7218,7 @@ Payment terms:
                           setTimesheetEntries((data ?? []) as TimesheetEntry[])
                         }
                       }}
-                      style={{ ...fieldStyle, width: "auto", fontSize: 13, padding: "6px 10px" }}
+                      style={{ ...tsField, width: "auto", fontSize: 13, padding: "6px 10px", fontWeight: 600 }}
                     >
                       <option value="">{timesheetCrewId ? "← Back to summary" : "Select crew..."}</option>
                       {crews.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -7182,17 +7231,17 @@ Payment terms:
                         const { data } = await supabase.from("timesheets").select("*").order("date")
                         setTimesheetEntries((data ?? []) as TimesheetEntry[])
                       }}
-                      style={{ ...secondaryButtonStyle, padding: "6px 12px", background: "#0f2030", border: "1.5px solid #0891b2", color: "#67e8f9", fontWeight: 700 }}>
+                      style={{ ...tsBtnActive, padding: "6px 12px" }}>
                       ← Summary
                     </button>
                   )}
                   {!isMobile && (
                     <button type="button" onClick={() => setShowTimesheetReport(v => !v)}
-                      style={{ ...secondaryButtonStyle, padding: "6px 12px", background: showTimesheetReport ? "#0f2030" : undefined, border: showTimesheetReport ? "1.5px solid #0891b2" : undefined, color: showTimesheetReport ? "#67e8f9" : undefined, fontWeight: 700 }}>
+                      style={{ ...(showTimesheetReport ? tsBtnActive : tsBtn), padding: "6px 12px", fontWeight: 700 }}>
                       {showTimesheetReport ? "← Back to view" : "📊 Weekly report"}
                     </button>
                   )}
-                  <button type="button" onClick={() => setShowTimesheetModal(false)} style={secondaryButtonStyle}>Close</button>
+                  <button type="button" onClick={() => setShowTimesheetModal(false)} style={{ ...tsBtn, padding: "8px 16px" }}>Close</button>
                 </div>
               </div>
 
@@ -7263,34 +7312,34 @@ Payment terms:
                 }
 
                 return (
-                  <div style={{ flex: 1, overflowY: "auto", background: "#f5f1e8", margin: "-16px -16px 0", padding: 24, borderRadius: "10px 10px 0 0" }}>
+                  <div style={{ flex: 1, overflowY: "auto", background: ts.panel, margin: "-16px -16px 0", padding: 24, borderRadius: "10px 10px 0 0" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
                       <div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: "#1a1a1a", letterSpacing: "-0.01em" }}>Weekly Report</div>
-                        <div style={{ fontSize: 13, color: "#5a5a5a", marginTop: 4, fontWeight: 500 }}>{weekLabel} · Hours worked by worker + project</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: ts.text, letterSpacing: "-0.01em" }}>Weekly Report</div>
+                        <div style={{ fontSize: 13, color: ts.textMuted, marginTop: 4, fontWeight: 500 }}>{weekLabel} · Hours worked by worker + project</div>
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button type="button" onClick={() => window.print()}
-                          style={{ padding: "10px 16px", background: "#ffffff", color: "#5a5a5a", border: "1px solid #e5e0d3", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>🖨️ Print</button>
+                          style={{ padding: "10px 16px", background: "#ffffff", color: ts.textMuted, border: `1px solid ${ts.border}`, borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>🖨️ Print</button>
                         <button type="button" onClick={downloadCsv}
-                          style={{ padding: "10px 16px", background: "#16a34a", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,0.25)" }}>↓ Download CSV</button>
+                          style={{ ...tsBtnPrimary, padding: "10px 16px", fontSize: 13 }}>↓ Download CSV</button>
                       </div>
                     </div>
 
                     {workerOrder.length === 0 ? (
-                      <div style={{ padding: 60, textAlign: "center", color: "#8a8a8a", fontSize: 14, background: "#ffffff", border: "1px solid #e5e0d3", borderRadius: 10 }}>
+                      <div style={{ padding: 60, textAlign: "center", color: ts.textMuted, fontSize: 14, background: "#ffffff", border: `1px solid ${ts.border}`, borderRadius: 10 }}>
                         No timesheet entries for this week.
                       </div>
                     ) : (
-                      <div style={{ overflowX: "auto", background: "#ffffff", border: "1px solid #e5e0d3", borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+                      <div style={{ overflowX: "auto", background: "#ffffff", border: `1px solid ${ts.border}`, borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                           <thead>
-                            <tr style={{ background: "#faf7ee" }}>
-                              <th style={{ textAlign: "left", padding: "12px 16px", fontSize: 10, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>Worker</th>
-                              <th style={{ textAlign: "left", padding: "12px 16px", fontSize: 10, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>Project</th>
-                              <th style={{ textAlign: "right", padding: "12px 16px", fontSize: 10, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>Ordinary hrs</th>
-                              <th style={{ textAlign: "right", padding: "12px 16px", fontSize: 10, color: "#c2410c", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>OT hrs</th>
-                              <th style={{ textAlign: "right", padding: "12px 16px", fontSize: 10, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: "2px solid #e5e0d3" }}>Total</th>
+                            <tr style={{ background: ts.panel }}>
+                              <th style={{ textAlign: "left", padding: "12px 16px", fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: `2px solid ${ts.border}` }}>Worker</th>
+                              <th style={{ textAlign: "left", padding: "12px 16px", fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: `2px solid ${ts.border}` }}>Project</th>
+                              <th style={{ textAlign: "right", padding: "12px 16px", fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: `2px solid ${ts.border}` }}>Ordinary hrs</th>
+                              <th style={{ textAlign: "right", padding: "12px 16px", fontSize: 10, color: ts.amberText, textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: `2px solid ${ts.border}` }}>OT hrs</th>
+                              <th style={{ textAlign: "right", padding: "12px 16px", fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", fontWeight: 700, borderBottom: `2px solid ${ts.border}` }}>Total</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -7307,53 +7356,53 @@ Payment terms:
                                 const projName = projects.find(p => p.id === r.projectId)?.name ?? "No project"
                                 const isPinned = r.projectId ? projects.find(p => p.id === r.projectId)?.pinned : false
                                 return (
-                                  <tr key={`${workerId}-${r.projectId ?? "none"}`} style={{ borderBottom: "1px solid #f0eadc" }}>
-                                    <td style={{ padding: "12px 16px", fontWeight: i === 0 ? 700 : 400, color: i === 0 ? "#1a1a1a" : "transparent", verticalAlign: "top", fontSize: 14 }}>
+                                  <tr key={`${workerId}-${r.projectId ?? "none"}`} style={{ borderBottom: `1px solid ${ts.border}` }}>
+                                    <td style={{ padding: "12px 16px", fontWeight: i === 0 ? 700 : 400, color: i === 0 ? ts.text : "transparent", verticalAlign: "top", fontSize: 14 }}>
                                       {i === 0 ? (worker?.name ?? "Unknown") : "\u00A0"}
                                     </td>
-                                    <td style={{ padding: "12px 16px", color: "#3a3a3a", fontSize: 13 }}>
-                                      {isPinned && <span style={{ color: "#c2410c" }}>★ </span>}{projName}
+                                    <td style={{ padding: "12px 16px", color: ts.textMuted, fontSize: 13 }}>
+                                      {isPinned && <span style={{ color: ts.amberText }}>★ </span>}{projName}
                                     </td>
-                                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{r.ord.toFixed(1)}</td>
-                                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: r.ot > 0 ? "#c2410c" : "#c0c0c0", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{r.ot.toFixed(1)}</td>
-                                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{(r.ord + r.ot).toFixed(1)}</td>
+                                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: ts.text, fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{r.ord.toFixed(1)}</td>
+                                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: r.ot > 0 ? ts.amberText : ts.textSubtle, fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{r.ot.toFixed(1)}</td>
+                                    <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 700, color: ts.text, fontVariantNumeric: "tabular-nums", fontSize: 14 }}>{(r.ord + r.ot).toFixed(1)}</td>
                                   </tr>
                                 )
                               })
                               trs.push(
-                                <tr key={`${workerId}-subtotal`} style={{ background: "#faf7ee", borderBottom: "2px solid #e5e0d3" }}>
-                                  <td style={{ padding: "10px 16px", fontSize: 11, color: "#5a5a5a", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Subtotal</td>
+                                <tr key={`${workerId}-subtotal`} style={{ background: ts.panel, borderBottom: `2px solid ${ts.border}` }}>
+                                  <td style={{ padding: "10px 16px", fontSize: 11, color: ts.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Subtotal</td>
                                   <td></td>
-                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>
+                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: ts.text, fontVariantNumeric: "tabular-nums", fontSize: 14 }}>
                                     <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                                       <button type="button"
                                         title={`Copy ${workerOrdTotal.toFixed(1)} to clipboard`}
                                         onClick={() => { navigator.clipboard.writeText(workerOrdTotal.toFixed(1)); showToast(`Copied ${workerOrdTotal.toFixed(1)} hrs`) }}
-                                        style={{ background: "transparent", border: "1px solid #d4c9a8", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#5a5a5a", cursor: "pointer", lineHeight: 1 }}>📋</button>
+                                        style={{ background: "transparent", border: `1px solid ${ts.borderStrong}`, borderRadius: 4, padding: "2px 6px", fontSize: 11, color: ts.textMuted, cursor: "pointer", lineHeight: 1 }}>📋</button>
                                       <span>{workerOrdTotal.toFixed(1)}</span>
                                     </div>
                                   </td>
-                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: workerOtTotal > 0 ? "#c2410c" : "#c0c0c0", fontVariantNumeric: "tabular-nums", fontSize: 14 }}>
+                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 800, color: workerOtTotal > 0 ? ts.amberText : ts.textSubtle, fontVariantNumeric: "tabular-nums", fontSize: 14 }}>
                                     <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                                       <button type="button"
                                         title={`Copy ${workerOtTotal.toFixed(1)} to clipboard`}
                                         onClick={() => { navigator.clipboard.writeText(workerOtTotal.toFixed(1)); showToast(`Copied ${workerOtTotal.toFixed(1)} OT hrs`) }}
-                                        style={{ background: "transparent", border: `1px solid ${workerOtTotal > 0 ? "#fbbf24" : "#d4c9a8"}`, borderRadius: 4, padding: "2px 6px", fontSize: 11, color: workerOtTotal > 0 ? "#c2410c" : "#5a5a5a", cursor: "pointer", lineHeight: 1 }}>📋</button>
+                                        style={{ background: "transparent", border: `1px solid ${workerOtTotal > 0 ? ts.amberBorder : ts.borderStrong}`, borderRadius: 4, padding: "2px 6px", fontSize: 11, color: workerOtTotal > 0 ? ts.amberText : ts.textMuted, cursor: "pointer", lineHeight: 1 }}>📋</button>
                                       <span>{workerOtTotal.toFixed(1)}</span>
                                     </div>
                                   </td>
-                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 900, color: "#1a1a1a", fontVariantNumeric: "tabular-nums", fontSize: 15 }}>{(workerOrdTotal + workerOtTotal).toFixed(1)}</td>
+                                  <td style={{ padding: "10px 16px", textAlign: "right", fontWeight: 900, color: ts.text, fontVariantNumeric: "tabular-nums", fontSize: 15 }}>{(workerOrdTotal + workerOtTotal).toFixed(1)}</td>
                                 </tr>
                               )
                               return trs
                             })}
                             {/* Grand total */}
-                            <tr style={{ background: "#1a1a1a" }}>
-                              <td style={{ padding: "16px", fontSize: 13, color: "#f0f4ff", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.6px" }}>Grand total</td>
-                              <td></td>
-                              <td style={{ padding: "16px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{grandOrd.toFixed(1)}</td>
-                              <td style={{ padding: "16px", textAlign: "right", fontWeight: 900, color: grandOt > 0 ? "#fbbf24" : "#4a5670", fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{grandOt.toFixed(1)}</td>
-                              <td style={{ padding: "16px", textAlign: "right", fontWeight: 900, color: "#f0f4ff", fontSize: 20, fontVariantNumeric: "tabular-nums" }}>{(grandOrd + grandOt).toFixed(1)}</td>
+                            <tr style={{ background: ts.accentBg, borderTop: `2px solid ${ts.accentBorder}` }}>
+                              <td style={{ padding: "16px", fontSize: 13, color: ts.accentText, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.6px" }}>Grand total</td>
+                              <td style={{ background: ts.accentBg }}></td>
+                              <td style={{ padding: "16px", textAlign: "right", fontWeight: 900, color: ts.text, fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{grandOrd.toFixed(1)}</td>
+                              <td style={{ padding: "16px", textAlign: "right", fontWeight: 900, color: grandOt > 0 ? ts.amberText : ts.textSubtle, fontSize: 18, fontVariantNumeric: "tabular-nums" }}>{grandOt.toFixed(1)}</td>
+                              <td style={{ padding: "16px", textAlign: "right", fontWeight: 900, color: ts.text, fontSize: 20, fontVariantNumeric: "tabular-nums" }}>{(grandOrd + grandOt).toFixed(1)}</td>
                             </tr>
                           </tbody>
                         </table>
@@ -7396,15 +7445,15 @@ Payment terms:
                       const totalOt = billableEntries.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
 
                       return (
-                        <div style={{ marginTop: 28, background: "#ffffff", border: "1px solid #e5e0d3", borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", padding: 20 }}>
+                        <div style={{ marginTop: 28, background: "#ffffff", border: `1px solid ${ts.border}`, borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.06)", padding: 20 }}>
                           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
                             <div>
-                              <div style={{ fontSize: 18, fontWeight: 900, color: "#1a1a1a" }}>Billable Hourly Work</div>
-                              <div style={{ fontSize: 12, color: "#5a5a5a", marginTop: 3 }}>Grouped by builder (client) → project → worker</div>
+                              <div style={{ fontSize: 18, fontWeight: 900, color: ts.text }}>Billable Hourly Work</div>
+                              <div style={{ fontSize: 12, color: ts.textMuted, marginTop: 3 }}>Grouped by builder (client) → project → worker</div>
                             </div>
                             <div style={{ textAlign: "right" }}>
-                              <div style={{ fontSize: 11, color: "#5a5a5a", textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Total billable</div>
-                              <div style={{ fontSize: 20, fontWeight: 900, color: "#0891b2", fontVariantNumeric: "tabular-nums" }}>{totalOrd.toFixed(1)}h{totalOt > 0 ? ` + ${totalOt.toFixed(1)} OT` : ""}</div>
+                              <div style={{ fontSize: 11, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Total billable</div>
+                              <div style={{ fontSize: 20, fontWeight: 900, color: ts.accentText, fontVariantNumeric: "tabular-nums" }}>{totalOrd.toFixed(1)}h{totalOt > 0 ? ` + ${totalOt.toFixed(1)} OT` : ""}</div>
                             </div>
                           </div>
 
@@ -7412,20 +7461,20 @@ Payment terms:
                             const clientOrd = Array.from(cAgg.projects.values()).reduce((s, p) => s + Array.from(p.workers.values()).reduce((ss, w) => ss + w.ord, 0), 0)
                             const clientOt = Array.from(cAgg.projects.values()).reduce((s, p) => s + Array.from(p.workers.values()).reduce((ss, w) => ss + w.ot, 0), 0)
                             return (
-                              <div key={clientId} style={{ marginBottom: 20, background: "#faf7ee", border: "1px solid #e5e0d3", borderRadius: 8, padding: 14 }}>
-                                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10, paddingBottom: 8, borderBottom: "1px solid #e5e0d3" }}>
-                                  <div style={{ fontSize: 15, fontWeight: 800, color: "#1a1a1a" }}>{cAgg.clientName}</div>
+                              <div key={clientId} style={{ marginBottom: 20, background: ts.panel, border: `1px solid ${ts.border}`, borderRadius: 8, padding: 14 }}>
+                                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${ts.border}` }}>
+                                  <div style={{ fontSize: 15, fontWeight: 800, color: ts.text }}>{cAgg.clientName}</div>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", fontVariantNumeric: "tabular-nums" }}>{clientOrd.toFixed(1)}h ord</div>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: ts.text, fontVariantNumeric: "tabular-nums" }}>{clientOrd.toFixed(1)}h ord</div>
                                     <button type="button"
                                       onClick={() => { navigator.clipboard.writeText(clientOrd.toFixed(1)); showToast(`Copied ${clientOrd.toFixed(1)} hrs`) }}
-                                      style={{ background: "transparent", border: "1px solid #d4c9a8", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#5a5a5a", cursor: "pointer" }}>📋</button>
+                                      style={{ background: "transparent", border: `1px solid ${ts.borderStrong}`, borderRadius: 4, padding: "2px 6px", fontSize: 11, color: ts.textMuted, cursor: "pointer" }}>📋</button>
                                     {clientOt > 0 && (
                                       <>
-                                        <div style={{ fontSize: 13, fontWeight: 700, color: "#c2410c", fontVariantNumeric: "tabular-nums", marginLeft: 4 }}>{clientOt.toFixed(1)}h OT</div>
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: ts.amberText, fontVariantNumeric: "tabular-nums", marginLeft: 4 }}>{clientOt.toFixed(1)}h OT</div>
                                         <button type="button"
                                           onClick={() => { navigator.clipboard.writeText(clientOt.toFixed(1)); showToast(`Copied ${clientOt.toFixed(1)} OT hrs`) }}
-                                          style={{ background: "transparent", border: "1px solid #fbbf24", borderRadius: 4, padding: "2px 6px", fontSize: 11, color: "#c2410c", cursor: "pointer" }}>📋</button>
+                                          style={{ background: "transparent", border: `1px solid ${ts.amberBorder}`, borderRadius: 4, padding: "2px 6px", fontSize: 11, color: ts.amberText, cursor: "pointer" }}>📋</button>
                                       </>
                                     )}
                                   </div>
@@ -7437,14 +7486,14 @@ Payment terms:
                                   return (
                                     <div key={projId} style={{ marginBottom: 10, paddingLeft: 8 }}>
                                       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-                                        <div style={{ fontSize: 13, fontWeight: 700, color: "#3a3a3a" }}>
-                                          {pAgg.pinned && <span style={{ color: "#c2410c" }}>★ </span>}{pAgg.projectName}
+                                        <div style={{ fontSize: 13, fontWeight: 700, color: ts.textMuted }}>
+                                          {pAgg.pinned && <span style={{ color: ts.amberText }}>★ </span>}{pAgg.projectName}
                                         </div>
                                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                          <div style={{ fontSize: 12, fontWeight: 600, color: "#3a3a3a", fontVariantNumeric: "tabular-nums" }}>{projOrd.toFixed(1)}h{projOt > 0 ? ` + ${projOt.toFixed(1)} OT` : ""}</div>
+                                          <div style={{ fontSize: 12, fontWeight: 600, color: ts.textMuted, fontVariantNumeric: "tabular-nums" }}>{projOrd.toFixed(1)}h{projOt > 0 ? ` + ${projOt.toFixed(1)} OT` : ""}</div>
                                           <button type="button"
                                             onClick={() => { navigator.clipboard.writeText(projOrd.toFixed(1)); showToast(`Copied ${projOrd.toFixed(1)} hrs`) }}
-                                            style={{ background: "transparent", border: "1px solid #d4c9a8", borderRadius: 3, padding: "1px 5px", fontSize: 10, color: "#5a5a5a", cursor: "pointer" }}>📋</button>
+                                            style={{ background: "transparent", border: `1px solid ${ts.borderStrong}`, borderRadius: 3, padding: "1px 5px", fontSize: 10, color: ts.textMuted, cursor: "pointer" }}>📋</button>
                                           <button type="button"
                                             onClick={async () => {
                                               const projectEntries = billableEntries.filter(e => e.project_id === projId)
@@ -7461,10 +7510,10 @@ Payment terms:
                                               })
                                             }}
                                             title={`Create an Extra with these ${projOrd.toFixed(1)}${projOt > 0 ? ` + ${projOt.toFixed(1)} OT` : ""} hours`}
-                                            style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 4, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 4px rgba(22,163,74,0.3)", marginLeft: 4 }}>→ Extra</button>
+                                            style={{ background: ts.success, color: "white", border: "none", borderRadius: 4, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer", boxShadow: "0 1px 4px rgba(22,163,74,0.3)", marginLeft: 4 }}>→ Extra</button>
                                         </div>
                                       </div>
-                                      <div style={{ paddingLeft: 12, fontSize: 12, color: "#5a5a5a" }}>
+                                      <div style={{ paddingLeft: 12, fontSize: 12, color: ts.textMuted }}>
                                         {Array.from(pAgg.workers.entries()).map(([wId, wAgg]) => {
                                           const wName = workers.find(w => w.id === wId)?.name ?? "Unknown"
                                           return (
@@ -7533,36 +7582,36 @@ Payment terms:
                   <div style={{ flex: 1, overflowY: "auto", padding: "8px 4px 24px" }}>
                     {/* Top stats strip */}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
-                      <div style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
-                        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>Workers submitted</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: submittedCount === weekWorkers.length ? "#4ade80" : "#f0f4ff", marginTop: 4 }}>
-                          {submittedCount} <span style={{ fontSize: 14, color: "#6b7a9a" }}>of {weekWorkers.length}</span>
+                      <div style={{ background: ts.paper, border: `1px solid ${ts.border}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
+                        <div style={{ fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Workers submitted</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: submittedCount === weekWorkers.length ? ts.successText : ts.text, marginTop: 4 }}>
+                          {submittedCount} <span style={{ fontSize: 14, color: ts.textMuted, fontWeight: 600 }}>of {weekWorkers.length}</span>
                         </div>
                       </div>
-                      <div style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
-                        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>Hours this week</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: "#f0f4ff", marginTop: 4 }}>
+                      <div style={{ background: ts.paper, border: `1px solid ${ts.border}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
+                        <div style={{ fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Hours this week</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: ts.text, marginTop: 4 }}>
                           {weekOrdHours.toFixed(1)}
-                          {weekOtHours > 0 && <span style={{ fontSize: 14, color: "#f59e0b", marginLeft: 6 }}>+ {weekOtHours.toFixed(1)} OT</span>}
+                          {weekOtHours > 0 && <span style={{ fontSize: 14, color: ts.amberText, marginLeft: 6 }}>+ {weekOtHours.toFixed(1)} OT</span>}
                         </div>
                       </div>
-                      <div style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
-                        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>Labour cost logged</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: "#f0f4ff", marginTop: 4 }}>${weekCost.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                      <div style={{ background: ts.paper, border: `1px solid ${ts.border}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
+                        <div style={{ fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Labour cost logged</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: ts.text, marginTop: 4 }}>${weekCost.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
                       </div>
-                      <div style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
-                        <div style={{ fontSize: 10, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px" }}>Missing entries</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: missing.length === 0 ? "#4ade80" : "#f59e0b", marginTop: 4 }}>
+                      <div style={{ background: ts.paper, border: `1px solid ${missing.length === 0 ? ts.border : ts.amberBorder}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
+                        <div style={{ fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Missing entries</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: missing.length === 0 ? ts.successText : ts.amberText, marginTop: 4 }}>
                           {missing.reduce((s, m) => s + m.missingDates.length, 0)}
-                          <span style={{ fontSize: 14, color: "#6b7a9a", marginLeft: 6 }}>{missing.length === 0 ? "all good" : `across ${missing.length} workers`}</span>
+                          <span style={{ fontSize: 14, color: ts.textMuted, marginLeft: 6, fontWeight: 600 }}>{missing.length === 0 ? "all good" : `across ${missing.length} workers`}</span>
                         </div>
                       </div>
                     </div>
 
                     {/* Missing entries alert */}
                     {missing.length > 0 && (
-                      <div style={{ background: "#2a200a", border: "1px solid #854d0e", borderRadius: 10, padding: 16, marginBottom: 16 }}>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: "#fbbf24", marginBottom: 10 }}>
+                      <div style={{ background: ts.amberBg, border: `1px solid ${ts.amberBorder}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: ts.amberText, marginBottom: 10 }}>
                           ⚠ Workers with missing entries this week
                         </div>
                         <div style={{ display: "grid", gap: 8 }}>
@@ -7580,27 +7629,27 @@ Payment terms:
                               return a.worker.name.localeCompare(b.worker.name, undefined, { numeric: true, sensitivity: "base" })
                             })
                             .slice(0, 20).map(m => (
-                            <div key={m.worker.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 10px", background: "#1a1408", borderRadius: 6 }}>
-                              <div style={{ minWidth: 160, fontSize: 13, fontWeight: 700, color: "#fef08a" }}>{m.worker.name}</div>
-                              <div style={{ minWidth: 80, fontSize: 12, color: "#94a3b8" }}>{m.crew.name}</div>
-                              <div style={{ flex: 1, fontSize: 12, color: "#94a3b8" }}>
+                            <div key={m.worker.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 10px", background: ts.paper, border: `1px solid ${ts.amberBorder}`, borderRadius: 6 }}>
+                              <div style={{ minWidth: 160, fontSize: 13, fontWeight: 700, color: ts.text }}>{m.worker.name}</div>
+                              <div style={{ minWidth: 80, fontSize: 12, color: ts.textMuted }}>{m.crew.name}</div>
+                              <div style={{ flex: 1, fontSize: 12, color: ts.textMuted }}>
                                 Missing: {m.missingDates.map(d => parseDate(d).toLocaleDateString("en-AU", { weekday: "short" })).join(", ")}
                               </div>
                               <button type="button" onClick={() => { setTimesheetCrewId(m.crew.id); loadTimesheetEntries(timesheetWeekStart, m.crew.id) }}
-                                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #854d0e", background: "#3a2a0a", color: "#fbbf24", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                                style={{ padding: "6px 12px", borderRadius: 6, border: `1px solid ${ts.amberBorder}`, background: ts.amberBg, color: ts.amberText, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                                 Enter for them →
                               </button>
                             </div>
                           ))}
                           {missing.length > 20 && (
-                            <div style={{ fontSize: 12, color: "#94a3b8", textAlign: "center", padding: 6 }}>… and {missing.length - 20} more</div>
+                            <div style={{ fontSize: 12, color: ts.textMuted, textAlign: "center", padding: 6 }}>… and {missing.length - 20} more</div>
                           )}
                         </div>
                       </div>
                     )}
 
                     {/* Per-crew heatmap grid */}
-                    <div style={{ fontSize: 12, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 8, fontWeight: 700 }}>By crew</div>
+                    <div style={{ fontSize: 12, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 8, fontWeight: 700 }}>By crew</div>
                     <div style={{ display: "grid", gap: 12 }}>
                       {activeCrews.map(crew => {
                         const crewWorkers = weekWorkers.filter(w => w.crew_id === crew.id).sort((a, b) => a.sort_order - b.sort_order)
@@ -7614,13 +7663,13 @@ Payment terms:
                           return s + (e.ordinary_hours ?? 0) * trueCost + (e.ot_hours ?? 0) * (w.ot_rate_hourly ?? 0)
                         }, 0)
                         return (
-                          <div key={crew.id} style={{ background: "#141c2a", border: "1px solid #252f45", borderRadius: 10, padding: 14 }}>
+                          <div key={crew.id} style={{ background: ts.paper, border: `1px solid ${ts.border}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                              <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 999, background: crew.color ?? "#2563eb" }} />
-                              <div style={{ fontSize: 15, fontWeight: 800, color: "#f0f4ff", flex: 1 }}>{crew.name}</div>
-                              <div style={{ fontSize: 12, color: "#94a3b8" }}>{crewOrdHours.toFixed(1)}h{crewOtHours > 0 ? ` + ${crewOtHours.toFixed(1)} OT` : ""} · ${crewCost.toLocaleString("en-AU", { maximumFractionDigits: 0 })}</div>
+                              <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 999, background: crew.color ?? ts.accent }} />
+                              <div style={{ fontSize: 15, fontWeight: 800, color: ts.text, flex: 1 }}>{crew.name}</div>
+                              <div style={{ fontSize: 12, color: ts.textMuted }}>{crewOrdHours.toFixed(1)}h{crewOtHours > 0 ? ` + ${crewOtHours.toFixed(1)} OT` : ""} · ${crewCost.toLocaleString("en-AU", { maximumFractionDigits: 0 })}</div>
                               <button type="button" onClick={() => { setTimesheetCrewId(crew.id); loadTimesheetEntries(timesheetWeekStart, crew.id) }}
-                                style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #2e3650", background: "#1e2535", color: "#c4b5fd", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                                style={{ ...tsBtnActive, padding: "6px 12px", fontSize: 12 }}>
                                 Open →
                               </button>
                             </div>
@@ -7630,11 +7679,11 @@ Payment terms:
                               {Array.from({ length: 7 }, (_, i) => {
                                 const d = addCalendarDays(timesheetWeekStart, i)
                                 const weekend = isWeekend(parseDate(d))
-                                return <div key={d} style={{ textAlign: "center", fontSize: 10, color: weekend ? "#4a5670" : "#8899bb", fontWeight: 700, textTransform: "uppercase" }}>{parseDate(d).toLocaleDateString("en-AU", { weekday: "short" })[0]}</div>
+                                return <div key={d} style={{ textAlign: "center", fontSize: 10, color: weekend ? ts.textSubtle : ts.textMuted, fontWeight: 700, textTransform: "uppercase" }}>{parseDate(d).toLocaleDateString("en-AU", { weekday: "short" })[0]}</div>
                               })}
                               {crewWorkers.map(w => (
                                 <div key={w.id} style={{ display: "contents" }}>
-                                  <div style={{ fontSize: 12, color: "#c8d4f0", fontWeight: 600, paddingRight: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
+                                  <div style={{ fontSize: 12, color: ts.text, fontWeight: 600, paddingRight: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{w.name}</div>
                                   {Array.from({ length: 7 }, (_, i) => {
                                     const d = addCalendarDays(timesheetWeekStart, i)
                                     const weekend = isWeekend(parseDate(d))
@@ -7642,23 +7691,24 @@ Payment terms:
                                     const hasEntry = entries.length > 0
                                     const totalHrs = entries.reduce((s, e) => s + (e.ordinary_hours ?? 0) + (e.ot_hours ?? 0), 0)
                                     const totalOt = entries.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
-                                    // Colours: weekend = dark, missing weekday = red-ish, entry = green, OT = amber
-                                    let bg = "#0f1520"
-                                    let color = "#4a5670"
+                                    // Colours: weekend = grey, missing weekday = red tint, entry = green tint, OT = amber tint
+                                    let bg = ts.panelAlt
+                                    let color = ts.textSubtle
+                                    let borderCol = ts.border
                                     let label = ""
                                     if (weekend) {
-                                      bg = "#0a0f18"; color = "#3a4a60"
-                                      if (hasEntry) { bg = "#3a2a0a"; color = "#fbbf24"; label = totalHrs.toFixed(0) }
+                                      bg = ts.panelAlt; color = ts.textSubtle; borderCol = ts.border
+                                      if (hasEntry) { bg = ts.amberBg; color = ts.amberText; borderCol = ts.amberBorder; label = totalHrs.toFixed(0) }
                                     } else if (hasEntry) {
-                                      if (totalOt > 0) { bg = "#3a2a0a"; color = "#fbbf24"; label = totalHrs.toFixed(0) }
-                                      else { bg = "#14332a"; color = "#4ade80"; label = totalHrs.toFixed(0) }
+                                      if (totalOt > 0) { bg = ts.amberBg; color = ts.amberText; borderCol = ts.amberBorder; label = totalHrs.toFixed(0) }
+                                      else { bg = ts.successBg; color = ts.successText; borderCol = ts.successBorder; label = totalHrs.toFixed(0) }
                                     } else {
                                       // missing on weekday
-                                      bg = "#2a1010"; color = "#f87171"; label = "—"
+                                      bg = ts.dangerBg; color = ts.dangerText; borderCol = ts.dangerBorder; label = "—"
                                     }
                                     return (
                                       <div key={d} onClick={() => { setTimesheetCrewId(crew.id); loadTimesheetEntries(timesheetWeekStart, crew.id) }}
-                                        style={{ background: bg, color, borderRadius: 4, padding: "4px 0", textAlign: "center", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
+                                        style={{ background: bg, color, border: `1px solid ${borderCol}`, borderRadius: 4, padding: "3px 0", textAlign: "center", fontSize: 11, fontWeight: 700, cursor: "pointer" }}
                                         title={hasEntry ? `${totalHrs}h${totalOt > 0 ? ` (${totalOt} OT)` : ""}` : weekend ? "Weekend" : "No entry"}>
                                         {label}
                                       </div>
@@ -7676,7 +7726,7 @@ Payment terms:
               })()}
 
               {!showTimesheetReport && timesheetCrewId && timesheetLoading && (
-                <div style={{ color: "#6b7a9a", fontSize: 14, textAlign: "center", padding: 40 }}>Loading...</div>
+                <div style={{ color: ts.textMuted, fontSize: 14, textAlign: "center", padding: 40 }}>Loading...</div>
               )}
 
               {!showTimesheetReport && isMobile && !timesheetLoading && (() => {
@@ -7706,14 +7756,14 @@ Payment terms:
 
                 const bigFieldStyle: React.CSSProperties = {
                   width: "100%", padding: "12px 14px", borderRadius: 10,
-                  background: "#0f1520", color: "#f0f4ff", border: "1px solid #2e3a58",
+                  background: ts.paper, color: ts.text, border: `1px solid ${ts.borderStrong}`,
                   outline: "none", boxSizing: "border-box", fontSize: 16, fontWeight: 600,
                 }
 
                 return (
                   <div style={{ flex: 1, overflowY: "auto", padding: "0 0 100px 0", display: "flex", flexDirection: "column" }}>
                     {/* Day tabs + search — sticky */}
-                    <div style={{ position: "sticky", top: 0, background: "#1e2130", zIndex: 5, padding: "8px 0 12px" }}>
+                    <div style={{ position: "sticky", top: 0, background: ts.panel, zIndex: 5, padding: "8px 0 12px" }}>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
                         {Array.from({ length: 7 }, (_, i) => {
                           const d = addCalendarDays(timesheetWeekStart, i)
@@ -7726,9 +7776,9 @@ Payment terms:
                               style={{
                                 padding: "8px 4px",
                                 borderRadius: 8,
-                                border: active ? "2px solid #0891b2" : "1px solid #252f45",
-                                background: active ? "#0f2030" : (weekend ? "#0a0f18" : "#141c2a"),
-                                color: active ? "#67e8f9" : (weekend ? "#6b7a9a" : "#c8d4f0"),
+                                border: active ? `2px solid ${ts.accent}` : `1px solid ${ts.border}`,
+                                background: active ? ts.accentBg : (weekend ? ts.panelAlt : ts.paper),
+                                color: active ? ts.accentText : (weekend ? ts.textSubtle : ts.text),
                                 fontSize: 12,
                                 fontWeight: 700,
                                 cursor: "pointer",
@@ -7742,7 +7792,7 @@ Payment terms:
                                 {dObj.toLocaleDateString("en-AU", { weekday: "short" })}
                               </span>
                               <span style={{ fontSize: 16, fontWeight: 900 }}>{dObj.getDate()}</span>
-                              {dayIsToday && <span style={{ position: "absolute", top: 2, right: 4, width: 6, height: 6, borderRadius: 999, background: "#4ade80" }} />}
+                              {dayIsToday && <span style={{ position: "absolute", top: 2, right: 4, width: 6, height: 6, borderRadius: 999, background: ts.success }} />}
                             </button>
                           )
                         })}
@@ -7758,18 +7808,18 @@ Payment terms:
                         />
                         {mobileSearch && (
                           <button type="button" onClick={() => setMobileSearch("")}
-                            style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: "#94a3b8", fontSize: 20, cursor: "pointer", padding: "0 6px" }}>×</button>
+                            style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "none", color: ts.textMuted, fontSize: 20, cursor: "pointer", padding: "0 6px" }}>×</button>
                         )}
                       </div>
                     </div>
 
                     {/* Day heading */}
                     <div style={{ padding: "0 4px 12px" }}>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: dayIsWeekend ? "#94a3b8" : "#f0f4ff" }}>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: dayIsWeekend ? ts.textMuted : ts.text }}>
                         {parseDate(dayDate).toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long" })}
-                        {isToday && <span style={{ fontSize: 11, marginLeft: 8, padding: "2px 8px", borderRadius: 999, background: "#14332a", color: "#4ade80", fontWeight: 700 }}>TODAY</span>}
+                        {isToday && <span style={{ fontSize: 11, marginLeft: 8, padding: "2px 8px", borderRadius: 999, background: ts.successBg, color: ts.successText, border: `1px solid ${ts.successBorder}`, fontWeight: 700 }}>TODAY</span>}
                       </div>
-                      {dayIsWeekend && <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 4 }}>Weekend — entries optional</div>}
+                      {dayIsWeekend && <div style={{ fontSize: 12, color: ts.textMuted, marginTop: 4 }}>Weekend — entries optional</div>}
                     </div>
 
                     {/* Crews stacked with workers under each */}
@@ -7782,10 +7832,10 @@ Payment terms:
                         return (
                           <div key={crew.id}>
                             {/* Crew heading + quick fill */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "8px 0", borderBottom: "1px solid #252f45" }}>
-                              <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 999, background: crew.color ?? "#2563eb" }} />
-                              <div style={{ fontSize: 16, fontWeight: 900, color: "#f0f4ff", flex: 1 }}>{crew.name}</div>
-                              <div style={{ fontSize: 11, color: "#94a3b8" }}>{visibleWorkers.length}/{crewWorkersList.length}</div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "8px 0", borderBottom: `1px solid ${ts.border}` }}>
+                              <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 999, background: crew.color ?? ts.accent }} />
+                              <div style={{ fontSize: 16, fontWeight: 900, color: ts.text, flex: 1 }}>{crew.name}</div>
+                              <div style={{ fontSize: 11, color: ts.textMuted }}>{visibleWorkers.length}/{crewWorkersList.length}</div>
                             </div>
 
                             {!search && !dayIsWeekend && (
@@ -7805,7 +7855,7 @@ Payment terms:
                                     e.target.value = ""
                                     await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                   }}
-                                  style={{ ...bigFieldStyle, background: "linear-gradient(135deg, #1e3a6e, #2563eb)", border: "2px solid #3b82f6", color: "#bfdbfe", fontWeight: 700, fontSize: 14 }}>
+                                  style={{ ...bigFieldStyle, background: ts.accentBg, border: `2px solid ${ts.accentBorder}`, color: ts.accentText, fontWeight: 700, fontSize: 14 }}>
                                   <option value="">⚡ Quick fill {crew.name}…</option>
                                   {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                                 </select>
@@ -7818,19 +7868,19 @@ Payment terms:
                                 const entries = timesheetEntries.filter(e => e.worker_id === w.id && e.date === dayDate)
                                 const missing = entries.length === 0 && !dayIsWeekend && dayDate <= todayKey2
                                 return (
-                                  <div key={w.id} style={{ background: "#141c2a", border: `1px solid ${missing ? "#854d0e" : "#252f45"}`, borderRadius: 12, padding: 14 }}>
+                                  <div key={w.id} style={{ background: ts.paper, border: `1px solid ${missing ? ts.amberBorder : ts.border}`, borderRadius: 12, padding: 14 }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                                       <div>
-                                        <div style={{ fontSize: 16, fontWeight: 800, color: "#f0f4ff" }}>{w.name}</div>
-                                        <div style={{ fontSize: 11, color: "#6b7a9a" }}>{w.role}</div>
+                                        <div style={{ fontSize: 16, fontWeight: 800, color: ts.text }}>{w.name}</div>
+                                        <div style={{ fontSize: 11, color: ts.textMuted }}>{w.role}</div>
                                       </div>
                                       {missing && (
-                                        <span style={{ fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: "#3a2a0a", color: "#fbbf24", border: "1px solid #854d0e" }}>MISSING</span>
+                                        <span style={{ fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: ts.amberBg, color: ts.amberText, border: `1px solid ${ts.amberBorder}` }}>MISSING</span>
                                       )}
                                     </div>
 
                                     {entries.map((entry) => (
-                                      <div key={entry.id} style={{ background: "#1a2035", borderRadius: 10, padding: 12, border: "1px solid #2e3a58", marginBottom: 8 }}>
+                                      <div key={entry.id} style={{ background: ts.panel, borderRadius: 10, padding: 12, border: `1px solid ${ts.borderStrong}`, marginBottom: 8 }}>
                                         {/* Site */}
                                         <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
                                           <select
@@ -7854,10 +7904,10 @@ Payment terms:
                                             }}
                                             title={entry.billable_hourly ? "Billable hourly" : "Not billable hourly"}
                                             style={{
-                                              background: entry.billable_hourly ? "#fbbf24" : "#141a28",
-                                              border: entry.billable_hourly ? "2px solid #f59e0b" : "1px solid #2e3a58",
+                                              background: entry.billable_hourly ? ts.amber : ts.panel,
+                                              border: entry.billable_hourly ? `2px solid ${ts.amberText}` : `1px solid ${ts.borderStrong}`,
                                               borderRadius: 8,
-                                              color: entry.billable_hourly ? "#1a1a1a" : "#6b7a9a",
+                                              color: entry.billable_hourly ? ts.text : ts.textMuted,
                                               cursor: "pointer",
                                               fontSize: 14,
                                               fontWeight: 900,
@@ -7872,12 +7922,12 @@ Payment terms:
                                             await supabase.from("timesheets").delete().eq("id", entry.id)
                                             await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                           }}
-                                            style={{ background: "#2a1a1a", border: "1px solid #5a2020", borderRadius: 8, color: "#f87171", cursor: "pointer", fontSize: 20, padding: "8px 12px", lineHeight: 1, fontWeight: 700 }}>×</button>
+                                            style={{ background: ts.dangerBg, border: `1px solid ${ts.dangerBorder}`, borderRadius: 8, color: ts.dangerText, cursor: "pointer", fontSize: 20, padding: "8px 12px", lineHeight: 1, fontWeight: 700 }}>×</button>
                                         </div>
                                         {/* Hours — big number pad style */}
                                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                                           <div>
-                                            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Ord hrs</div>
+                                            <div style={{ fontSize: 10, color: ts.textMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Ord hrs</div>
                                             <input type="number" step="0.5" inputMode="decimal" defaultValue={entry.ordinary_hours} key={`m-ord-${entry.id}`}
                                               style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px" }}
                                               onBlur={async (e) => {
@@ -7886,9 +7936,9 @@ Payment terms:
                                               }} />
                                           </div>
                                           <div>
-                                            <div style={{ fontSize: 10, color: "#f59e0b", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>OT hrs</div>
+                                            <div style={{ fontSize: 10, color: ts.amberText, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>OT hrs</div>
                                             <input type="number" step="0.5" inputMode="decimal" defaultValue={entry.ot_hours} key={`m-ot-${entry.id}`}
-                                              style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px", color: entry.ot_hours > 0 ? "#fbbf24" : "#f0f4ff" }}
+                                              style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px", color: entry.ot_hours > 0 ? ts.amberBorder : ts.text }}
                                               onBlur={async (e) => {
                                                 await supabase.from("timesheets").update({ ot_hours: Number(e.target.value) }).eq("id", entry.id)
                                                 await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
@@ -7902,7 +7952,7 @@ Payment terms:
                                     <button type="button" onClick={async () => {
                                       await supabase.from("timesheets").insert({ worker_id: w.id, date: dayDate, project_id: null, ordinary_hours: entries.length === 0 && !dayIsWeekend ? 9 : 0, ot_hours: 0 })
                                       await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
-                                    }} style={{ width: "100%", padding: "12px", borderRadius: 10, border: `1.5px dashed ${entries.length === 0 ? "#0891b2" : "#2e3650"}`, background: entries.length === 0 ? "#0f2030" : "transparent", color: entries.length === 0 ? "#67e8f9" : "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                                    }} style={{ width: "100%", padding: "12px", borderRadius: 10, border: `1.5px dashed ${entries.length === 0 ? ts.accent : ts.border}`, background: entries.length === 0 ? ts.accentBg : "transparent", color: entries.length === 0 ? ts.accentText : ts.textMuted, fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
                                       {entries.length === 0 ? "+ Add today's hours" : "+ Add another site"}
                                     </button>
                                   </div>
@@ -7914,21 +7964,21 @@ Payment terms:
                       })}
 
                       {search && activeCrews.every(c => workers.filter(w => w.crew_id === c.id).filter(workerMatches).length === 0) && (
-                        <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a" }}>
+                        <div style={{ padding: 40, textAlign: "center", color: ts.textMuted }}>
                           No workers match "{mobileSearch}"
                         </div>
                       )}
                     </div>
 
                     {/* Sticky footer with day totals + prev/next */}
-                    <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "#0a1018", borderTop: "1px solid #252f45", padding: "10px 12px", display: "flex", gap: 8, alignItems: "center", boxShadow: "0 -4px 16px rgba(0,0,0,0.4)", zIndex: 10 }}>
+                    <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: ts.paper, borderTop: `1px solid ${ts.border}`, padding: "10px 12px", display: "flex", gap: 8, alignItems: "center", boxShadow: "0 -4px 16px rgba(0,0,0,0.4)", zIndex: 10 }}>
                       <button type="button" onClick={async () => {
                         const next = Math.max(0, mobileDayOffset - 1)
                         setMobileDayOffset(next)
                       }} disabled={mobileDayOffset === 0}
-                        style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #2e3650", background: "#141c2a", color: mobileDayOffset === 0 ? "#3a4a60" : "#c8d4f0", fontWeight: 700, cursor: mobileDayOffset === 0 ? "not-allowed" : "pointer", fontSize: 14 }}>◀</button>
-                      <div style={{ flex: 1, textAlign: "center", fontSize: 13, color: "#94a3b8" }}>
-                        <div style={{ color: "#f0f4ff", fontSize: 15, fontWeight: 800 }}>
+                        style={{ padding: "10px 14px", borderRadius: 8, border: `1px solid ${ts.border}`, background: ts.paper, color: mobileDayOffset === 0 ? ts.textSubtle : ts.text, fontWeight: 700, cursor: mobileDayOffset === 0 ? "not-allowed" : "pointer", fontSize: 14 }}>◀</button>
+                      <div style={{ flex: 1, textAlign: "center", fontSize: 13, color: ts.textMuted }}>
+                        <div style={{ color: ts.text, fontSize: 15, fontWeight: 800 }}>
                           {dayOrdHours.toFixed(1)}h{dayOtHours > 0 ? ` + ${dayOtHours.toFixed(1)} OT` : ""}
                         </div>
                         <div style={{ fontSize: 11 }}>${dayCost.toLocaleString("en-AU", { maximumFractionDigits: 0 })}</div>
@@ -7937,7 +7987,7 @@ Payment terms:
                         const next = Math.min(6, mobileDayOffset + 1)
                         setMobileDayOffset(next)
                       }} disabled={mobileDayOffset === 6}
-                        style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #2e3650", background: "#141c2a", color: mobileDayOffset === 6 ? "#3a4a60" : "#c8d4f0", fontWeight: 700, cursor: mobileDayOffset === 6 ? "not-allowed" : "pointer", fontSize: 14 }}>▶</button>
+                        style={{ padding: "10px 14px", borderRadius: 8, border: `1px solid ${ts.border}`, background: ts.paper, color: mobileDayOffset === 6 ? ts.textSubtle : ts.text, fontWeight: 700, cursor: mobileDayOffset === 6 ? "not-allowed" : "pointer", fontSize: 14 }}>▶</button>
                     </div>
                   </div>
                 )
@@ -7948,14 +7998,14 @@ Payment terms:
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: "left", padding: "12px 14px", background: "#161d2e", borderBottom: "2px solid #2e3650", minWidth: 160, fontSize: 13, color: "#8899bb", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Worker</th>
+                        <th style={{ textAlign: "left", padding: "12px 14px", background: ts.panel, borderBottom: `2px solid ${ts.border}`, minWidth: 160, fontSize: 13, color: ts.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Worker</th>
                         {workingDays.map((d) => {
                             const weekend = isWeekend(parseDate(d))
                             const hasWeekendEntries = weekend && timesheetEntries.some(e => e.date === d && crewWorkers.some(w => w.id === e.worker_id))
                             const narrow = weekend && !hasWeekendEntries
                             return (
-                              <th key={d} style={{ textAlign: "center", padding: narrow ? "10px 4px" : "10px 8px", background: weekend ? "#12161f" : "#161d2e", borderBottom: "2px solid #2e3650", minWidth: narrow ? 72 : 190, width: narrow ? 72 : undefined }}>
-                                <div style={{ fontSize: narrow ? 10 : 14, fontWeight: 800, color: weekend ? "#6b7a9a" : "#f0f4ff", marginBottom: narrow ? 0 : 8, whiteSpace: narrow ? "nowrap" : undefined }}>
+                              <th key={d} style={{ textAlign: "center", padding: narrow ? "10px 4px" : "10px 8px", background: weekend ? ts.panelAlt : ts.panel, borderBottom: `2px solid ${ts.border}`, minWidth: narrow ? 72 : 190, width: narrow ? 72 : undefined }}>
+                                <div style={{ fontSize: narrow ? 10 : 14, fontWeight: 800, color: weekend ? ts.textMuted : ts.text, marginBottom: narrow ? 0 : 8, whiteSpace: narrow ? "nowrap" : undefined }}>
                                   {weekend ? parseDate(d).toLocaleDateString("en-AU", { weekday: "short", day: "numeric" }) : formatLongDateLabel(d)}
                                 </div>
                                 {!weekend && (
@@ -7964,9 +8014,9 @@ Payment terms:
                                     onChange={async (e) => { if (e.target.value) { await quickFillDay(d, e.target.value); e.target.value = "" } }}
                                     style={{
                                       width: "100%", padding: "8px 10px", borderRadius: 8, fontSize: 12, fontWeight: 700,
-                                      background: "linear-gradient(135deg, #1e3a6e, #2563eb)",
-                                      border: "2px solid #3b82f6", color: "#bfdbfe", cursor: "pointer",
-                                      boxShadow: "0 2px 8px rgba(37,99,235,0.4)",
+                                      background: ts.accentBg,
+                                      border: `2px solid ${ts.accentBorder}`, color: ts.accentText, cursor: "pointer",
+                                      boxShadow: "0 1px 3px rgba(26,115,232,0.20)",
                                     }}
                                   >
                                     <option value="">⚡ Quick fill whole crew...</option>
@@ -7974,12 +8024,12 @@ Payment terms:
                                   </select>
                                 )}
                                 {weekend && hasWeekendEntries && (
-                                  <div style={{ fontSize: 10, color: "#f59e0b", fontWeight: 700, marginTop: 4 }}>WEEKEND</div>
+                                  <div style={{ fontSize: 10, color: ts.amberText, fontWeight: 700, marginTop: 4 }}>WEEKEND</div>
                                 )}
                               </th>
                             )
                           })}
-                        <th style={{ textAlign: "center", padding: "12px 8px", background: "#161d2e", borderBottom: "2px solid #2e3650", minWidth: 110, fontSize: 13, color: "#8899bb", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Week total</th>
+                        <th style={{ textAlign: "center", padding: "12px 8px", background: ts.panel, borderBottom: `2px solid ${ts.border}`, minWidth: 110, fontSize: 13, color: ts.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>Week total</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -7997,20 +8047,20 @@ Payment terms:
                         }, 0)
 
                         return (
-                          <tr key={w.id} style={{ borderBottom: "1px solid #252f45" }}>
+                          <tr key={w.id} style={{ borderBottom: `1px solid ${ts.border}` }}>
                             {/* Worker name cell */}
-                            <td style={{ padding: "14px", verticalAlign: "middle", background: "#161d2e" }}>
-                              <div style={{ fontWeight: 800, fontSize: 15, color: "#f0f4ff" }}>{w.name}</div>
-                              <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>{w.role}</div>
+                            <td style={{ padding: "14px", verticalAlign: "middle", background: ts.panel }}>
+                              <div style={{ fontWeight: 800, fontSize: 15, color: ts.text }}>{w.name}</div>
+                              <div style={{ fontSize: 12, color: ts.textMuted, marginTop: 2 }}>{w.role}</div>
                             </td>
                             {workingDays.map((d) => {
                               const entries = getEntries(w.id, d)
                               const hasEntries = entries.length > 0
                               return (
-                                <td key={d} style={{ padding: "8px", verticalAlign: "top", background: isWeekend(parseDate(d)) ? (hasEntries ? "#1a1a10" : "#0d1018") : (hasEntries ? "#141c2a" : "#0f1520"), borderLeft: "1px solid #252f45", minWidth: isWeekend(parseDate(d)) && !hasEntries ? 80 : 190, width: isWeekend(parseDate(d)) && !hasEntries ? 80 : undefined }}>
+                                <td key={d} style={{ padding: "8px", verticalAlign: "top", background: isWeekend(parseDate(d)) ? (hasEntries ? ts.amberBg : ts.panelAlt) : (hasEntries ? ts.paper : ts.panel), borderLeft: `1px solid ${ts.border}`, minWidth: isWeekend(parseDate(d)) && !hasEntries ? 80 : 190, width: isWeekend(parseDate(d)) && !hasEntries ? 80 : undefined }}>
                                   <div style={{ display: "grid", gap: 8 }}>
                                     {entries.map((entry, ei) => (
-                                      <div key={entry.id} style={{ background: "#1e2535", borderRadius: 8, padding: "8px 10px", border: "1px solid #2e3a58", display: "grid", gap: 6 }}>
+                                      <div key={entry.id} style={{ background: ts.panel, borderRadius: 8, padding: "8px 10px", border: `1px solid ${ts.borderStrong}`, display: "grid", gap: 6 }}>
                                         {/* Site selector */}
                                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                                           <select
@@ -8021,7 +8071,7 @@ Payment terms:
                                               await supabase.from("timesheets").update({ project_id: newProjectId, billable_hourly: newProj?.default_billable_hourly ?? entry.billable_hourly ?? false }).eq("id", entry.id)
                                               await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
                                             }}
-                                            style={{ ...fieldStyle, fontSize: 13, padding: "6px 8px", flex: 1, fontWeight: 600 }}
+                                            style={{ ...tsField, fontSize: 13, padding: "6px 8px", flex: 1, fontWeight: 600 }}
                                           >
                                             <option value="">No site</option>
                                             {projects.filter((p) => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map((p) => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
@@ -8034,10 +8084,10 @@ Payment terms:
                                             }}
                                             title={entry.billable_hourly ? "Billable hourly — click to unmark" : "Not billable hourly — click to mark billable"}
                                             style={{
-                                              background: entry.billable_hourly ? "#fbbf24" : "#141a28",
-                                              border: entry.billable_hourly ? "2px solid #f59e0b" : "1px solid #252f45",
+                                              background: entry.billable_hourly ? ts.amber : ts.panel,
+                                              border: entry.billable_hourly ? `2px solid ${ts.amberText}` : `1px solid ${ts.border}`,
                                               borderRadius: 6,
-                                              color: entry.billable_hourly ? "#1a1a1a" : "#6b7a9a",
+                                              color: entry.billable_hourly ? ts.text : ts.textMuted,
                                               cursor: "pointer",
                                               fontSize: 12,
                                               fontWeight: 900,
@@ -8049,24 +8099,24 @@ Payment terms:
                                               letterSpacing: entry.billable_hourly ? "0.03em" : undefined,
                                             }}>{entry.billable_hourly ? "✓ $/hr" : "$/hr"}</button>
                                           <button type="button" onClick={async () => { await deleteTimesheetEntry(entry.id) }}
-                                            style={{ background: "#2a1a1a", border: "1px solid #5a2020", borderRadius: 6, color: "#f87171", cursor: "pointer", fontSize: 14, padding: "4px 8px", lineHeight: 1, flexShrink: 0 }}
+                                            style={{ background: ts.dangerBg, border: `1px solid ${ts.dangerBorder}`, borderRadius: 6, color: ts.dangerText, cursor: "pointer", fontSize: 14, padding: "4px 8px", lineHeight: 1, flexShrink: 0 }}
                                             title="Remove">×</button>
                                         </div>
                                         {/* Hours inputs */}
                                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                                           <div>
-                                            <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 3, fontWeight: 600 }}>Ord hrs</div>
+                                            <div style={{ fontSize: 11, color: ts.textMuted, marginBottom: 3, fontWeight: 600 }}>Ord hrs</div>
                                             <input type="number" step="0.5" defaultValue={entry.ordinary_hours} key={`ord-${entry.id}`}
-                                              style={{ ...fieldStyle, fontSize: 16, fontWeight: 700, padding: "8px 10px", textAlign: "center" }}
+                                              style={{ ...tsField, fontSize: 16, fontWeight: 700, padding: "8px 10px", textAlign: "center" }}
                                               onBlur={async (e) => {
                                                 await supabase.from("timesheets").update({ ordinary_hours: Number(e.target.value) }).eq("id", entry.id)
                                                 await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
                                               }} />
                                           </div>
                                           <div>
-                                            <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 3, fontWeight: 600 }}>OT hrs</div>
+                                            <div style={{ fontSize: 11, color: ts.amberText, marginBottom: 3, fontWeight: 600 }}>OT hrs</div>
                                             <input type="number" step="0.5" defaultValue={entry.ot_hours} key={`ot-${entry.id}`}
-                                              style={{ ...fieldStyle, fontSize: 16, fontWeight: 700, padding: "8px 10px", textAlign: "center", borderColor: entry.ot_hours > 0 ? "#f59e0b" : undefined, color: entry.ot_hours > 0 ? "#fbbf24" : undefined }}
+                                              style={{ ...tsField, fontSize: 16, fontWeight: 700, padding: "8px 10px", textAlign: "center", borderColor: entry.ot_hours > 0 ? ts.amber : undefined, color: entry.ot_hours > 0 ? ts.amberText : undefined }}
                                               onBlur={async (e) => {
                                                 await supabase.from("timesheets").update({ ot_hours: Number(e.target.value) }).eq("id", entry.id)
                                                 await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
@@ -8074,7 +8124,7 @@ Payment terms:
                                           </div>
                                         </div>
                                         <input type="text" defaultValue={entry.notes ?? ""} key={`note-${entry.id}`} placeholder="Notes..."
-                                          style={{ ...fieldStyle, fontSize: 12, padding: "6px 8px" }}
+                                          style={{ ...tsField, fontSize: 12, padding: "6px 8px" }}
                                           onBlur={async (e) => {
                                             await supabase.from("timesheets").update({ notes: e.target.value || null }).eq("id", entry.id)
                                             await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
@@ -8088,7 +8138,7 @@ Payment terms:
                                         await supabase.from("timesheets").insert({ date: d, worker_id: w.id, project_id: e.target.value, ordinary_hours: 9, ot_hours: 0, billable_hourly: proj?.default_billable_hourly ?? false })
                                         await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
                                       }}
-                                        style={{ ...fieldStyle, fontSize: 13, padding: "10px 12px", color: "#6b7a9a", borderStyle: "dashed" }}>
+                                        style={{ ...tsField, fontSize: 13, padding: "10px 12px", color: ts.textMuted, borderStyle: "dashed" }}>
                                         <option value="">+ Add site...</option>
                                         {projects.filter((p) => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map((p) => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                                       </select>
@@ -8098,7 +8148,7 @@ Payment terms:
                                         await supabase.from("timesheets").insert({ date: d, worker_id: w.id, project_id: null, ordinary_hours: 0, ot_hours: 0 })
                                         await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
                                       }}
-                                        style={{ fontSize: 12, color: "#60a5fa", background: "none", border: "1px dashed #1d4ed8", borderRadius: 6, cursor: "pointer", padding: "6px 8px", width: "100%", fontWeight: 600 }}>
+                                        style={{ fontSize: 12, color: ts.accent, background: "none", border: `1px dashed ${ts.accentBorder}`, borderRadius: 6, cursor: "pointer", padding: "6px 8px", width: "100%", fontWeight: 600 }}>
                                         + Split day
                                       </button>
                                     )}
@@ -8107,34 +8157,34 @@ Payment terms:
                               )
                             })}
                             {/* Week total */}
-                            <td style={{ padding: "14px 12px", verticalAlign: "middle", textAlign: "center", background: "#161d2e", borderLeft: "2px solid #2e3650" }}>
-                              <div style={{ fontWeight: 900, fontSize: 20, color: "#f0f4ff" }}>{weekOrdinary + weekOT}<span style={{ fontSize: 13, fontWeight: 500, color: "#8899bb" }}>hrs</span></div>
-                              <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 3 }}>{weekOrdinary} + <span style={{ color: "#fbbf24" }}>{weekOT} OT</span></div>
-                              {weekCost > 0 && <div style={{ fontSize: 13, color: "#00dd44", marginTop: 6, fontWeight: 700 }}>${formatMoney(weekCost)}</div>}
+                            <td style={{ padding: "14px 12px", verticalAlign: "middle", textAlign: "center", background: ts.panel, borderLeft: `2px solid ${ts.border}` }}>
+                              <div style={{ fontWeight: 900, fontSize: 20, color: ts.text }}>{weekOrdinary + weekOT}<span style={{ fontSize: 13, fontWeight: 500, color: ts.textMuted }}>hrs</span></div>
+                              <div style={{ fontSize: 12, color: ts.textMuted, marginTop: 3 }}>{weekOrdinary} + <span style={{ color: ts.amberText }}>{weekOT} OT</span></div>
+                              {weekCost > 0 && <div style={{ fontSize: 13, color: ts.successText, marginTop: 6, fontWeight: 700 }}>${formatMoney(weekCost)}</div>}
                             </td>
                           </tr>
                         )
                       })}
 
                       {/* Totals row */}
-                      <tr style={{ borderTop: "3px solid #2e3650", background: "#161d2e" }}>
-                        <td style={{ padding: "14px", fontWeight: 800, fontSize: 15, color: "#f0f4ff" }}>Totals</td>
+                      <tr style={{ borderTop: `3px solid ${ts.border}`, background: ts.panel }}>
+                        <td style={{ padding: "14px", fontWeight: 800, fontSize: 15, color: ts.text }}>Totals</td>
                         {workingDays.map((d) => {
                           const dayEntries = timesheetEntries.filter((e) => e.date === d && crewWorkers.some((w) => w.id === e.worker_id))
                           const dayOrd = dayEntries.reduce((sum, e) => sum + (e.ordinary_hours ?? 0), 0)
                           const dayOT = dayEntries.reduce((sum, e) => sum + (e.ot_hours ?? 0), 0)
                           return (
-                            <td key={d} style={{ padding: "14px 8px", textAlign: "center", borderLeft: "1px solid #252f45" }}>
-                              <div style={{ fontWeight: 800, fontSize: 18, color: "#f0f4ff" }}>{dayOrd + dayOT}<span style={{ fontSize: 12, color: "#8899bb" }}>hrs</span></div>
-                              <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>{dayOrd} + <span style={{ color: "#fbbf24" }}>{dayOT} OT</span></div>
+                            <td key={d} style={{ padding: "14px 8px", textAlign: "center", borderLeft: `1px solid ${ts.border}` }}>
+                              <div style={{ fontWeight: 800, fontSize: 18, color: ts.text }}>{dayOrd + dayOT}<span style={{ fontSize: 12, color: ts.textMuted }}>hrs</span></div>
+                              <div style={{ fontSize: 12, color: ts.textMuted, marginTop: 2 }}>{dayOrd} + <span style={{ color: ts.amberText }}>{dayOT} OT</span></div>
                             </td>
                           )
                         })}
-                        <td style={{ padding: "14px 12px", textAlign: "center", borderLeft: "2px solid #2e3650" }}>
-                          <div style={{ fontWeight: 900, fontSize: 20, color: "#f0f4ff" }}>
-                            {crewWorkers.reduce((sum, w) => sum + timesheetEntries.filter((e) => e.worker_id === w.id).reduce((s, e) => s + (e.ordinary_hours ?? 0) + (e.ot_hours ?? 0), 0), 0)}<span style={{ fontSize: 13, fontWeight: 500, color: "#8899bb" }}>hrs</span>
+                        <td style={{ padding: "14px 12px", textAlign: "center", borderLeft: `2px solid ${ts.border}` }}>
+                          <div style={{ fontWeight: 900, fontSize: 20, color: ts.text }}>
+                            {crewWorkers.reduce((sum, w) => sum + timesheetEntries.filter((e) => e.worker_id === w.id).reduce((s, e) => s + (e.ordinary_hours ?? 0) + (e.ot_hours ?? 0), 0), 0)}<span style={{ fontSize: 13, fontWeight: 500, color: ts.textMuted }}>hrs</span>
                           </div>
-                          <div style={{ fontSize: 13, color: "#00dd44", marginTop: 4, fontWeight: 700 }}>
+                          <div style={{ fontSize: 13, color: ts.successText, marginTop: 4, fontWeight: 700 }}>
                             ${formatMoney(crewWorkers.reduce((sum, w) => sum + timesheetEntries.filter((e) => e.worker_id === w.id).reduce((s, e) => {
                               const trueCost = w.total_cost_hourly_with_ot ?? w.base_rate_hourly ?? 0
                               return s + (e.ordinary_hours ?? 0) * trueCost + (e.ot_hours ?? 0) * (w.ot_rate_hourly ?? 0)
@@ -8171,31 +8221,31 @@ Payment terms:
                     })
 
                     return (
-                      <div style={{ marginTop: 20, borderTop: "2px solid #2e3650", paddingTop: 16 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: "#e4e4e7" }}>Labour cost by project this week</div>
+                      <div style={{ marginTop: 20, borderTop: `2px solid ${ts.border}`, paddingTop: 16 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: ts.text }}>Labour cost by project this week</div>
                         <div style={{ display: "grid", gap: 8 }}>
                           {projectSummaries.map(({ project, totalOrd, totalOT, totalCost, totalCostWithOncosts }) => (
-                            <div key={project?.id} style={{ background: "#161d2e", border: "1px solid #252f45", borderRadius: 8, padding: "12px 16px", display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 16, alignItems: "center" }}>
+                            <div key={project?.id} style={{ background: ts.panel, border: `1px solid ${ts.border}`, borderRadius: 8, padding: "12px 16px", display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 16, alignItems: "center" }}>
                               <div>
                                 <div style={{ fontWeight: 600, fontSize: 13 }}>{project?.name ?? "Unknown project"}</div>
-                                <div style={{ fontSize: 11, color: "#8899bb" }}>{project?.client ?? ""}</div>
+                                <div style={{ fontSize: 11, color: ts.textMuted }}>{project?.client ?? ""}</div>
                               </div>
                               <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 2 }}>Hours</div>
+                                <div style={{ fontSize: 11, color: ts.textMuted, marginBottom: 2 }}>Hours</div>
                                 <div style={{ fontWeight: 600 }}>{totalOrd + totalOT}hrs</div>
-                                <div style={{ fontSize: 11, color: "#8899bb" }}>{totalOrd} ord + {totalOT} OT</div>
+                                <div style={{ fontSize: 11, color: ts.textMuted }}>{totalOrd} ord + {totalOT} OT</div>
                               </div>
                               <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 2 }}>Base wages</div>
-                                <div style={{ fontWeight: 600, color: "#e4e4e7" }}>${formatMoney(totalCost)}</div>
+                                <div style={{ fontSize: 11, color: ts.textMuted, marginBottom: 2 }}>Base wages</div>
+                                <div style={{ fontWeight: 600, color: ts.text }}>${formatMoney(totalCost)}</div>
                               </div>
                               <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 2 }}>True cost (w/ oncosts)</div>
-                                <div style={{ fontWeight: 700, color: "#f87171", fontSize: 15 }}>${formatMoney(totalCostWithOncosts)}</div>
+                                <div style={{ fontSize: 11, color: ts.textMuted, marginBottom: 2 }}>True cost (w/ oncosts)</div>
+                                <div style={{ fontWeight: 700, color: ts.dangerText, fontSize: 15 }}>${formatMoney(totalCostWithOncosts)}</div>
                               </div>
                               <div style={{ textAlign: "right" }}>
-                                <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 2 }}>At 30% margin</div>
-                                <div style={{ fontWeight: 700, color: "#60a5fa", fontSize: 15 }}>${formatMoney(totalCostWithOncosts / 0.7)}</div>
+                                <div style={{ fontSize: 11, color: ts.textMuted, marginBottom: 2 }}>At 30% margin</div>
+                                <div style={{ fontWeight: 700, color: ts.accentText, fontSize: 15 }}>${formatMoney(totalCostWithOncosts / 0.7)}</div>
                               </div>
                             </div>
                           ))}
