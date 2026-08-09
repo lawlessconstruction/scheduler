@@ -4445,14 +4445,14 @@ Payment terms:
             </button>}
             <button type="button" onClick={() => setShowAvailability((v) => !v)}
               style={showAvailability ? pillActive : pillBase}>
-              <span style={{ ...iconStyle, background: showAvailability ? "#16a34a22" : "#ffffff11" }}>◎</span>
+              <span style={{ ...iconStyle, background: showAvailability ? "rgba(255,255,255,0.2)" : "#f3f4f6" }}>◎</span>
               {showAvailability ? "Hide Availability" : "Find Availability"}
             </button>
 
             <button type="button" onClick={() => setGanttViewMode(ganttViewMode === "projects" ? "crews" : "projects")}
-              style={ganttViewMode === "crews" ? { ...pillBase, background: "#0f1f2e", border: "1.5px solid #0891b2", color: "#67e8f9" } : pillBase}
+              style={ganttViewMode === "crews" ? { ...pillBase, background: "#0891b2", border: "1px solid #0891b2", color: "#ffffff", boxShadow: "0 2px 6px rgba(8,145,178,0.25)" } : pillBase}
               title={ganttViewMode === "crews" ? "Switch to project view" : "Switch to crew calendar view"}>
-              <span style={{ ...iconStyle, background: ganttViewMode === "crews" ? "#0891b222" : "#ffffff11" }}>{ganttViewMode === "crews" ? "👷" : "📅"}</span>
+              <span style={{ ...iconStyle, background: ganttViewMode === "crews" ? "rgba(255,255,255,0.2)" : "#f3f4f6" }}>{ganttViewMode === "crews" ? "👷" : "📅"}</span>
               {ganttViewMode === "crews" ? "Crew view" : "Project view"}
             </button>
 
@@ -4583,22 +4583,22 @@ Payment terms:
                 }
                 return (
                   <tr>
-                    <th style={{ padding: 0, background: "#1e2130", position: "sticky", left: 0, zIndex: 5, border: "1px solid #2e3650" }} />
+                    <th style={{ padding: 0, background: "#f9fafb", position: "sticky", left: 0, zIndex: 5, border: "1px solid #e5e7eb" }} />
                     {groups.map((g, gi) => {
                       const hasIssues = g.entries.length > 0
-                      if (!hasIssues) return <th key={`wb-${gi}`} colSpan={g.count} style={{ padding: 0, background: "#0b0e15", border: "1px solid #2e3650" }} />
+                      if (!hasIssues) return <th key={`wb-${gi}`} colSpan={g.count} style={{ padding: 0, background: "#ffffff", border: "1px solid #e5e7eb" }} />
                       return (
-                        <th key={`wb-${gi}`} colSpan={g.count} style={{ padding: "4px 8px", background: "#0b0e15", border: "1px solid #2e3650", textAlign: "left" }}>
+                        <th key={`wb-${gi}`} colSpan={g.count} style={{ padding: "4px 8px", background: "#ffffff", border: "1px solid #e5e7eb", textAlign: "left" }}>
                           <button type="button"
                             onClick={() => setUnplannedModal({ open: true, weekStart: g.monday })}
                             title="Timesheet entries with no matching segment — click to review"
                             style={{
                               display: "inline-flex", alignItems: "center", gap: 6,
-                              background: "#3a2a0a", border: "1px solid #b45309",
+                              background: "#fef3c7", border: "1px solid #f59e0b",
                               borderRadius: 999, padding: "3px 10px",
-                              color: "#fbbf24", fontSize: 11, fontWeight: 700,
+                              color: "#92400e", fontSize: 11, fontWeight: 700,
                               cursor: "pointer",
-                              boxShadow: "0 0 0 3px rgba(251,191,36,0.12)",
+                              boxShadow: "0 0 0 3px rgba(245,158,11,0.12)",
                             }}>
                             ⚠ {g.entries.length} unplanned {g.entries.length === 1 ? "entry" : "entries"} · click to review
                           </button>
@@ -4611,15 +4611,16 @@ Payment terms:
               <tr>
                 <th
                   style={{
-                    border: "1px solid #2e3650",
+                    border: "1px solid #e5e7eb",
                     padding: 6,
                     minWidth: ROW_HEADER_WIDTH,
                     width: ROW_HEADER_WIDTH,
-                    background: "#1e2130",
+                    background: "#f9fafb",
+                    color: "#3a3a3a",
                     position: "sticky",
                     left: 0,
                     zIndex: 5,
-                    boxShadow: "2px 0 0 #333",
+                    boxShadow: "2px 0 0 #e5e7eb",
                   }}
                 >
                   Project
@@ -4633,10 +4634,10 @@ Payment terms:
                     <th
                       key={dateKey}
                       style={{
-                        border: "1px solid #2e3650",
+                        border: "1px solid #e5e7eb",
                         padding: 6,
-                        background: isToday ? "#171717" : isWeekend(date) ? "#222" : "#111",
-                        color: isWeekend(date) ? "#888" : "#ddd",
+                        background: isToday ? "#fef3c7" : isWeekend(date) ? "#f3f4f6" : "#ffffff",
+                        color: isWeekend(date) ? "#9ca3af" : "#3a3a3a",
                         minWidth: DAY_COL_WIDTH,
                         width: DAY_COL_WIDTH,
                         position: "relative",
@@ -4673,17 +4674,17 @@ Payment terms:
                   <tr key={row.projectId}>
                     <td
                       style={{
-                        border: "1px solid #2e3650",
+                        border: "1px solid #e5e7eb",
                         padding: 8,
                         fontWeight: 600,
-                        background: "#1e2130",
+                        background: "#ffffff",
                         position: "sticky",
                         left: 0,
                         zIndex: 4,
                         width: ROW_HEADER_WIDTH,
                         minWidth: ROW_HEADER_WIDTH,
                         verticalAlign: "top",
-                        boxShadow: "2px 0 0 #333",
+                        boxShadow: "2px 0 0 #e5e7eb",
                       }}
                     >
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -4716,7 +4717,7 @@ Payment terms:
                                     cursor: "pointer",
                                     fontSize: 16,
                                     lineHeight: 1,
-                                    color: isPinned ? "#fbbf24" : "#4a5670",
+                                    color: isPinned ? "#f59e0b" : "#c0c0c0",
                                   }}
                                 >
                                   {isPinned ? "★" : "☆"}
@@ -4724,17 +4725,17 @@ Payment terms:
                               )
                             })()}
                             {ganttViewMode === "projects" && projects.find((p) => p.id === row.projectId)?.archived && (
-                              <span style={{ fontSize: 10, background: "#3f3f46", color: "#a1a1aa", borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>
+                              <span style={{ fontSize: 10, background: "#e5e7eb", color: "#6b7280", borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>
                                 ARCHIVED
                               </span>
                             )}
                             {ganttViewMode === "crews" && (
                               <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 999, background: crews.find(c => c.id === row.projectId)?.color ?? "#2563eb" }} />
                             )}
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "#f0f4ff", lineHeight: 1.3 }}>{row.projectName}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", lineHeight: 1.3 }}>{row.projectName}</span>
                           </div>
                           {ganttViewMode === "projects" && projects.find((p) => p.id === row.projectId)?.client && (
-                            <div style={{ fontSize: 12, color: "#8899bb", fontWeight: 400, marginTop: 2 }}>
+                            <div style={{ fontSize: 12, color: "#6b7280", fontWeight: 400, marginTop: 2 }}>
                               {projects.find((p) => p.id === row.projectId)?.client}
                             </div>
                           )}
@@ -4748,10 +4749,10 @@ Payment terms:
                               if (project) openProjectEditor(project)
                             }}
                             style={{
-                              background: "#1e2a45",
-                              border: "1.5px solid #3b4f72",
+                              background: "#f3f4f6",
+                              border: "1px solid #d1d5db",
                               borderRadius: 7,
-                              color: "#c8d4f0",
+                              color: "#3a3a3a",
                               cursor: "pointer",
                               fontSize: 12,
                               fontWeight: 700,
@@ -4765,10 +4766,10 @@ Payment terms:
                             type="button"
                             onClick={() => openMilestoneModal(row.projectId, row.projectName)}
                             style={{
-                              background: "#1a1030",
-                              border: "1.5px solid #6d28d9",
+                              background: "#f5f3ff",
+                              border: "1px solid #c4b5fd",
                               borderRadius: 7,
-                              color: "#c4b5fd",
+                              color: "#6d28d9",
                               cursor: "pointer",
                               fontSize: 12,
                               fontWeight: 700,
@@ -4789,7 +4790,7 @@ Payment terms:
                                 const over = totalAllocated > contractTotal
                                 const full = totalAllocated === contractTotal
                                 return (
-                                  <span style={{ color: over ? "#f87171" : full ? "#4ade80" : "#a78bfa" }}>
+                                  <span style={{ color: over ? "#dc2626" : full ? "#16a34a" : "#6d28d9" }}>
                                     ${formatMoneyK(totalAllocated)} / ${formatMoneyK(contractTotal)}
                                     {placed < total ? ` · ${placed}/${total}` : ""}
                                   </span>
@@ -4798,7 +4799,7 @@ Payment terms:
 
                               const allPlaced = placed === total
                               return (
-                                <span style={{ color: allPlaced ? "#a78bfa" : "#f87171" }}>
+                                <span style={{ color: allPlaced ? "#6d28d9" : "#dc2626" }}>
                                   $ {placed}/{total}
                                 </span>
                               )
@@ -4808,10 +4809,10 @@ Payment terms:
                             type="button"
                             onClick={() => setCostsModal({ open: true, projectId: row.projectId, projectName: row.projectName })}
                             style={{
-                              background: "#1c1400",
-                              border: "1.5px solid #92400e",
+                              background: "#fef3c7",
+                              border: "1px solid #fbbf24",
                               borderRadius: 7,
-                              color: "#fbbf24",
+                              color: "#92400e",
                               cursor: "pointer",
                               fontSize: 12,
                               fontWeight: 700,
@@ -4833,8 +4834,8 @@ Payment terms:
                       colSpan={dates.length}
                       style={{
                         padding: 0,
-                        border: "1px solid #2e3650",
-                        background: "#0f1520",
+                        border: "1px solid #e5e7eb",
+                        background: "#fafafa",
                         position: "relative",
                       }}
                     >
@@ -4900,8 +4901,8 @@ Payment terms:
                                 width: DAY_COL_WIDTH,
                                 height: rowHeight,
                                 boxSizing: "border-box",
-                                borderRight: "1px solid #2e3650",
-                                background: weekend ? "#1a1a1a" : "#000",
+                                borderRight: "1px solid #e5e7eb",
+                                background: weekend ? "#f3f4f6" : "#ffffff",
                                 cursor: weekend ? "default" : "pointer",
                               }}
                             >
@@ -4912,15 +4913,15 @@ Payment terms:
                                     inset: 4,
                                     borderRadius: 8,
                                     fontSize: 11,
-                                    color: "#888",
-                                    background: draggingToken ? "#111827" : "#2a2a2a",
+                                    color: "#9ca3af",
+                                    background: draggingToken ? "#eff6ff" : "#fafafa",
                                     textAlign: "center",
-                                    border: draggingToken ? "1px dashed #60a5fa" : "1px dashed #555",
+                                    border: draggingToken ? "1px dashed #60a5fa" : "1px dashed #e5e7eb",
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
                                     pointerEvents: "none",
-                                    opacity: 0.35,
+                                    opacity: 0.55,
                                   }}
                                 >
                                   NO CREW
@@ -4963,13 +4964,13 @@ Payment terms:
                                 top: 4,
                                 width: DAY_COL_WIDTH - 8,
                                 height: 22,
-                                background: "#374151",
-                                color: "#e5e7eb",
+                                background: "#f3f4f6",
+                                color: "#4b5563",
                                 borderRadius: 8,
                                 fontSize: 11,
                                 fontWeight: 600,
                                 textAlign: "center",
-                                border: "1px dashed #6b7280",
+                                border: "1px dashed #9ca3af",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
@@ -5051,7 +5052,8 @@ Payment terms:
                                           ? "2px solid #FCA5A5"
                                           : isPastUnbilled
                                             ? "3px solid #fde68a"
-                                            : "1px solid rgba(255,255,255,0.15)",
+                                            : "1px solid rgba(0,0,0,0.08)",
+                                        boxShadow: conflict || isPastUnbilled ? undefined : "0 1px 3px rgba(0,0,0,0.12)",
                                         animation: isPastUnbilled && !conflict ? "unbilledPulse 1.6s ease-in-out infinite" : undefined,
                                         cursor: isFirstRun ? "grab" : "pointer",
                                         opacity: isBeingMoved || isBeingResized ? 0.65 : 1,
@@ -5248,8 +5250,8 @@ Payment terms:
                                   top: 4,
                                   width: 16,
                                   height: 16,
-                                  background: "#854d0e",
-                                  border: "1px solid #fbbf24",
+                                  background: "#fef3c7",
+                                  border: "1px solid #f59e0b",
                                   borderRadius: 3,
                                   cursor: "pointer",
                                   zIndex: 3,
@@ -5258,7 +5260,7 @@ Payment terms:
                                   justifyContent: "center",
                                 }}
                               >
-                                <span style={{ fontSize: 9, fontWeight: 800, color: "#fbbf24", lineHeight: 1 }}>$</span>
+                                <span style={{ fontSize: 9, fontWeight: 800, color: "#92400e", lineHeight: 1 }}>$</span>
                               </div>
                             )
                           })}
@@ -5279,16 +5281,16 @@ Payment terms:
                   <tr>
                     <td
                       style={{
-                        border: "1px solid #252f45",
+                        border: "1px solid #e5e7eb",
                         padding: "6px 8px",
-                        background: "#0a1a0f",
+                        background: "#f0fdf4",
                         position: "sticky",
                         left: 0,
                         zIndex: 4,
                         width: ROW_HEADER_WIDTH,
                         minWidth: ROW_HEADER_WIDTH,
                         verticalAlign: "middle",
-                        boxShadow: "2px 0 0 #333",
+                        boxShadow: "2px 0 0 #e5e7eb",
                       }}
                     >
                       <div
@@ -5300,8 +5302,8 @@ Payment terms:
                         style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
                       >
                         <div style={{ width: 10, height: 10, borderRadius: "50%", background: crew.color ?? "#22c55e", flexShrink: 0 }} />
-                        <div style={{ fontWeight: 600, fontSize: 13, color: "#d1fae5", flex: 1 }}>{crew.name}</div>
-                        <div style={{ fontSize: 11, color: "#4ade80", flexShrink: 0 }}>{expanded ? "▲" : "▼"}</div>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: "#166534", flex: 1 }}>{crew.name}</div>
+                        <div style={{ fontSize: 11, color: "#16a34a", flexShrink: 0 }}>{expanded ? "▲" : "▼"}</div>
                       </div>
                     </td>
 
@@ -5309,8 +5311,8 @@ Payment terms:
                       colSpan={dates.length}
                       style={{
                         padding: 0,
-                        border: "1px solid #252f45",
-                        background: "#050f07",
+                        border: "1px solid #e5e7eb",
+                        background: "#f7faf7",
                         position: "relative",
                       }}
                     >
@@ -5339,19 +5341,19 @@ Payment terms:
                                   width: DAY_COL_WIDTH,
                                   height: 48,
                                   flexShrink: 0,
-                                  borderRight: "1px solid #1a2e1a",
+                                  borderRight: "1px solid #e5e7eb",
                                   background: weekend
-                                    ? "#050f07"
+                                    ? "#f3f4f6"
                                     : hasGap
-                                    ? `linear-gradient(to top, #16a34a ${Math.round((1 - pct) * 100)}%, #052e0f ${Math.round((1 - pct) * 100)}%)`
-                                    : isFull ? "#1a1a1a" : "#050f07",
+                                    ? `linear-gradient(to top, #16a34a ${Math.round((1 - pct) * 100)}%, #dcfce7 ${Math.round((1 - pct) * 100)}%)`
+                                    : isFull ? "#f5f5f5" : "#dcfce7",
                                   cursor: hasGap ? "pointer" : "default",
                                   position: "relative",
                                   boxSizing: "border-box",
                                 }}
                               >
                                 {hasGap && (
-                                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#4ade80", pointerEvents: "none" }}>
+                                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ffffff", pointerEvents: "none", textShadow: "0 1px 2px rgba(0,0,0,0.3)" }}>
                                     {free < 1 ? `+${free}` : `+${Math.round(free)}`}
                                   </div>
                                 )}
@@ -5395,16 +5397,16 @@ Payment terms:
             const firstDateKey = formatDateKey(dates[0])
 
             return (
-              <div style={{ display: "flex", borderTop: "1px solid #1f1f1f", marginTop: 2 }}>
+              <div style={{ display: "flex", borderTop: "1px solid #e5e7eb", marginTop: 2 }}>
                 {/* Sticky label column */}
                 <div style={{
                   width: ROW_HEADER_WIDTH, minWidth: ROW_HEADER_WIDTH, flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "flex-end",
                   paddingRight: 12, paddingTop: 8, paddingBottom: 8,
-                  position: "sticky", left: 0, background: "#0f1520", zIndex: 2,
+                  position: "sticky", left: 0, background: "#ffffff", zIndex: 2,
                 }}>
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 600 }}>Net cashflow</div>
+                    <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>Net cashflow</div>
                     <button
                       type="button"
                       onClick={async () => {
@@ -5416,7 +5418,7 @@ Payment terms:
                         setCashflowExtras((exRes.data ?? []) as Extra[])
                         setCashflowExtraItems((itemRes.data ?? []) as ExtraItem[])
                       }}
-                      style={{ fontSize: 10, color: "#60a5fa", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 2 }}
+                      style={{ fontSize: 10, color: "#2563eb", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 2 }}
                     >
                       Full view →
                     </button>
@@ -5503,10 +5505,10 @@ Payment terms:
                           top: 0, bottom: 0,
                         }}
                       >
-                        <div style={{ fontSize: 20, fontWeight: 900, lineHeight: 1, color: isPositive ? "#4ade80" : "#f87171" }}>
+                        <div style={{ fontSize: 20, fontWeight: 900, lineHeight: 1, color: isPositive ? "#16a34a" : "#dc2626" }}>
                           {isPositive ? "+" : ""}{formatMoneyK(net)}
                         </div>
-                        <div style={{ fontSize: 9, color: "#4a5680", marginTop: 3 }}>
+                        <div style={{ fontSize: 9, color: "#9ca3af", marginTop: 3 }}>
                           {hasActual ? "actual" : "forecast"}
                         </div>
                       </div>
