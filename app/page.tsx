@@ -4334,20 +4334,20 @@ Payment terms:
   }
 
   return (
-    <div style={{ background: "#111827", color: "white", minHeight: "100vh" }}>
+    <div style={{ background: "#ffffff", color: "#1a1a1a", minHeight: "100vh" }}>
       <style>{`
         @keyframes unbilledPulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.95), 0 0 0 4px rgba(251, 191, 36, 0.0); }
-          50%      { box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.85), 0 0 14px 6px rgba(251, 191, 36, 0.55); }
+          0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.9), 0 0 0 4px rgba(217, 119, 6, 0.0); }
+          50%      { box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.8), 0 0 14px 6px rgba(217, 119, 6, 0.45); }
         }
       `}</style>
       {/* ── Branded header bar ── */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "0 28px", height: 64,
-        background: "#0a0f1e",
-        borderBottom: "1px solid #1e2a45",
-        boxShadow: "0 2px 16px rgba(0,0,0,0.4)",
+        background: "#ffffff",
+        borderBottom: "1px solid #e5e7eb",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
         position: "sticky", top: 0, zIndex: 50,
       }}>
         {/* Logo */}
@@ -4358,24 +4358,24 @@ Payment terms:
         />
         {/* Centre label */}
         <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", pointerEvents: "none" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#4a6080", letterSpacing: "0.25em", textTransform: "uppercase" }}>Operations</div>
-          <div style={{ fontSize: 13, fontWeight: 800, color: "#8899bb", letterSpacing: "0.1em" }}>Scheduler</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: "#8a8a8a", letterSpacing: "0.25em", textTransform: "uppercase" }}>Operations</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#3a3a3a", letterSpacing: "0.1em" }}>Scheduler</div>
         </div>
         {/* Right side — user + date */}
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ fontSize: 12, color: "#4a6080", fontWeight: 600 }}>
+          <div style={{ fontSize: 12, color: "#8a8a8a", fontWeight: 600 }}>
             {new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 8, padding: "6px 12px" }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: isBoss ? "#fbbf24" : isCrewBoss ? "#34d399" : "#60a5fa" }} />
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#c8d4f0" }}>{currentUser.name}</span>
-            <span style={{ fontSize: 10, color: "#4a6080", textTransform: "uppercase", letterSpacing: "0.05em" }}>{currentUser.app_role.replace("_", " ")}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#f5f5f5", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 12px" }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: isBoss ? "#f59e0b" : isCrewBoss ? "#10b981" : "#3b82f6" }} />
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#1a1a1a" }}>{currentUser.name}</span>
+            <span style={{ fontSize: 10, color: "#8a8a8a", textTransform: "uppercase", letterSpacing: "0.05em" }}>{currentUser.app_role.replace("_", " ")}</span>
             <button type="button" onClick={() => setShowChangePinModal(true)}
-              style={{ fontSize: 11, color: "#93c5fd", background: "none", border: "none", cursor: "pointer", padding: "0 4px 0 8px", borderLeft: "1px solid #2e3a58" }}>
+              style={{ fontSize: 11, color: "#2563eb", background: "none", border: "none", cursor: "pointer", padding: "0 4px 0 8px", borderLeft: "1px solid #e5e7eb" }}>
               Change PIN
             </button>
             <button type="button" onClick={logout}
-              style={{ fontSize: 11, color: "#6b7a9a", background: "none", border: "none", cursor: "pointer", padding: "0 0 0 8px", borderLeft: "1px solid #2e3a58" }}>
+              style={{ fontSize: 11, color: "#8a8a8a", background: "none", border: "none", cursor: "pointer", padding: "0 0 0 8px", borderLeft: "1px solid #e5e7eb" }}>
               Sign out
             </button>
           </div>
@@ -4386,38 +4386,43 @@ Payment terms:
           position: "fixed",
           bottom: 24,
           right: 24,
-          background: "#1e1b4b",
-          border: "1px solid #4c1d95",
-          color: "#c4b5fd",
+          background: "#1a1a1a",
+          border: "1px solid #3a3a3a",
+          color: "#ffffff",
           padding: "10px 18px",
           borderRadius: 10,
           fontSize: 13,
           fontWeight: 600,
           zIndex: 200,
-          boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
         }}>
           {toast}
         </div>
       )}
 
+      <div style={{ padding: "20px 28px 40px" }}>
       {/* Toolbar — single row, pill style */}
       {(() => {
         const pillBase: React.CSSProperties = {
           display: "inline-flex", alignItems: "center", gap: 8,
           padding: "8px 16px", borderRadius: 999,
-          border: "1.5px solid #2e3a58", background: "#1e2535",
-          color: "#c8d4f0", fontWeight: 600, fontSize: 13,
+          border: "1px solid #e5e7eb", background: "#ffffff",
+          color: "#3a3a3a", fontWeight: 600, fontSize: 13,
           cursor: "pointer", whiteSpace: "nowrap", lineHeight: 1,
-          transition: "background 0.15s",
+          transition: "background 0.15s, border-color 0.15s",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
         }
         const pillPrimary: React.CSSProperties = {
-          ...pillBase, background: "#1e3a6e", border: "1.5px solid #2563eb", color: "#93c5fd",
+          ...pillBase, background: "#2563eb", border: "1px solid #2563eb", color: "#ffffff",
+          boxShadow: "0 2px 6px rgba(37,99,235,0.25)",
         }
         const pillActive: React.CSSProperties = {
-          ...pillBase, background: "#14532d", border: "1.5px solid #16a34a", color: "#86efac",
+          ...pillBase, background: "#16a34a", border: "1px solid #16a34a", color: "#ffffff",
+          boxShadow: "0 2px 6px rgba(22,163,74,0.25)",
         }
         const pillAmber: React.CSSProperties = {
-          ...pillBase, background: "#431407", border: "1.5px solid #c2410c", color: "#fed7aa",
+          ...pillBase, background: "#f59e0b", border: "1px solid #f59e0b", color: "#ffffff",
+          boxShadow: "0 2px 6px rgba(245,158,11,0.25)",
         }
         const iconStyle: React.CSSProperties = {
           width: 22, height: 22, borderRadius: "50%",
@@ -4425,17 +4430,17 @@ Payment terms:
           fontSize: 12, flexShrink: 0,
         }
         const divider: React.CSSProperties = {
-          width: 1, background: "#2e3a58", alignSelf: "stretch", margin: "0 4px",
+          width: 1, background: "#e5e7eb", alignSelf: "stretch", margin: "0 4px",
         }
         return (
           <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
             {/* Primary actions */}
             {canSeeAll && <button type="button" onClick={() => setTopModal("addProject")} style={pillPrimary}>
-              <span style={{ ...iconStyle, background: "#2563eb22" }}>＋</span>
+              <span style={{ ...iconStyle, background: "rgba(255,255,255,0.2)" }}>＋</span>
               Add Project
             </button>}
             {canSeeAll && <button type="button" onClick={() => setShowProjectsListModal(true)} style={pillBase}>
-              <span style={{ ...iconStyle, background: "#ffffff11" }}>📁</span>
+              <span style={{ ...iconStyle, background: "#f3f4f6" }}>📁</span>
               Projects
             </button>}
             <button type="button" onClick={() => setShowAvailability((v) => !v)}
@@ -4454,17 +4459,17 @@ Payment terms:
             <div style={divider} />
 
             {/* Data views */}
-            {canSeeAll && <button type="button" onClick={() => setShowExtrasModal(true)} style={{ ...pillBase, background: "#1a1a3e", border: "1.5px solid #7c3aed", color: "#c4b5fd" }}>
-              <span style={{ ...iconStyle, background: "#7c3aed22" }}>⚡</span>
+            {canSeeAll && <button type="button" onClick={() => setShowExtrasModal(true)} style={{ ...pillBase, background: "#7c3aed", border: "1px solid #7c3aed", color: "#ffffff", boxShadow: "0 2px 6px rgba(124,58,237,0.25)" }}>
+              <span style={{ ...iconStyle, background: "rgba(255,255,255,0.2)" }}>⚡</span>
               Extras
             </button>}
-            {canSeeAll && <button type="button" onClick={() => setShowExpensesModal(true)} style={{ ...pillBase, background: "#0f1f2e", border: "1.5px solid #0891b2", color: "#67e8f9" }}>
-              <span style={{ ...iconStyle, background: "#0891b222" }}>🧾</span>
+            {canSeeAll && <button type="button" onClick={() => setShowExpensesModal(true)} style={{ ...pillBase, background: "#0891b2", border: "1px solid #0891b2", color: "#ffffff", boxShadow: "0 2px 6px rgba(8,145,178,0.25)" }}>
+              <span style={{ ...iconStyle, background: "rgba(255,255,255,0.2)" }}>🧾</span>
               Expenses
             </button>}
             {canSeeAll && <button type="button" onClick={() => setShowEstimatesModal(true)} style={pillAmber}>
-              <span style={{ ...iconStyle, background: "#c2410c22" }}>📋</span>
-              Estimates {estimates.length > 0 && <span style={{ background: "#c2410c", color: "white", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2 }}>{estimates.length}</span>}
+              <span style={{ ...iconStyle, background: "rgba(255,255,255,0.2)" }}>📋</span>
+              Estimates {estimates.length > 0 && <span style={{ background: "rgba(255,255,255,0.25)", color: "white", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2, fontWeight: 800 }}>{estimates.length}</span>}
             </button>}
             {canSeeAll && <button type="button" onClick={async () => {
               setShowCashflowModal(true)
@@ -4492,7 +4497,7 @@ Payment terms:
 
             {/* Settings */}
             {canSeeAll && <button type="button" onClick={() => setShowWorkersModal(true)} style={pillBase}>
-              <span style={{ ...iconStyle, background: "#ffffff11" }}>👷</span>
+              <span style={{ ...iconStyle, background: "#f3f4f6" }}>👷</span>
               Workers
             </button>}
             {canSeeTimesheets && <button type="button" onClick={async () => {
@@ -4509,34 +4514,34 @@ Payment terms:
               setMobileDayOffset(Math.max(0, Math.min(6, diffDays)))
               setShowTimesheetModal(true)
             }} style={pillBase}>
-              <span style={{ ...iconStyle, background: "#ffffff11" }}>🕐</span>
+              <span style={{ ...iconStyle, background: "#f3f4f6" }}>🕐</span>
               Timesheets
             </button>}
             {canSeeAll && <button type="button" onClick={() => setShowClientsListModal(true)} style={pillBase}>
-              <span style={{ ...iconStyle, background: "#ffffff11" }}>👤</span>
+              <span style={{ ...iconStyle, background: "#f3f4f6" }}>👤</span>
               Clients
             </button>}
             {canSeeAll && <button type="button" onClick={() => setShowContractTypesModal(true)} style={pillBase}>
-              <span style={{ ...iconStyle, background: "#ffffff11" }}>📄</span>
+              <span style={{ ...iconStyle, background: "#f3f4f6" }}>📄</span>
               Contracts
             </button>}
             <button type="button" onClick={() => setShowArchived((v) => !v)}
               style={{ ...pillBase, opacity: showArchived ? 1 : 0.6 }}>
-              <span style={{ ...iconStyle, background: "#ffffff11" }}>🗄</span>
+              <span style={{ ...iconStyle, background: "#f3f4f6" }}>🗄</span>
               {showArchived ? "Hide archived" : "Archived"}
             </button>
             <a href="/systemmap" style={{ ...pillBase, textDecoration: "none" }}>
-              <span style={{ ...iconStyle, background: "#ffffff11" }}>🗺</span>
+              <span style={{ ...iconStyle, background: "#f3f4f6" }}>🗺</span>
               Map
             </a>
 
             {/* Timeline extend/shrink — far right */}
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, background: "linear-gradient(135deg, #1e3a6e, #1e4d2e)", border: "1.5px solid #2563eb", borderRadius: 999, padding: "6px 14px" }}>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 999, padding: "6px 14px", boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}>
               <button type="button" onClick={() => setGanttExtendWeeks(w => Math.max(4, w - 4))}
-                style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", fontSize: 18, padding: "0 4px", lineHeight: 1, fontWeight: 700 }}>−</button>
-              <span style={{ fontSize: 13, color: "#93c5fd", fontWeight: 700 }}>📅 4 weeks</span>
+                style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: 18, padding: "0 4px", lineHeight: 1, fontWeight: 700 }}>−</button>
+              <span style={{ fontSize: 13, color: "#1d4ed8", fontWeight: 700 }}>📅 {ganttExtendWeeks} weeks</span>
               <button type="button" onClick={() => setGanttExtendWeeks(w => w + 4)}
-                style={{ background: "none", border: "none", color: "#60a5fa", cursor: "pointer", fontSize: 18, padding: "0 4px", lineHeight: 1, fontWeight: 700 }}>＋</button>
+                style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer", fontSize: 18, padding: "0 4px", lineHeight: 1, fontWeight: 700 }}>＋</button>
             </div>
           </div>
         )
@@ -9025,6 +9030,7 @@ Payment terms:
           </div>
         )
       })()}
+      </div>
 
       {showExtrasModal && (
         <ExtrasModal
