@@ -2387,7 +2387,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: { id: string; name: string; 
 
   return (
     <div style={{ minHeight: "100vh", background: "#0a0f1e", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "system-ui, sans-serif", padding: 24 }}>
-      <img src="/lawless-logo.png" alt="Lawless Construction" style={{ height: 56, width: "auto", objectFit: "contain", marginBottom: 40 }} />
+      <img src="/lawless-logo-light.png" alt="Lawless Construction" style={{ height: 40, width: "auto", objectFit: "contain", marginBottom: 40 }} />
       <div style={{ width: "100%", maxWidth: 380, background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 16, padding: 32, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
         <div style={{ fontSize: 22, fontWeight: 900, color: "#f0f4ff", marginBottom: 6 }}>Sign in</div>
         <div style={{ fontSize: 13, color: "#6b7a9a", marginBottom: 28 }}>Lawless Construction — Operations</div>
@@ -4200,7 +4200,7 @@ Payment terms:
       <div style={{ background: "#0a0f1e", minHeight: "100vh", color: "white", display: "flex", flexDirection: "column", padding: 20, paddingBottom: 40 }}>
         {/* Top: logo + user */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30 }}>
-          <img src="/lawless-logo.png" alt="Lawless" style={{ height: 44, filter: "brightness(1.1)" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />
+          <img src="/lawless-logo-light.png" alt="Lawless" style={{ height: 30, width: "auto", objectFit: "contain" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none" }} />
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#c8d4f0" }}>{currentUser.name}</div>
             <div style={{ fontSize: 10, color: "#4a6080", textTransform: "uppercase" }}>{currentUser.app_role.replace("_", " ")}</div>
@@ -4344,7 +4344,7 @@ Payment terms:
         <img
           src="/lawless-logo.png"
           alt="Lawless Construction"
-          style={{ height: 42, width: "auto", objectFit: "contain" }}
+          style={{ height: 30, width: "auto", objectFit: "contain" }}
         />
         {/* Centre label */}
         <div style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", pointerEvents: "none" }}>
