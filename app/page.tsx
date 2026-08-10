@@ -181,6 +181,8 @@ type Segment = {
   end_date: string
   capacity_fraction: number | null
   notes: string | null
+  /** Which stage/milestone this block of work counts toward. Many segments → one milestone. */
+  milestone_id: string | null
   projects?: { name: string } | null
   crews?: { name: string; color: string | null; capacity: number | null } | null
 }
@@ -464,6 +466,34 @@ function compareDateStrings(a: string, b: string) {
 
 function isDateWithinRange(dateKey: string, start: string, end: string) {
   return start <= dateKey && end >= dateKey
+}
+
+// ── Milestones vs segments ────────────────────────────────────────────────────
+// A segment is "a crew is on site over these dates". A milestone is "this stage
+// of work is finished". They are not one-to-one: a job can stop and restart, so
+// finishing the frame might take three separate visits weeks apart.
+//
+// Tag each segment with the stage it counts toward (segments.milestone_id). Many
+// segments can share one. The milestone's ANCHOR is the last-finishing segment
+// carrying it, so the claim date moves forward on its own each time you go back.
+//
+// Legacy fallback: before stage tagging, milestones pointed at a single segment
+// via milestones.segment_id. Existing rows still resolve through that.
+type AnchorSegment = { id: string; end_date: string; milestone_id?: string | null }
+type AnchorMilestone = { id: string; segment_id: string | null; due_date_override?: string | null }
+
+function resolveMilestoneAnchor<T extends AnchorSegment>(m: AnchorMilestone, segments: T[]): T | null {
+  const tagged = segments.filter((s) => s.milestone_id === m.id)
+  if (tagged.length > 0) {
+    return tagged.reduce((latest, s) => (compareDateStrings(s.end_date, latest.end_date) > 0 ? s : latest))
+  }
+  if (m.segment_id) return segments.find((s) => s.id === m.segment_id) ?? null
+  return null
+}
+
+function resolveMilestoneDate(m: AnchorMilestone, segments: AnchorSegment[]): string | null {
+  if (m.due_date_override) return m.due_date_override
+  return resolveMilestoneAnchor(m, segments)?.end_date ?? null
 }
 
 function countWorkingDaysInclusive(start: string, end: string) {
@@ -761,16 +791,14 @@ function MilestonesListModal({ onClose, milestones, projects, contracts, segment
   milestones: Milestone[]
   projects: { id: string; name: string; client: string | null }[]
   contracts: { id: string; project_id: string; name: string | null; color: string | null }[]
-  segments: { id: string; end_date: string }[]
+  segments: { id: string; end_date: string; milestone_id: string | null }[]
 }) {
   const [filter, setFilter] = useState<"all" | "pending" | "invoiced" | "paid" | "no_amount">("pending")
   
   function fmt(v: number) { return v.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
 
   function getMilestoneDate(m: Milestone): string | null {
-    if (m.due_date_override) return m.due_date_override
-    if (m.segment_id) return segments.find(s => s.id === m.segment_id)?.end_date ?? null
-    return null
+    return resolveMilestoneDate(m, segments)
   }
 
   const allMilestones = milestones.filter(m => {
@@ -1017,11 +1045,12 @@ function ClientsListModal({ onClose, clients, projects, contracts, profitability
   )
 }
 
-function ProjectsListModal({ onClose, projects, contracts, milestones, profitabilityData, extras, extraItems, onEditProject }: {
+function ProjectsListModal({ onClose, projects, contracts, milestones, segments, profitabilityData, extras, extraItems, onEditProject }: {
   onClose: () => void
   projects: { id: string; name: string; client: string | null; archived: boolean | null; contract_value: number | null }[]
   contracts: { id: string; project_id: string; name: string | null; value: number | null; color: string | null }[]
   milestones: { id: string; project_id: string; name: string | null; amount: number | null; segment_id: string | null; due_date_override: string | null }[]
+  segments: { id: string; end_date: string; milestone_id: string | null }[]
   profitabilityData: any[]
   extras: any[]
   extraItems: any[]
@@ -1086,9 +1115,10 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, profitabi
             const margin = contractTotal > 0 ? (grossProfit / contractTotal) * 100 : null
             const marginColor = margin == null ? "#6b7a9a" : margin >= 30 ? "#4ade80" : margin >= 0 ? "#fbbf24" : "#f87171"
 
-            // Outstanding milestones (no date set or no amount)
+            // Outstanding = has money attached but nothing tells us when it lands:
+            // no manual date, and no segment tagged with it.
             const projMilestones = milestones.filter(m => m.project_id === p.id)
-            const outstanding = projMilestones.filter(m => m.amount && !m.segment_id && !m.due_date_override)
+            const outstanding = projMilestones.filter(m => m.amount && !resolveMilestoneDate(m, segments))
             const totalOutstanding = outstanding.reduce((s, m) => s + (m.amount ?? 0), 0)
 
             // Extras
@@ -2542,6 +2572,7 @@ export default function Home() {
     end_date: "",
     capacity_fraction: "1",
     notes: "",
+    milestone_id: "",
   })
 
   const [cellLabelForm, setCellLabelForm] = useState({
@@ -2884,6 +2915,7 @@ export default function Home() {
       end_date: chosenSegment?.end_date ?? date,
       capacity_fraction: String(chosenSegment?.capacity_fraction ?? 1),
       notes: chosenSegment?.notes ?? "",
+      milestone_id: chosenSegment?.milestone_id ?? "",
     })
 
     setCellLabelForm({
@@ -2911,6 +2943,7 @@ export default function Home() {
       end_date: "",
       capacity_fraction: "1",
       notes: "",
+      milestone_id: "",
     })
 
     setCellLabelForm({
@@ -2939,6 +2972,7 @@ export default function Home() {
       end_date: segment?.end_date ?? cellEditor.date,
       capacity_fraction: String(segment?.capacity_fraction ?? 1),
       notes: segment?.notes ?? "",
+      milestone_id: segment?.milestone_id ?? "",
     })
   }
 
@@ -2963,6 +2997,7 @@ export default function Home() {
       end_date: normalised.end_date,
       capacity_fraction: Number(cellSegmentForm.capacity_fraction || "1"),
       notes: cellSegmentForm.notes || null,
+      milestone_id: cellSegmentForm.milestone_id || null,
     }
 
     if (cellSegmentForm.segmentId) {
@@ -2974,10 +3009,12 @@ export default function Home() {
         await reattachMilestone(cellSegmentForm.segmentId, oldProjectId, cellEditor.projectId)
       }
     } else {
-      const { data: inserted } = await supabase.from("segments").insert(payload).select().single()
-      if (inserted) {
-        await attachMilestoneToNewSegment(inserted.id, cellEditor.projectId)
-      }
+      // New segments no longer auto-claim a milestone. A segment is "when a crew
+      // is on site"; a milestone is "when a stage of work is finished". On jobs
+      // that stop and restart those are not the same thing, so guessing produced
+      // wrong claim dates. Link milestones deliberately via the Milestone field
+      // in this editor instead.
+      await supabase.from("segments").insert(payload)
     }
 
     await loadData()
@@ -3113,7 +3150,8 @@ export default function Home() {
 
     const normalised = normaliseSegmentToWorkingDays(segmentForm.start_date, segmentForm.end_date)
 
-    const { data: inserted } = await supabase.from("segments").insert({
+    // No auto-attach of milestones here — see the note in saveCellSegment.
+    await supabase.from("segments").insert({
       project_id: segmentForm.project_id,
       crew_id: segmentForm.crew_id,
       name: segmentForm.name || null,
@@ -3121,11 +3159,7 @@ export default function Home() {
       end_date: normalised.end_date,
       capacity_fraction: Number(segmentForm.capacity_fraction),
       notes: segmentForm.notes || null,
-    }).select().single()
-
-    if (inserted) {
-      await attachMilestoneToNewSegment(inserted.id, segmentForm.project_id)
-    }
+    })
 
     setSegmentForm((prev) => ({ ...prev, name: "", start_date: "", end_date: "", capacity_fraction: "1", notes: "" }))
     await loadData()
@@ -3133,12 +3167,12 @@ export default function Home() {
   }
 
   function getMilestoneDate(m: Milestone): string | null {
-    if (m.due_date_override) return m.due_date_override
-    if (m.segment_id) {
-      const seg = segments.find((s) => s.id === m.segment_id)
-      return seg?.end_date ?? null
-    }
-    return null
+    return resolveMilestoneDate(m, segments)
+  }
+
+  /** The segment a milestone's diamond should sit on: last-finishing tagged segment, else legacy link. */
+  function getMilestoneAnchor(m: Milestone): Segment | null {
+    return resolveMilestoneAnchor(m, segments)
   }
 
   async function openMilestoneModal(projectId: string, projectName: string, focusedMilestoneId?: string) {
@@ -3849,38 +3883,11 @@ Payment terms:
     setSelectedProfitProjects(new Set(rows.filter((r) => r.profitability_included !== false).map((r) => r.project_id)))
   }
 
-  async function autoLinkMilestones(projectId: string, contractId: string) {
-    const unlinkedMilestones = milestones
-      .filter((m) => m.project_id === projectId && m.contract_id === contractId && !m.segment_id && !m.due_date_override)
-      .sort((a, b) => a.sort_order - b.sort_order)
+  // NOTE: the old "Auto-link" action lived here. It paired the Nth milestone with the
+  // Nth segment in date order, which is only correct when a job runs start-to-finish in
+  // one go. On a stop-start job it dated every claim wrong. Tag segments with a stage in
+  // the segment editor instead — the claim date then follows the last visit on its own.
 
-    if (unlinkedMilestones.length === 0) {
-      showToast("No unlinked milestones to assign")
-      return
-    }
-
-    const projectSegments = segments
-      .filter((s) => s.project_id === projectId)
-      .sort((a, b) => compareDateStrings(a.start_date, b.start_date))
-
-    if (projectSegments.length === 0) {
-      showToast("No segments on this project yet")
-      return
-    }
-
-    await Promise.all(
-      unlinkedMilestones.map((m, i) => {
-        const seg = projectSegments[i]
-        if (!seg) return Promise.resolve()
-        return supabase.from("milestones").update({ segment_id: seg.id }).eq("id", m.id)
-      })
-    )
-
-    const updatedSegs = segments.filter((s) => s.project_id === projectId)
-    await reorderMilestonesForProject(projectId, updatedSegs)
-    await loadData()
-    showToast(`Linked ${Math.min(unlinkedMilestones.length, projectSegments.length)} milestone${Math.min(unlinkedMilestones.length, projectSegments.length) === 1 ? "" : "s"} to segments`)
-  }
 
   async function addContract(projectId: string, typeId?: string) {
     const existing = contracts.filter((c) => c.project_id === projectId)
@@ -4047,33 +4054,16 @@ Payment terms:
     closeProjectEditor()
   }
 
-  // When a segment moves to a new project, detach its milestone from the old project
-  // and attach the first unallocated milestone on the new project to it.
+  // A segment that moves to a different project can no longer stand for the old
+  // project's milestone, so detach it. It does NOT auto-claim a milestone on the
+  // new project — relink by hand in the cell editor if it should carry one.
   async function reattachMilestone(segmentId: string, oldProjectId: string, newProjectId: string) {
     if (oldProjectId === newProjectId) return
 
-    // Detach from old project milestone
     const oldMilestone = milestones.find((m) => m.project_id === oldProjectId && m.segment_id === segmentId)
     if (oldMilestone) {
       await supabase.from("milestones").update({ segment_id: null }).eq("id", oldMilestone.id)
-    }
-
-    // Find first unallocated milestone on new project
-    const unallocated = milestones
-      .filter((m) => m.project_id === newProjectId && !m.segment_id && !m.due_date_override)
-      .sort((a, b) => a.sort_order - b.sort_order)[0]
-    if (unallocated) {
-      await supabase.from("milestones").update({ segment_id: segmentId }).eq("id", unallocated.id)
-    }
-  }
-
-  // When a new segment is added to a project, attach the first unallocated milestone
-  async function attachMilestoneToNewSegment(segmentId: string, projectId: string) {
-    const unallocated = milestones
-      .filter((m) => m.project_id === projectId && !m.segment_id && !m.due_date_override)
-      .sort((a, b) => a.sort_order - b.sort_order)[0]
-    if (unallocated) {
-      await supabase.from("milestones").update({ segment_id: segmentId }).eq("id", unallocated.id)
+      showToast(`"${oldMilestone.name ?? "Milestone"}" unlinked — segment moved project`)
     }
   }
 
@@ -5139,10 +5129,12 @@ Payment terms:
                                 const rowProjectIds = new Set(row.segments.map(s => s.project_id))
                                 return milestones
                                   .filter(m => {
-                                    // Show if directly linked to one of this crew's segments
-                                    if (m.segment_id && rowSegmentIds.has(m.segment_id)) return true
+                                    // Show if this crew works the segment that anchors the milestone
+                                    // (the last-finishing segment tagged with it, or its legacy link)
+                                    const anchor = getMilestoneAnchor(m)
+                                    if (anchor && rowSegmentIds.has(anchor.id)) return true
                                     // Show milestones with due_date_override linked to a project this crew is working
-                                    if (!m.segment_id && m.due_date_override && rowProjectIds.has(m.project_id)) return true
+                                    if (!anchor && m.due_date_override && rowProjectIds.has(m.project_id)) return true
                                     return false
                                   })
                                   .sort((a, b) => a.sort_order - b.sort_order)
@@ -5160,11 +5152,14 @@ Payment terms:
                           for (const m of projectMilestones) {
                             const dateKey = getMilestoneDate(m)
                             if (!dateKey) continue
-                            // Position by the linked segment's lane in BOTH views.
-                            // If no segment_id (date-override milestone), laneIndex stays null → renders at row bottom.
+                            // Position by the ANCHOR segment's lane in BOTH views — that is the
+                            // last-finishing segment tagged with this stage, so on a stop-start job
+                            // the diamond sits on the visit that actually completes the work.
+                            // If there is no anchor (date-override only), laneIndex stays null → row bottom.
                             let laneIndex: number | null = null
-                            if (m.segment_id) {
-                              const li = segmentLane.get(m.segment_id)
+                            const anchorSeg = getMilestoneAnchor(m)
+                            if (anchorSeg) {
+                              const li = segmentLane.get(anchorSeg.id)
                               if (li !== undefined) laneIndex = li
                             }
                             const key: GroupKey = `${dateKey}::${laneIndex ?? ""}`
@@ -5455,7 +5450,7 @@ Payment terms:
                     const moneyIn = milestones
                       .filter(m => {
                         if (!m.amount) return false
-                        const due = m.due_date_override ?? segments.find(s => s.id === m.segment_id)?.end_date
+                        const due = resolveMilestoneDate(m, segments)
                         return due && due >= wsKey && due <= weKey
                       })
                       .reduce((s, m) => s + (m.amount ?? 0), 0)
@@ -5919,105 +5914,137 @@ Payment terms:
                     )}
                   </div>
 
-                  {cellSegmentForm.segmentId && (() => {
-                    const linkedMilestone = milestones.find((m) => m.segment_id === cellSegmentForm.segmentId)
-                    const unlinkedMilestones = milestones.filter(
-                      (m) => m.project_id === cellEditor.projectId && !m.segment_id && !m.due_date_override
-                    )
-                    const segmentProjectId = segments.find((s) => s.id === cellSegmentForm.segmentId)?.project_id ?? cellEditor.projectId
+                  {cellEditor.projectId && (() => {
+                    const projectMilestones = milestones
+                      .filter((m) => m.project_id === cellEditor.projectId)
+                      .sort((a, b) => a.sort_order - b.sort_order)
+
+                    const selectedId = cellSegmentForm.milestone_id
+                    const selected = projectMilestones.find((m) => m.id === selectedId) ?? null
+
+                    // Every visit already tagged with this stage. If the picker was just
+                    // changed but not saved yet, fold this segment in so the list is honest.
+                    const saved = selectedId ? segments.filter((s) => s.milestone_id === selectedId) : []
+                    const pendingSelf =
+                      selectedId && cellSegmentForm.segmentId && !saved.some((s) => s.id === cellSegmentForm.segmentId)
+                        ? segments.find((s) => s.id === cellSegmentForm.segmentId) ?? null
+                        : null
+                    const siblings = [...saved, ...(pendingSelf ? [pendingSelf] : [])]
+                      .sort((a, b) => compareDateStrings(a.start_date, b.start_date))
+                    const anchorId = siblings.length
+                      ? siblings.reduce((latest, s) => (compareDateStrings(s.end_date, latest.end_date) > 0 ? s : latest)).id
+                      : null
+
+                    // Pre-stage-tagging data: a milestone pinned one-to-one to this segment.
+                    const legacy = cellSegmentForm.segmentId
+                      ? milestones.find((m) => m.segment_id === cellSegmentForm.segmentId) ?? null
+                      : null
 
                     return (
                       <div style={{ borderTop: "1px solid #2e3650", paddingTop: 12, marginTop: 4 }}>
-                        <FieldLabel>Milestone</FieldLabel>
-                        {linkedMilestone ? (
-                          <div style={{ display: "grid", gap: 8 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, background: "#1a1030", border: "1px solid #4c1d95", borderRadius: 8, padding: "8px 12px" }}>
-                                <div style={{ width: 14, height: 14, background: "#a78bfa", border: "2px solid #7c3aed", transform: "rotate(45deg)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                  <span style={{ transform: "rotate(-45deg)", fontSize: 8, fontWeight: 800, color: "#3b0764" }}>
-                                    {milestones.filter((m) => m.project_id === cellEditor.projectId).sort((a,b) => a.sort_order - b.sort_order).findIndex((m) => m.id === linkedMilestone.id) + 1}
+                        <FieldLabel>Stage this work counts toward</FieldLabel>
+                        <select
+                          value={selectedId}
+                          onChange={(e) => setCellSegmentForm((prev) => ({ ...prev, milestone_id: e.target.value }))}
+                          style={fieldStyle}
+                        >
+                          <option value="">— not tied to a stage —</option>
+                          {projectMilestones.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name ?? "Unnamed milestone"}{m.amount ? ` — $${formatMoney(m.amount)}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <div style={{ fontSize: 11, color: "#8899bb", marginTop: 6, lineHeight: 1.5 }}>
+                          Several visits can share one stage. The claim date is the end of the last one, so it
+                          moves out on its own each time the crew comes back.
+                        </div>
+
+                        {selected && siblings.length > 0 && (
+                          <div style={{ marginTop: 10, background: "#151a28", border: "1px solid #252f45", borderRadius: 8, padding: "10px 12px" }}>
+                            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.4px", color: "#8899bb", fontWeight: 700, marginBottom: 6 }}>
+                              Visits tagged “{selected.name ?? "Milestone"}”
+                            </div>
+                            {siblings.map((s) => {
+                              const isAnchor = s.id === anchorId
+                              const isThis = s.id === cellSegmentForm.segmentId
+                              return (
+                                <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, padding: "3px 0", color: isAnchor ? "#4ade80" : "#c8d4f0" }}>
+                                  <span>
+                                    {crews.find((c) => c.id === s.crew_id)?.name ?? "Crew"}
+                                    {isThis ? " (this one)" : ""}
+                                  </span>
+                                  <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                                    {formatDateLabel(parseDate(s.start_date))} – {formatDateLabel(parseDate(s.end_date))}
+                                    {isAnchor ? "  ← claim date" : ""}
                                   </span>
                                 </div>
-                                <span style={{ fontSize: 13, color: "#c4b5fd", fontWeight: 600 }}>
-                                  {linkedMilestone.name ?? "Milestone"}
-                                  {linkedMilestone.amount ? ` — $${formatMoney(linkedMilestone.amount)}` : ""}
-                                </span>
-                              </div>
-                              <button
-                                type="button"
+                              )
+                            })}
+                            {pendingSelf && <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 6 }}>Save the segment to apply this tag.</div>}
+                          </div>
+                        )}
+
+                        {legacy && legacy.id !== selectedId && (
+                          <div style={{ marginTop: 10, background: "#2a200a", border: "1px solid #854d0e", borderRadius: 8, padding: "10px 12px" }}>
+                            <div style={{ fontSize: 12, color: "#fbbf24", fontWeight: 700, marginBottom: 6 }}>
+                              Old-style link: “{legacy.name ?? "Milestone"}”
+                            </div>
+                            <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8, lineHeight: 1.5 }}>
+                              This segment is pinned to that milestone the old way — one segment, one milestone.
+                              Convert it to a stage tag so later visits push the claim date out instead of being ignored.
+                            </div>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button type="button"
                                 onClick={async () => {
-                                  await supabase.from("milestones").update({ segment_id: null }).eq("id", linkedMilestone.id)
+                                  await supabase.from("milestones").update({ segment_id: null }).eq("id", legacy.id)
+                                  await supabase.from("segments").update({ milestone_id: legacy.id }).eq("id", cellSegmentForm.segmentId)
+                                  setCellSegmentForm((prev) => ({ ...prev, milestone_id: legacy.id }))
                                   await loadData()
+                                  showToast("Converted to a stage tag")
                                 }}
-                                style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 10px" }}
-                              >
+                                style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 12px", color: "#fbbf24", borderColor: "#854d0e" }}>
+                                Convert to stage tag
+                              </button>
+                              <button type="button"
+                                onClick={async () => {
+                                  await supabase.from("milestones").update({ segment_id: null }).eq("id", legacy.id)
+                                  await loadData()
+                                  showToast("Milestone unlinked")
+                                }}
+                                style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 12px" }}>
                                 Unlink
                               </button>
                             </div>
-                            <div style={{ display: "flex", gap: 8 }}>
-                              <input
-                                defaultValue={linkedMilestone.name ?? ""}
-                                key={linkedMilestone.id}
-                                placeholder="Rename milestone..."
-                                style={{ ...fieldStyle, fontSize: 12, padding: "6px 10px" }}
-                                onBlur={async (e) => {
-                                  const newName = e.target.value.trim()
-                                  if (!newName || newName === linkedMilestone.name) return
-                                  await supabase.from("milestones").update({ name: newName }).eq("id", linkedMilestone.id)
-                                  await loadData()
-                                  showToast("Milestone renamed")
-                                }}
-                                onKeyDown={async (e) => {
-                                  if (e.key !== "Enter") return
-                                  const newName = (e.target as HTMLInputElement).value.trim()
-                                  if (!newName || newName === linkedMilestone.name) return
-                                  await supabase.from("milestones").update({ name: newName }).eq("id", linkedMilestone.id)
-                                  await loadData()
-                                  showToast("Milestone renamed")
-                                }}
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            {unlinkedMilestones.length > 0 ? (
-                              <select
-                                defaultValue=""
-                                onChange={async (e) => {
-                                  if (!e.target.value) return
-                                  await supabase.from("milestones").update({ segment_id: cellSegmentForm.segmentId }).eq("id", e.target.value)
-                                  await loadData()
-                                }}
-                                style={{ ...fieldStyle, flex: 1 }}
-                              >
-                                <option value="">Link existing milestone...</option>
-                                {unlinkedMilestones.map((m) => (
-                                  <option key={m.id} value={m.id}>{m.name ?? "Unnamed milestone"}</option>
-                                ))}
-                              </select>
-                            ) : null}
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const existing = milestones.filter((m) => m.project_id === segmentProjectId)
-                                await supabase.from("milestones").insert({
-                                  project_id: segmentProjectId,
-                                  name: "Payment milestone",
-                                  segment_id: cellSegmentForm.segmentId,
-                                  amount: null,
-                                  percent: null,
-                                  due_date_override: null,
-                                  sort_order: existing.length,
-                                })
-                                await loadData()
-                                showToast("Milestone added")
-                              }}
-                              style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 12px", color: "#a78bfa", borderColor: "#4c1d95" }}
-                            >
-                              + New milestone
-                            </button>
                           </div>
                         )}
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const existing = milestones.filter((m) => m.project_id === cellEditor.projectId)
+                            const { data: created } = await supabase.from("milestones").insert({
+                              project_id: cellEditor.projectId,
+                              name: "New stage",
+                              segment_id: null,
+                              amount: null,
+                              percent: null,
+                              due_date_override: null,
+                              sort_order: existing.length,
+                            }).select().single()
+                            if (created) {
+                              if (cellSegmentForm.segmentId) {
+                                await supabase.from("segments").update({ milestone_id: created.id }).eq("id", cellSegmentForm.segmentId)
+                              }
+                              setCellSegmentForm((prev) => ({ ...prev, milestone_id: created.id as string }))
+                            }
+                            await loadData()
+                            showToast("Stage added")
+                          }}
+                          style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 12px", color: "#a78bfa", borderColor: "#4c1d95", marginTop: 10 }}
+                        >
+                          + New stage
+                        </button>
                       </div>
                     )
                   })()}
@@ -6446,14 +6473,6 @@ Payment terms:
                             ${formatMoney(contractAllocated)} / ${formatMoney(contract.value)} allocated
                           </span>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => autoLinkMilestones(milestoneModal.projectId, contract.id)}
-                          style={{ ...secondaryButtonStyle, fontSize: 11, padding: "4px 10px", color: "#4ade80", borderColor: "#166534" }}
-                          title="Automatically link unlinked milestones to segments in chronological order"
-                        >
-                          Auto-link
-                        </button>
                         <button type="button" onClick={() => addMilestone(milestoneModal.projectId, contract.id)} style={{ ...secondaryButtonStyle, fontSize: 11, padding: "4px 10px" }}>+ Add</button>
                       </div>
                     </div>
@@ -8577,7 +8596,7 @@ Payment terms:
 
         // --- Build period buckets ---
         const allDates = [
-          ...milestones.map(m => m.due_date_override ?? segments.find(s => s.id === m.segment_id)?.end_date).filter((d): d is string => !!d),
+          ...milestones.map(m => resolveMilestoneDate(m, segments)).filter((d): d is string => !!d),
           ...segments.map(s => s.end_date),
           today,
         ].sort()
@@ -8627,7 +8646,7 @@ Payment terms:
 
         for (const m of milestones) {
           if (!m.amount) continue
-          const dueDate = m.due_date_override ?? segments.find(s => s.id === m.segment_id)?.end_date
+          const dueDate = resolveMilestoneDate(m, segments)
           if (!dueDate) continue
           const key = getPeriodKey(dueDate, cashflowView)
           moneyIn[key] = (moneyIn[key] ?? 0) + m.amount
@@ -9907,6 +9926,7 @@ Payment terms:
           projects={projects}
           contracts={contracts}
           milestones={milestones}
+          segments={segments}
           profitabilityData={profitabilityData}
           extras={[]}
           extraItems={[]}
