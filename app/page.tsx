@@ -4984,7 +4984,17 @@ Payment terms:
                             const isBeingResized = draggingToken === `resize:${s.id}`
                             // Flag past segments with no invoiced/paid milestone linked — for invoicing chase-up.
                             // A pending milestone doesn't count: it's drafted but not yet billed.
-                            const hasMilestoneLinked = milestones.some(m => m.segment_id === s.id && (m.status === "invoiced" || m.status === "paid"))
+                            //
+                            // Resolve the link the same way the diamonds do, or the two disagree:
+                            //   • new model — the segment is tagged with the stage it counts toward
+                            //     (segments.milestone_id). Many segments share one stage, so ALL of
+                            //     them stop chasing once that stage is billed.
+                            //   • legacy    — the milestone points back at a single segment.
+                            // Either link counts as billed, so nothing already invoiced keeps nagging.
+                            const hasMilestoneLinked = milestones.some(m =>
+                              (m.status === "invoiced" || m.status === "paid") &&
+                              ((s.milestone_id != null && m.id === s.milestone_id) || m.segment_id === s.id)
+                            )
                             const isPastUnbilled = todayKey != null && s.end_date < todayKey && !hasMilestoneLinked
                             const top = ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP)
 
