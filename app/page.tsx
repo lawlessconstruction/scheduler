@@ -3219,7 +3219,9 @@ export default function Home() {
     await supabase.from("milestones").insert({
       project_id: projectId,
       contract_id: contractId ?? null,
-      name: "Payment milestone",
+      // Was the fixed string "Payment milestone", which is why 85 of 151 stages ended up
+      // sharing one name and became impossible to tell apart in the picker.
+      name: `Stage ${existing.length + 1}`,
       amount: null,
       percent: null,
       segment_id: null,
@@ -5950,6 +5952,31 @@ Payment terms:
                       ? milestones.find((m) => m.segment_id === cellSegmentForm.segmentId) ?? null
                       : null
 
+                    // A week worked without a schedule comes back from the unplanned-entries
+                    // review as one segment per day. They are all one invoice, so tagging them
+                    // one at a time is pure clicking. Find this segment's week-mates on the
+                    // same job that aren't already on the chosen stage.
+                    const weekMates = (() => {
+                      if (!selectedId || !cellSegmentForm.segmentId) return []
+                      const self = segments.find((s) => s.id === cellSegmentForm.segmentId)
+                      if (!self) return []
+                      const start = parseDate(self.start_date)
+                      const monday = new Date(start)
+                      monday.setDate(start.getDate() - ((start.getDay() + 6) % 7))
+                      const sunday = new Date(monday)
+                      sunday.setDate(monday.getDate() + 6)
+                      const from = formatDateKey(monday)
+                      const to = formatDateKey(sunday)
+                      return segments
+                        .filter((s) =>
+                          s.project_id === self.project_id &&
+                          s.id !== self.id &&
+                          s.milestone_id !== selectedId &&
+                          s.start_date >= from && s.start_date <= to
+                        )
+                        .sort((a, b) => compareDateStrings(a.start_date, b.start_date))
+                    })()
+
                     return (
                       <div style={{ borderTop: "1px solid #2e3650", paddingTop: 12, marginTop: 4 }}>
                         <FieldLabel>Stage this work counts toward</FieldLabel>
@@ -5959,15 +5986,35 @@ Payment terms:
                           style={fieldStyle}
                         >
                           <option value="">— not tied to a stage —</option>
-                          {projectMilestones.map((m) => (
-                            <option key={m.id} value={m.id}>
-                              {m.name ?? "Unnamed milestone"}{m.amount ? ` — $${formatMoney(m.amount)}` : ""}
-                            </option>
-                          ))}
+                          {projectMilestones.map((m, i) => {
+                            // Several stages on one job can carry the same name ("Payment
+                            // milestone", "Hourly"). They are separate rows, matched by id and
+                            // never by name — but on screen they were indistinguishable, which
+                            // is exactly how you tag work to the wrong one. Number them and
+                            // show the claim date, the money and whether it is already billed.
+                            const name = (m.name ?? "").trim() || "Unnamed milestone"
+                            const money =
+                              m.amount != null ? ` $${formatMoney(m.amount)}`
+                              : m.percent != null ? ` ${m.percent}%`
+                              : " no amount"
+                            const claimDate = resolveMilestoneDate(m, segments)
+                            const when = claimDate ? formatDateLabel(parseDate(claimDate)) : "no date"
+                            const status = m.status ?? "pending"
+                            const done = status === "invoiced" || status === "paid"
+                            const tagged = segments.filter((s) => s.milestone_id === m.id).length
+                            const visits = tagged > 0 ? `, ${tagged} visit${tagged === 1 ? "" : "s"}` : ""
+                            return (
+                              <option key={m.id} value={m.id}>
+                                {`${done ? "✔ " : ""}${i + 1}. ${name} —${money} — ${when} · ${status}${visits}`}
+                              </option>
+                            )
+                          })}
                         </select>
                         <div style={{ fontSize: 11, color: "#8899bb", marginTop: 6, lineHeight: 1.5 }}>
                           Several visits can share one stage. The claim date is the end of the last one, so it
-                          moves out on its own each time the crew comes back.
+                          moves out on its own each time the crew comes back. A ✔ means that stage is already
+                          invoiced or paid — stages are matched by their own record, never by name, so two
+                          called the same thing stay completely separate.
                         </div>
 
                         {selected && siblings.length > 0 && (
@@ -5992,6 +6039,29 @@ Payment terms:
                               )
                             })}
                             {pendingSelf && <div style={{ fontSize: 11, color: "#fbbf24", marginTop: 6 }}>Save the segment to apply this tag.</div>}
+                          </div>
+                        )}
+
+                        {selected && weekMates.length > 0 && (
+                          <div style={{ marginTop: 10 }}>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                // Include this segment, so the button works even when the stage
+                                // was just picked and not saved yet.
+                                const ids = [cellSegmentForm.segmentId, ...weekMates.map((s) => s.id)]
+                                await supabase.from("segments").update({ milestone_id: selectedId }).in("id", ids)
+                                await loadData()
+                                showToast(`Tagged ${ids.length} visits to “${selected.name ?? "stage"}”`)
+                              }}
+                              style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 12px", color: "#4ade80", borderColor: "#14532d" }}
+                            >
+                              Tag the other {weekMates.length} visit{weekMates.length === 1 ? "" : "s"} on this job that week
+                            </button>
+                            <div style={{ fontSize: 11, color: "#8899bb", marginTop: 6, lineHeight: 1.5 }}>
+                              {weekMates.map((s) => formatDateLabel(parseDate(s.start_date))).join(", ")} — all counted toward
+                              this one stage, so one invoice covers the week and none of them keep flagging.
+                            </div>
                           </div>
                         )}
 
@@ -6035,7 +6105,9 @@ Payment terms:
                             const existing = milestones.filter((m) => m.project_id === cellEditor.projectId)
                             const { data: created } = await supabase.from("milestones").insert({
                               project_id: cellEditor.projectId,
-                              name: "New stage",
+                              // Never a fixed default — identical names are how you pick the
+                              // wrong stage. Number it so every stage on a job is distinct.
+                              name: `Stage ${existing.length + 1}`,
                               segment_id: null,
                               amount: null,
                               percent: null,
