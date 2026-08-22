@@ -8388,9 +8388,21 @@ Payment terms:
                   <div style={{ fontSize: 22, fontWeight: 800 }}>Project Profitability</div>
                   <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 4 }}>
                     {selectedProfitProjects.size} of {profitabilityData.length} projects included in summary
+                    {selectedProfitProjects.size === 0 && (
+                      <span style={{ color: "#fbbf24" }}> — nothing ticked, so every total below reads $0</span>
+                    )}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" onClick={async () => {
+                    // The star is the "current work" marker, so this is the one-click way back
+                    // to a meaningful summary: count the starred jobs, park everything else.
+                    const starred = new Set(projects.filter((p) => p.pinned).map((p) => p.id))
+                    setSelectedProfitProjects(new Set(profitabilityData.filter((r) => starred.has(r.project_id)).map((r) => r.project_id)))
+                    await Promise.all(profitabilityData.map((r) =>
+                      supabase.from("projects").update({ profitability_included: starred.has(r.project_id) }).eq("id", r.project_id)
+                    ))
+                  }} style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 10px", color: "#f59e0b", borderColor: "#854d0e" }}>★ Starred only</button>
                   <button type="button" onClick={async () => {
                     setSelectedProfitProjects(new Set(profitabilityData.map((r) => r.project_id)))
                     await Promise.all(profitabilityData.map((r) => supabase.from("projects").update({ profitability_included: true }).eq("id", r.project_id)))
@@ -8443,10 +8455,21 @@ Payment terms:
                   </tr>
                 </thead>
                 <tbody>
-                {profitabilityData
-                    .sort((a, b) => (b.total_contract_value + (b.total_extras_value ?? 0)) - (a.total_contract_value + (a.total_extras_value ?? 0)))
-                    .map((row) => {
+                {/* Copy before sorting — .sort() mutates in place, and this array is state. */}
+                {[...profitabilityData]
+                    .sort((a, b) => {
+                      // Starred first: the star is Anthony's own marker for live work.
+                      const pa = projects.find((p) => p.id === a.project_id)?.pinned ? 1 : 0
+                      const pb = projects.find((p) => p.id === b.project_id)?.pinned ? 1 : 0
+                      if (pa !== pb) return pb - pa
+                      return (b.total_contract_value + (b.total_extras_value ?? 0)) - (a.total_contract_value + (a.total_extras_value ?? 0))
+                    })
+                    .map((row, rowIndex, sortedRows) => {
                       const included = selectedProfitProjects.has(row.project_id)
+                      const isPinned = !!projects.find((p) => p.id === row.project_id)?.pinned
+                      const prevPinned = rowIndex > 0 && !!projects.find((p) => p.id === sortedRows[rowIndex - 1].project_id)?.pinned
+                      // Rule off where the starred block ends so the split is visible.
+                      const startsUnstarred = !isPinned && prevPinned
                       const projectRevenue = row.total_contract_value + (row.total_extras_value ?? 0)
                       const grossProfit = projectRevenue - row.total_labour_true_cost - (row.total_materials_cost ?? 0)
                       const totalAllCostsRow = row.total_labour_true_cost + (row.total_materials_cost ?? 0)
@@ -8459,7 +8482,11 @@ Payment terms:
                       const marginColor = margin == null ? "#71717a" : margin >= 30 ? "#4ade80" : margin >= 0 ? "#fbbf24" : "#f87171"
 
                       return (
-                        <tr key={row.project_id} style={{ borderBottom: "1px solid #1a1a1a", opacity: included ? 1 : 0.35 }}>
+                        <tr key={row.project_id} style={{
+                          borderBottom: "1px solid #1a1a1a",
+                          borderTop: startsUnstarred ? "2px solid #3f4a63" : undefined,
+                          opacity: included ? 1 : 0.35,
+                        }}>
                           <td style={{ padding: "10px 12px" }}>
                             <input
                               type="checkbox"
@@ -8476,7 +8503,27 @@ Payment terms:
                               style={{ width: 14, height: 14 }}
                             />
                           </td>
-                          <td style={{ padding: "10px 12px", fontWeight: 600 }}>{row.project_name}</td>
+                          <td style={{ padding: "10px 12px", fontWeight: 600 }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const next = !isPinned
+                                  setProjects((prev) => prev.map((p) => p.id === row.project_id ? { ...p, pinned: next } : p))
+                                  const { error } = await supabase.from("projects").update({ pinned: next }).eq("id", row.project_id)
+                                  if (error) {
+                                    setProjects((prev) => prev.map((p) => p.id === row.project_id ? { ...p, pinned: !next } : p))
+                                    showToast("Could not save the star")
+                                  }
+                                }}
+                                title={isPinned ? "Unstar — drops below the line" : "Star as current work — moves to the top"}
+                                style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 15, lineHeight: 1, color: isPinned ? "#f59e0b" : "#3f4a63" }}
+                              >
+                                {isPinned ? "★" : "☆"}
+                              </button>
+                              {row.project_name}
+                            </span>
+                          </td>
                           <td style={{ padding: "10px 12px", color: "#8899bb" }}>{row.client ?? "—"}</td>
                           <td style={{ padding: "10px 12px", textAlign: "right" }}>
                             {hasContract ? (
