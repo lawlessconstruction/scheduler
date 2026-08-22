@@ -8423,8 +8423,19 @@ Payment terms:
                   { label: "Extras revenue", value: `$${formatMoney(totalExtrasValue)}`, sub: totalExtrasValue > 0 ? `$${formatMoney(totalExtrasInvoiced)} invoiced` : "no extras yet", color: totalExtrasValue > 0 ? "#67e8f9" : "#6b7a9a" },
                   { label: "Labour cost (true)", value: `$${formatMoney(totalLabourCost)}`, sub: `${totalHours.toFixed(1)} hrs logged`, color: "#f87171" },
                   { label: "Materials & other", value: `$${formatMoney(totalMaterialsCost)}`, sub: "subcon · equip · prelims", color: "#fbbf24" },
-                  { label: "Gross profit", value: `$${formatMoney(totalRevenue - totalAllCosts)}`, sub: totalRevenue > 0 ? `${(((totalRevenue - totalAllCosts) / totalRevenue) * 100).toFixed(1)}% margin` : "—", color: totalRevenue > totalAllCosts ? "#4ade80" : "#f87171" },
-                  { label: "Costs % of revenue", value: totalRevenue > 0 ? `${((totalAllCosts / totalRevenue) * 100).toFixed(1)}%` : "—", sub: "labour + materials", color: totalRevenue > 0 && totalAllCosts / totalRevenue < 0.7 ? "#4ade80" : "#f87171" },
+                  { label: "Gross profit", value: `$${formatMoney(totalRevenue - totalAllCosts)}`, sub: totalRevenue > 0 ? `on $${formatMoney(totalRevenue)} revenue` : "—", color: totalRevenue > totalAllCosts ? "#4ade80" : "#f87171" },
+                  // Margin across the included jobs, as a headline number rather than grey
+                  // subtext. Same thresholds as the per-row Margin % column so the summary
+                  // and the table are read the same way.
+                  {
+                    label: "Gross margin",
+                    value: totalRevenue > 0 ? `${(((totalRevenue - totalAllCosts) / totalRevenue) * 100).toFixed(1)}%` : "—",
+                    sub: totalRevenue > 0 ? `costs are ${((totalAllCosts / totalRevenue) * 100).toFixed(1)}% of revenue` : "labour + materials",
+                    color: totalRevenue <= 0 ? "#71717a"
+                      : ((totalRevenue - totalAllCosts) / totalRevenue) * 100 >= 30 ? "#4ade80"
+                      : totalRevenue >= totalAllCosts ? "#fbbf24"
+                      : "#f87171",
+                  },
                 ].map((stat) => (
                   <div key={stat.label} style={{ background: "#141a28", border: "1px solid #252f45", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 6 }}>{stat.label}</div>
