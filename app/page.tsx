@@ -8444,8 +8444,10 @@ Payment terms:
                   <div style={{ fontSize: 22, fontWeight: 800 }}>Project Profitability</div>
                   <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 4 }}>
                     {selectedProfitProjects.size} of {profitabilityData.length} projects included in summary
-                    {selectedProfitProjects.size === 0 && (
+                    {selectedProfitProjects.size === 0 ? (
                       <span style={{ color: "#fbbf24" }}> — nothing ticked, so every total below reads $0</span>
+                    ) : (
+                      <span> — <span style={{ color: "#4ade80" }}>✓</span> marks a job you&rsquo;ve verified; it stays counted until you untick it</span>
                     )}
                   </div>
                 </div>
@@ -8521,10 +8523,17 @@ Payment terms:
                       <input
                         type="checkbox"
                         checked={allSelected}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedProfitProjects(new Set(profitabilityData.map((r) => r.project_id)))
-                          else setSelectedProfitProjects(new Set())
+                        onChange={async (e) => {
+                          // BUG WAS HERE: this only moved local state, so ticking the header box
+                          // looked like it worked and then reverted on reopen. Every other path
+                          // writes profitability_included; this one has to as well.
+                          const checked = e.target.checked
+                          setSelectedProfitProjects(checked ? new Set(profitabilityData.map((r) => r.project_id)) : new Set())
+                          await Promise.all(profitabilityData.map((r) =>
+                            supabase.from("projects").update({ profitability_included: checked }).eq("id", r.project_id)
+                          ))
                         }}
+                        title={allSelected ? "Uncount every project" : "Count every project in the totals"}
                         style={{ width: 14, height: 14 }}
                       />
                     </th>
@@ -8586,20 +8595,44 @@ Payment terms:
                           opacity: included ? 1 : 0.35,
                         }}>
                           <td style={{ padding: "10px 12px" }}>
-                            <input
-                              type="checkbox"
-                              checked={included}
-                              onChange={async (e) => {
-                                const checked = e.target.checked
+                            {/* A status, not a selection: this writes profitability_included and
+                                stays put across reloads, so it reads as a green tick rather than
+                                a checkbox you'd expect to lose. */}
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const next = !included
                                 setSelectedProfitProjects((prev) => {
-                                  const next = new Set(prev)
-                                  checked ? next.add(row.project_id) : next.delete(row.project_id)
-                                  return next
+                                  const updated = new Set(prev)
+                                  if (next) updated.add(row.project_id)
+                                  else updated.delete(row.project_id)
+                                  return updated
                                 })
-                                await supabase.from("projects").update({ profitability_included: checked }).eq("id", row.project_id)
+                                const { error } = await supabase.from("projects").update({ profitability_included: next }).eq("id", row.project_id)
+                                if (error) {
+                                  setSelectedProfitProjects((prev) => {
+                                    const revert = new Set(prev)
+                                    if (next) revert.delete(row.project_id)
+                                    else revert.add(row.project_id)
+                                    return revert
+                                  })
+                                  showToast("Could not save that — try again")
+                                }
                               }}
-                              style={{ width: 14, height: 14 }}
-                            />
+                              title={included
+                                ? "Verified — counted in the totals above. Click to stop counting it."
+                                : "Not counted. Click once you're happy this job's figures are right."}
+                              style={{
+                                width: 20, height: 20, borderRadius: 6, cursor: "pointer",
+                                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 12, fontWeight: 800, lineHeight: 1, padding: 0,
+                                background: included ? "#14532d" : "transparent",
+                                border: `1px solid ${included ? "#4ade80" : "#3f4a63"}`,
+                                color: included ? "#4ade80" : "#3f4a63",
+                              }}
+                            >
+                              {included ? "✓" : ""}
+                            </button>
                           </td>
                           <td style={{ padding: "10px 12px", fontWeight: 600 }}>
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
