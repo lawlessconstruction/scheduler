@@ -2480,6 +2480,11 @@ export default function Home() {
   const [showProfitabilityModal, setShowProfitabilityModal] = useState(false)
   const [profitabilityData, setProfitabilityData] = useState<ProfitabilityRow[]>([])
   const [selectedProfitProjects, setSelectedProfitProjects] = useState<Set<string>>(new Set())
+  // Column sort for the profitability table. null = the default view (starred first, then
+  // biggest job). Clicking a heading ranks purely by that column instead, so "who are my
+  // best performers" is one click rather than reading down a list.
+  const [profitSort, setProfitSort] = useState<{ key: string; dir: "asc" | "desc" } | null>(null)
+  const [profitIncludedOnly, setProfitIncludedOnly] = useState(false)
   const [timesheetWeekStart, setTimesheetWeekStart] = useState<string>(() => {
     const d = new Date()
     d.setDate(d.getDate() - d.getDay() + 1)
@@ -8374,6 +8379,57 @@ Payment terms:
         const allSelected = profitabilityData.every((r) => selectedProfitProjects.has(r.project_id))
         const noneSelected = selectedProfitProjects.size === 0
 
+        // One place that derives what the table shows, so the sort and the cells can never
+        // disagree about what "margin" or "cost/hr" means.
+        const metricsFor = (r: ProfitabilityRow) => {
+          const revenue = r.total_contract_value + (r.total_extras_value ?? 0)
+          const costs = r.total_labour_true_cost + (r.total_materials_cost ?? 0)
+          const hrs = r.total_ordinary_hours + r.total_ot_hours
+          return {
+            grossProfit: revenue - costs,
+            margin: revenue > 0 ? ((revenue - costs) / revenue) * 100 : null,
+            hours: hrs,
+            costPerHr: hrs > 0 ? r.total_labour_true_cost / hrs : null,
+          }
+        }
+
+        const PROFIT_COLUMNS: { label: string; value: (r: ProfitabilityRow) => number | string | null }[] = [
+          { label: "Project", value: (r) => r.project_name.toLowerCase() },
+          { label: "Client", value: (r) => (r.client ?? "").toLowerCase() },
+          { label: "Contract value", value: (r) => r.total_contract_value },
+          { label: "Extras", value: (r) => r.total_extras_value ?? 0 },
+          { label: "Labour cost", value: (r) => r.total_labour_true_cost },
+          { label: "Materials", value: (r) => r.total_materials_cost ?? 0 },
+          { label: "Gross profit", value: (r) => metricsFor(r).grossProfit },
+          { label: "Margin %", value: (r) => metricsFor(r).margin },
+          { label: "Hours", value: (r) => metricsFor(r).hours },
+          { label: "Cost/hr", value: (r) => metricsFor(r).costPerHr },
+        ]
+
+        const sortedRows = [...profitabilityData]
+          .filter((r) => !profitIncludedOnly || selectedProfitProjects.has(r.project_id))
+          .sort((a, b) => {
+            if (profitSort) {
+              const col = PROFIT_COLUMNS.find((c) => c.label === profitSort.key)
+              const va = col?.value(a) ?? null
+              const vb = col?.value(b) ?? null
+              // A job with no contract or no timesheets has missing data, not a bad score —
+              // park those at the bottom whichever way the column is pointing.
+              if (va == null && vb == null) return 0
+              if (va == null) return 1
+              if (vb == null) return -1
+              const cmp = typeof va === "string" && typeof vb === "string"
+                ? va.localeCompare(vb)
+                : (va as number) - (vb as number)
+              return profitSort.dir === "asc" ? cmp : -cmp
+            }
+            // Default: starred first — the star is Anthony's marker for live work.
+            const pa = projects.find((p) => p.id === a.project_id)?.pinned ? 1 : 0
+            const pb = projects.find((p) => p.id === b.project_id)?.pinned ? 1 : 0
+            if (pa !== pb) return pb - pa
+            return (b.total_contract_value + (b.total_extras_value ?? 0)) - (a.total_contract_value + (a.total_extras_value ?? 0))
+          })
+
         return (
           <div
             onClick={() => setShowProfitabilityModal(false)}
@@ -8403,6 +8459,18 @@ Payment terms:
                       supabase.from("projects").update({ profitability_included: starred.has(r.project_id) }).eq("id", r.project_id)
                     ))
                   }} style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 10px", color: "#f59e0b", borderColor: "#854d0e" }}>★ Starred only</button>
+                  <button
+                    type="button"
+                    onClick={() => setProfitIncludedOnly((v) => !v)}
+                    title="Hide the projects that aren't counted in the summary"
+                    style={{
+                      ...secondaryButtonStyle, fontSize: 11, padding: "6px 10px",
+                      color: profitIncludedOnly ? "#4ade80" : undefined,
+                      borderColor: profitIncludedOnly ? "#14532d" : undefined,
+                    }}
+                  >
+                    {profitIncludedOnly ? "✓ Included only" : "Included only"}
+                  </button>
                   <button type="button" onClick={async () => {
                     setSelectedProfitProjects(new Set(profitabilityData.map((r) => r.project_id)))
                     await Promise.all(profitabilityData.map((r) => supabase.from("projects").update({ profitability_included: true }).eq("id", r.project_id)))
@@ -8460,27 +8528,46 @@ Payment terms:
                         style={{ width: 14, height: 14 }}
                       />
                     </th>
-                    {["Project", "Client", "Contract value", "Extras", "Labour cost", "Materials", "Gross profit", "Margin %", "Hours", "Cost/hr"].map((h) => (
-                      <th key={h} style={{ textAlign: h === "Project" || h === "Client" ? "left" : "right", padding: "8px 12px", color: "#8899bb", fontWeight: 600, fontSize: 11 }}>{h}</th>
-                    ))}
+                    {PROFIT_COLUMNS.map((col) => {
+                      const h = col.label
+                      const isText = h === "Project" || h === "Client"
+                      const active = profitSort?.key === h
+                      return (
+                        <th key={h} style={{ textAlign: isText ? "left" : "right", padding: "8px 12px", color: active ? "#c8d4f0" : "#8899bb", fontWeight: 600, fontSize: 11 }}>
+                          <button
+                            type="button"
+                            onClick={() => setProfitSort((prev) =>
+                              // Cycle: unsorted → best first → worst first → back to default.
+                              prev?.key !== h ? { key: h, dir: isText ? "asc" : "desc" }
+                              : prev.dir === "desc" ? { key: h, dir: "asc" }
+                              : null
+                            )}
+                            title={active ? "Click to reverse, again to clear" : `Sort by ${h}`}
+                            style={{
+                              background: "none", border: "none", padding: 0, cursor: "pointer",
+                              font: "inherit", color: "inherit", display: "inline-flex",
+                              alignItems: "center", gap: 4,
+                            }}
+                          >
+                            {h}
+                            <span style={{ opacity: active ? 1 : 0.3, fontSize: 9 }}>
+                              {active ? (profitSort?.dir === "desc" ? "▼" : "▲") : "▾"}
+                            </span>
+                          </button>
+                        </th>
+                      )
+                    })}
                   </tr>
                 </thead>
                 <tbody>
-                {/* Copy before sorting — .sort() mutates in place, and this array is state. */}
-                {[...profitabilityData]
-                    .sort((a, b) => {
-                      // Starred first: the star is Anthony's own marker for live work.
-                      const pa = projects.find((p) => p.id === a.project_id)?.pinned ? 1 : 0
-                      const pb = projects.find((p) => p.id === b.project_id)?.pinned ? 1 : 0
-                      if (pa !== pb) return pb - pa
-                      return (b.total_contract_value + (b.total_extras_value ?? 0)) - (a.total_contract_value + (a.total_extras_value ?? 0))
-                    })
-                    .map((row, rowIndex, sortedRows) => {
+                {sortedRows
+                    .map((row, rowIndex, allRows) => {
                       const included = selectedProfitProjects.has(row.project_id)
                       const isPinned = !!projects.find((p) => p.id === row.project_id)?.pinned
-                      const prevPinned = rowIndex > 0 && !!projects.find((p) => p.id === sortedRows[rowIndex - 1].project_id)?.pinned
-                      // Rule off where the starred block ends so the split is visible.
-                      const startsUnstarred = !isPinned && prevPinned
+                      const prevPinned = rowIndex > 0 && !!projects.find((p) => p.id === allRows[rowIndex - 1].project_id)?.pinned
+                      // Rule off where the starred block ends. Only meaningful in the default
+                      // view — once a column sort is on, stars are mixed through the ranking.
+                      const startsUnstarred = !profitSort && !isPinned && prevPinned
                       const projectRevenue = row.total_contract_value + (row.total_extras_value ?? 0)
                       const grossProfit = projectRevenue - row.total_labour_true_cost - (row.total_materials_cost ?? 0)
                       const totalAllCostsRow = row.total_labour_true_cost + (row.total_materials_cost ?? 0)
