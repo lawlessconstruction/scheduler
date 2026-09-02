@@ -262,6 +262,8 @@ type TimesheetEntry = {
   billable_hourly: boolean | null
   billed_via_extra_id: string | null
   unplanned_ignored: boolean | null
+  /** Why the worker was away. Set = this row is leave, not work, and carries no project. */
+  absence_type: string | null
 }
 
 type TopModalType = "addProject" | "addSegment" | null
@@ -409,6 +411,31 @@ function formatMoney(value: number) {
 
 function formatMoneyK(value: number) {
   return (value / 1000).toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "k"
+}
+
+// ── Absence ───────────────────────────────────────────────────────────────────
+// Why someone was away, recorded on the timesheet row itself. The hours are still
+// entered so payroll sees them, but the row carries NO project — leave must never
+// land in a job's labour cost, because every worker's oncost rates already provision
+// for it (annual = base × 4/52, personal = base × 10/(52×5)). Charging a job for the
+// leave day as well would bill that provision twice.
+//
+// It also silences the missing-entry warning: a fortnight of annual leave used to
+// generate ten "missing entry" flags that nobody could ever clear.
+const ABSENCE_TYPES = [
+  { key: "annual", label: "Annual leave", color: "#1a73e8" },
+  { key: "personal", label: "Personal / sick", color: "#dc2626" },
+  { key: "public", label: "Public holiday", color: "#16a34a" },
+  { key: "rdo", label: "RDO", color: "#7c3aed" },
+  { key: "unpaid", label: "Unpaid", color: "#5f6368" },
+] as const
+
+function absenceLabel(key: string | null | undefined) {
+  return ABSENCE_TYPES.find((a) => a.key === key)?.label ?? "Away"
+}
+
+function absenceColor(key: string | null | undefined) {
+  return ABSENCE_TYPES.find((a) => a.key === key)?.color ?? "#5f6368"
 }
 
 function parseDate(dateStr: string) {
@@ -7671,14 +7698,22 @@ Payment terms:
                 }
 
                 // Total hours + cost this week
-                const weekOrdHours = entriesInWeek.reduce((s, e) => s + (e.ordinary_hours ?? 0), 0)
-                const weekOtHours = entriesInWeek.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
-                const weekCost = entriesInWeek.reduce((s, e) => {
+                // Hours WORKED — leave is counted separately below. These tiles used to sum
+                // every row, so a week with anyone on annual leave read as hours on the tools.
+                const workedInWeek = entriesInWeek.filter(e => !e.absence_type)
+                const awayInWeek = entriesInWeek.filter(e => e.absence_type)
+                const weekOrdHours = workedInWeek.reduce((s, e) => s + (e.ordinary_hours ?? 0), 0)
+                const weekOtHours = workedInWeek.reduce((s, e) => s + (e.ot_hours ?? 0), 0)
+                const weekCost = workedInWeek.reduce((s, e) => {
                   const w = workers.find(ww => ww.id === e.worker_id)
                   if (!w) return s
                   const trueCost = w.total_cost_hourly_with_ot ?? w.base_rate_hourly ?? 0
                   return s + (e.ordinary_hours ?? 0) * trueCost + (e.ot_hours ?? 0) * (w.ot_rate_hourly ?? 0)
                 }, 0)
+                const weekAwayHours = awayInWeek.reduce((s, e) => s + (e.ordinary_hours ?? 0) + (e.ot_hours ?? 0), 0)
+                const weekAwayByType = ABSENCE_TYPES
+                  .map(a => ({ ...a, hours: awayInWeek.filter(e => e.absence_type === a.key).reduce((s, e) => s + (e.ordinary_hours ?? 0) + (e.ot_hours ?? 0), 0) }))
+                  .filter(a => a.hours > 0)
 
                 // Workers who submitted at least one entry
                 const submittedWorkerIds = new Set(entriesInWeek.map(e => e.worker_id))
@@ -7704,6 +7739,23 @@ Payment terms:
                       <div style={{ background: ts.paper, border: `1px solid ${ts.border}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
                         <div style={{ fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Labour cost logged</div>
                         <div style={{ fontSize: 22, fontWeight: 900, color: ts.text, marginTop: 4 }}>${weekCost.toLocaleString("en-AU", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</div>
+                      </div>
+                      {/* Away — kept out of the hours and cost tiles above on purpose. */}
+                      <div style={{ background: ts.paper, border: `1px solid ${ts.border}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
+                        <div style={{ fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Away</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: weekAwayHours > 0 ? ts.text : ts.textSubtle, marginTop: 4 }}>
+                          {weekAwayHours.toFixed(1)}
+                          <span style={{ fontSize: 14, color: ts.textMuted, marginLeft: 6, fontWeight: 600 }}>hrs</span>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                          {weekAwayByType.length === 0
+                            ? <span style={{ fontSize: 11, color: ts.textSubtle }}>nobody away</span>
+                            : weekAwayByType.map(a => (
+                                <span key={a.key} style={{ fontSize: 11, fontWeight: 700, color: a.color, border: `1px solid ${a.color}`, borderRadius: 999, padding: "1px 7px" }}>
+                                  {a.label} {a.hours.toFixed(1)}
+                                </span>
+                              ))}
+                        </div>
                       </div>
                       <div style={{ background: ts.paper, border: `1px solid ${missing.length === 0 ? ts.border : ts.amberBorder}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
                         <div style={{ fontSize: 10, color: ts.textMuted, textTransform: "uppercase", letterSpacing: "0.4px", fontWeight: 700 }}>Missing entries</div>
@@ -7990,17 +8042,28 @@ Payment terms:
                                         {/* Site */}
                                         <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
                                           <select
-                                            value={entry.project_id ?? ""}
+                                            value={entry.absence_type ? `away:${entry.absence_type}` : (entry.project_id ?? "")}
                                             onChange={async (e) => {
-                                              const newProjectId = e.target.value || null
+                                              // One control does both jobs: pick a site, or pick a reason
+                                              // the worker was away. Away rows carry no project.
+                                              const val = e.target.value
+                                              const away = val.startsWith("away:") ? val.slice(5) : null
+                                              const newProjectId = away ? null : (val || null)
                                               const newProj = newProjectId ? projects.find(p => p.id === newProjectId) : null
-                                              // Re-apply project's default_billable_hourly when project changes
-                                              await supabase.from("timesheets").update({ project_id: newProjectId, billable_hourly: newProj?.default_billable_hourly ?? entry.billable_hourly ?? false }).eq("id", entry.id)
+                                              await supabase.from("timesheets").update({
+                                                project_id: newProjectId,
+                                                absence_type: away,
+                                                // Leave is never billable to a builder.
+                                                billable_hourly: away ? false : (newProj?.default_billable_hourly ?? entry.billable_hourly ?? false),
+                                              }).eq("id", entry.id)
                                               await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                             }}
                                             style={{ ...bigFieldStyle, flex: 1 }}>
                                             <option value="">No site</option>
                                             {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
+                                            <optgroup label="Away — not charged to any job">
+                                              {ABSENCE_TYPES.map(a => <option key={a.key} value={`away:${a.key}`}>{a.label}</option>)}
+                                            </optgroup>
                                           </select>
                                           <button type="button"
                                             onClick={async () => {
@@ -8170,17 +8233,29 @@ Payment terms:
                                         {/* Site selector */}
                                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                                           <select
-                                            value={entry.project_id ?? ""}
+                                            value={entry.absence_type ? `away:${entry.absence_type}` : (entry.project_id ?? "")}
                                             onChange={async (e) => {
-                                              const newProjectId = e.target.value || null
+                                              const val = e.target.value
+                                              const away = val.startsWith("away:") ? val.slice(5) : null
+                                              const newProjectId = away ? null : (val || null)
                                               const newProj = newProjectId ? projects.find(p => p.id === newProjectId) : null
-                                              await supabase.from("timesheets").update({ project_id: newProjectId, billable_hourly: newProj?.default_billable_hourly ?? entry.billable_hourly ?? false }).eq("id", entry.id)
+                                              await supabase.from("timesheets").update({
+                                                project_id: newProjectId,
+                                                absence_type: away,
+                                                billable_hourly: away ? false : (newProj?.default_billable_hourly ?? entry.billable_hourly ?? false),
+                                              }).eq("id", entry.id)
                                               await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
                                             }}
-                                            style={{ ...tsField, fontSize: 13, padding: "6px 8px", flex: 1, fontWeight: 600 }}
+                                            style={{
+                                              ...tsField, fontSize: 13, padding: "6px 8px", flex: 1, fontWeight: 600,
+                                              ...(entry.absence_type ? { color: absenceColor(entry.absence_type), borderColor: absenceColor(entry.absence_type) } : {}),
+                                            }}
                                           >
                                             <option value="">No site</option>
                                             {projects.filter((p) => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map((p) => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
+                                            <optgroup label="Away — not charged to any job">
+                                              {ABSENCE_TYPES.map((a) => <option key={a.key} value={`away:${a.key}`}>{a.label}</option>)}
+                                            </optgroup>
                                           </select>
                                           <button type="button"
                                             onClick={async () => {
@@ -8587,12 +8662,15 @@ Payment terms:
                       const hasMaterials = (row.total_materials_cost ?? 0) > 0
                       const hasContract = row.total_contract_value > 0
                       const marginColor = margin == null ? "#71717a" : margin >= 30 ? "#4ade80" : margin >= 0 ? "#fbbf24" : "#f87171"
+                      // Fade the FIGURES on an uncounted row, never the ✓ and ★ controls —
+                      // those are what you click to change the state, and CSS opacity on the
+                      // <tr> dragged them down with everything else until they vanished.
+                      const dimData = { opacity: included ? 1 : 0.4 }
 
                       return (
                         <tr key={row.project_id} style={{
                           borderBottom: "1px solid #1a1a1a",
                           borderTop: startsUnstarred ? "2px solid #3f4a63" : undefined,
-                          opacity: included ? 1 : 0.35,
                         }}>
                           <td style={{ padding: "10px 12px" }}>
                             {/* A status, not a selection: this writes profitability_included and
@@ -8627,8 +8705,8 @@ Payment terms:
                                 display: "inline-flex", alignItems: "center", justifyContent: "center",
                                 fontSize: 12, fontWeight: 800, lineHeight: 1, padding: 0,
                                 background: included ? "#14532d" : "transparent",
-                                border: `1px solid ${included ? "#4ade80" : "#3f4a63"}`,
-                                color: included ? "#4ade80" : "#3f4a63",
+                                border: `2px solid ${included ? "#4ade80" : "#8090ad"}`,
+                                color: included ? "#4ade80" : "#8090ad",
                               }}
                             >
                               {included ? "✓" : ""}
@@ -8648,15 +8726,15 @@ Payment terms:
                                   }
                                 }}
                                 title={isPinned ? "Unstar — drops below the line" : "Star as current work — moves to the top"}
-                                style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 15, lineHeight: 1, color: isPinned ? "#f59e0b" : "#3f4a63" }}
+                                style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 16, lineHeight: 1, color: isPinned ? "#f59e0b" : "#8090ad" }}
                               >
                                 {isPinned ? "★" : "☆"}
                               </button>
-                              {row.project_name}
+                              <span style={dimData}>{row.project_name}</span>
                             </span>
                           </td>
-                          <td style={{ padding: "10px 12px", color: "#8899bb" }}>{row.client ?? "—"}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <td style={{ padding: "10px 12px", color: "#8899bb", ...dimData }}>{row.client ?? "—"}</td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", ...dimData }}>
                             {hasContract ? (
                               <>
                                 <div style={{ fontWeight: 600 }}>${formatMoney(row.total_contract_value)}</div>
@@ -8664,7 +8742,7 @@ Payment terms:
                               </>
                             ) : <span style={{ color: "#6b7a9a" }}>No contract</span>}
                           </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <td style={{ padding: "10px 12px", textAlign: "right", ...dimData }}>
                             {(row.total_extras_value ?? 0) > 0 ? (
                               <>
                                 <div style={{ fontWeight: 600, color: "#67e8f9" }}>${formatMoney(row.total_extras_value)}</div>
@@ -8672,7 +8750,7 @@ Payment terms:
                               </>
                             ) : <span style={{ color: "#6b7a9a" }}>—</span>}
                           </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <td style={{ padding: "10px 12px", textAlign: "right", ...dimData }}>
                             {hasLabour ? (
                               <>
                                 <div style={{ fontWeight: 600, color: "#f87171" }}>${formatMoney(row.total_labour_true_cost)}</div>
@@ -8680,7 +8758,7 @@ Payment terms:
                               </>
                             ) : <span style={{ color: "#6b7a9a" }}>No timesheets</span>}
                           </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <td style={{ padding: "10px 12px", textAlign: "right", ...dimData }}>
                             {hasMaterials ? (
                               <>
                                 <div style={{ fontWeight: 600, color: "#fbbf24" }}>${formatMoney(row.total_materials_cost ?? 0)}</div>
@@ -8691,17 +8769,17 @@ Payment terms:
                               </>
                             ) : <span style={{ color: "#6b7a9a" }}>—</span>}
                           </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <td style={{ padding: "10px 12px", textAlign: "right", ...dimData }}>
                             {hasContract && hasLabour ? (
                               <div style={{ fontWeight: 700, color: grossProfit >= 0 ? "#4ade80" : "#f87171" }}>${formatMoney(grossProfit)}</div>
                             ) : <span style={{ color: "#6b7a9a" }}>—</span>}
                           </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <td style={{ padding: "10px 12px", textAlign: "right", ...dimData }}>
                             {margin != null ? (
                               <div style={{ fontWeight: 700, color: marginColor, fontSize: 15 }}>{margin.toFixed(1)}%</div>
                             ) : <span style={{ color: "#6b7a9a" }}>—</span>}
                           </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <td style={{ padding: "10px 12px", textAlign: "right", ...dimData }}>
                             {hasLabour ? (
                               <>
                                 <div style={{ fontWeight: 600 }}>{totalHrs.toFixed(1)}hrs</div>
@@ -8709,7 +8787,7 @@ Payment terms:
                               </>
                             ) : <span style={{ color: "#6b7a9a" }}>—</span>}
                           </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right" }}>
+                          <td style={{ padding: "10px 12px", textAlign: "right", ...dimData }}>
                             {costPerHr != null ? (
                               <div style={{ fontWeight: 600, color: "#a78bfa" }}>${formatMoney(costPerHr)}</div>
                             ) : <span style={{ color: "#6b7a9a" }}>—</span>}
