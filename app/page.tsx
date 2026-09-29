@@ -2802,6 +2802,32 @@ export default function Home() {
   }, [unplannedEntries])
   const dateIndexMap = useMemo(() => getDateIndexMap(dates), [dates])
 
+  // The SAME crew booked on the SAME job over some of the same days. Two different crews
+  // on one site together is normal and is deliberately not flagged — this is the shape
+  // that means the work got entered twice, usually when the unplanned review adds a
+  // segment beside one that was already planned. The plan then reads as two visits, and
+  // only one of the pair carries the milestone, so the other keeps flagging as unbilled.
+  const overlappingSegments = useMemo(() => {
+    const byProjectCrew = new Map<string, Segment[]>()
+    for (const s of segments) {
+      const key = `${s.project_id}|${s.crew_id}`
+      const arr = byProjectCrew.get(key) ?? []
+      arr.push(s)
+      byProjectCrew.set(key, arr)
+    }
+    const map = new Map<string, Segment[]>()
+    for (const list of byProjectCrew.values()) {
+      if (list.length < 2) continue
+      for (const a of list) {
+        const others = list.filter(
+          (b) => b.id !== a.id && a.start_date <= b.end_date && b.start_date <= a.end_date
+        )
+        if (others.length > 0) map.set(a.id, others)
+      }
+    }
+    return map
+  }, [segments])
+
   // Scroll to today ONCE on initial mount (once loading finishes)
   const hasScrolledToTodayRef = useRef(false)
   useEffect(() => {
@@ -5030,6 +5056,7 @@ Payment terms:
                               ((s.milestone_id != null && m.id === s.milestone_id) || m.segment_id === s.id)
                             )
                             const isPastUnbilled = todayKey != null && s.end_date < todayKey && !hasMilestoneLinked
+                            const overlaps = overlappingSegments.get(s.id) ?? []
                             const top = ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP)
 
                             return (
@@ -5070,7 +5097,13 @@ Payment terms:
                                           : isPastUnbilled
                                             ? `⚠ Past segment with no milestone linked — needs invoicing\n${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
                                             : `${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
-                                        return projectPart + conflictPart
+                                        const overlapPart = overlaps.length === 0 ? "" :
+                                          `\n\n⧉ ${s.crews?.name ?? "This crew"} is booked on this job ${overlaps.length === 1 ? "twice" : `${overlaps.length + 1} times`} over the same days:\n` +
+                                          overlaps
+                                            .map(o => `   • ${formatDateLabel(parseDate(o.start_date))} – ${formatDateLabel(parseDate(o.end_date))}${o.name ? ` (${o.name})` : ""}`)
+                                            .join("\n") +
+                                          `\nProbably the same work entered twice — keep one and delete the other.`
+                                        return projectPart + conflictPart + overlapPart
                                       })()}
                                       style={{
                                         position: "absolute",
@@ -5101,6 +5134,19 @@ Payment terms:
                                         overflow: "hidden",
                                       }}
                                     >
+                                      {/* Same job, same days, more than one segment. White chip so it
+                                          reads on every crew colour, and first in the bar so a one-day
+                                          segment does not truncate it away. */}
+                                      {isFirstRun && overlaps.length > 0 && (
+                                        <span style={{
+                                          flexShrink: 0, marginRight: 6, height: 16, borderRadius: 4,
+                                          background: "#ffffff", border: "2px solid #7c3aed", color: "#5b21b6",
+                                          fontSize: 10, fontWeight: 900, lineHeight: 1, padding: "0 3px",
+                                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                        }}>
+                                          ⧉{overlaps.length + 1}
+                                        </span>
+                                      )}
                                       {isFirstRun && (ganttViewMode === "crews" ? (
                                         <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
                                           <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.95 }}>
