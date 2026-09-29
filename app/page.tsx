@@ -3422,12 +3422,15 @@ export default function Home() {
     await loadData()
   }
 
-  async function loadTimesheetEntries(weekStart: string, crewId: string) {
+  async function loadTimesheetEntries(weekStart: string, crewId: string, opts?: { silent?: boolean }) {
     if (!crewId) return
-    setTimesheetLoading(true)
+    // silent = don't flip timesheetLoading. That flag swaps the sheet for a spinner, which
+    // unmounts the table and throws the user back to the top of the page — fine when
+    // changing week or crew, wrong for a background refresh.
+    if (!opts?.silent) setTimesheetLoading(true)
     const weekEnd = addCalendarDays(weekStart, 6)
     const crewWorkerIds = workers.filter((w) => w.crew_id === crewId).map((w) => w.id)
-    if (crewWorkerIds.length === 0) { setTimesheetLoading(false); return }
+    if (crewWorkerIds.length === 0) { if (!opts?.silent) setTimesheetLoading(false); return }
 
     const { data } = await supabase
       .from("timesheets")
@@ -3438,7 +3441,25 @@ export default function Home() {
       .order("date")
 
     setTimesheetEntries((data ?? []) as TimesheetEntry[])
-    setTimesheetLoading(false)
+    if (!opts?.silent) setTimesheetLoading(false)
+  }
+
+  // Change one field on one timesheet row WITHOUT refetching the week.
+  //
+  // Every hours box, note and toggle used to save and then reload the whole sheet. On the
+  // crew view that reload flipped timesheetLoading, so the table was torn down and rebuilt
+  // after every single entry and the user was dumped back at the top of the page. Even
+  // where the reload was silent it replaced the entire entries array for the sake of one
+  // number. Update the row in place instead: instant, keeps scroll position, one round trip.
+  async function patchTimesheetEntry(id: string, patch: Partial<TimesheetEntry>) {
+    const before = timesheetEntries.find((e) => e.id === id)
+    setTimesheetEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)))
+    const { error } = await supabase.from("timesheets").update(patch).eq("id", id)
+    if (error) {
+      // Put the old value back rather than leaving a number on screen the DB rejected.
+      if (before) setTimesheetEntries((prev) => prev.map((e) => (e.id === id ? before : e)))
+      showToast("Could not save that entry — try again")
+    }
   }
 
   // For mobile: load ALL crews' timesheets for a given week
@@ -3460,13 +3481,13 @@ export default function Home() {
       (e) => e.worker_id === entry.worker_id && e.date === entry.date && e.project_id === (entry.project_id ?? null)
     )
     if (existing) {
-      await supabase.from("timesheets").update({
+      await patchTimesheetEntry(existing.id, {
         ordinary_hours: entry.ordinary_hours ?? existing.ordinary_hours,
         ot_hours: entry.ot_hours ?? existing.ot_hours,
         project_id: entry.project_id ?? existing.project_id,
         segment_id: entry.segment_id ?? existing.segment_id,
         notes: entry.notes ?? existing.notes,
-      }).eq("id", existing.id)
+      })
     } else {
       // For new entries, if the project has default_billable_hourly on, pre-flag the entry.
       const project = entry.project_id ? projects.find(p => p.id === entry.project_id) : null
@@ -3482,12 +3503,12 @@ export default function Home() {
         billable_hourly: billable,
       })
     }
-    await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+    await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId, { silent: true })
   }
 
   async function deleteTimesheetEntry(id: string) {
     await supabase.from("timesheets").delete().eq("id", id)
-    await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+    await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId, { silent: true })
   }
 
   async function quickFillDay(date: string, projectId: string) {
@@ -8101,8 +8122,7 @@ Payment terms:
                                                 absence_type: away,
                                                 // Leave is never billable to a builder.
                                                 billable_hourly: away ? false : (newProj?.default_billable_hourly ?? entry.billable_hourly ?? false),
-                                              }).eq("id", entry.id)
-                                              await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
+                                              })
                                             }}
                                             style={{ ...bigFieldStyle, flex: 1 }}>
                                             <option value="">No site</option>
@@ -8114,8 +8134,7 @@ Payment terms:
                                           <button type="button"
                                             onClick={async () => {
                                               const next = !(entry.billable_hourly ?? false)
-                                              await supabase.from("timesheets").update({ billable_hourly: next }).eq("id", entry.id)
-                                              await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
+                                              await patchTimesheetEntry(entry.id, { billable_hourly: next })
                                             }}
                                             title={entry.billable_hourly ? "Billable hourly" : "Not billable hourly"}
                                             style={{
@@ -8146,8 +8165,7 @@ Payment terms:
                                             <input type="number" step="0.5" inputMode="decimal" defaultValue={entry.ordinary_hours} key={`m-ord-${entry.id}`}
                                               style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px" }}
                                               onBlur={async (e) => {
-                                                await supabase.from("timesheets").update({ ordinary_hours: Number(e.target.value) }).eq("id", entry.id)
-                                                await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
+                                                await patchTimesheetEntry(entry.id, { ordinary_hours: Number(e.target.value) })
                                               }} />
                                           </div>
                                           <div>
@@ -8155,8 +8173,7 @@ Payment terms:
                                             <input type="number" step="0.5" inputMode="decimal" defaultValue={entry.ot_hours} key={`m-ot-${entry.id}`}
                                               style={{ ...bigFieldStyle, fontSize: 22, fontWeight: 900, textAlign: "center", padding: "14px 10px", color: entry.ot_hours > 0 ? ts.amberBorder : ts.text }}
                                               onBlur={async (e) => {
-                                                await supabase.from("timesheets").update({ ot_hours: Number(e.target.value) }).eq("id", entry.id)
-                                                await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
+                                                await patchTimesheetEntry(entry.id, { ot_hours: Number(e.target.value) })
                                               }} />
                                           </div>
                                         </div>
@@ -8285,12 +8302,11 @@ Payment terms:
                                               const away = val.startsWith("away:") ? val.slice(5) : null
                                               const newProjectId = away ? null : (val || null)
                                               const newProj = newProjectId ? projects.find(p => p.id === newProjectId) : null
-                                              await supabase.from("timesheets").update({
+                                              await patchTimesheetEntry(entry.id, {
                                                 project_id: newProjectId,
                                                 absence_type: away,
                                                 billable_hourly: away ? false : (newProj?.default_billable_hourly ?? entry.billable_hourly ?? false),
-                                              }).eq("id", entry.id)
-                                              await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+                                              })
                                             }}
                                             style={{
                                               ...tsField, fontSize: 13, padding: "6px 8px", flex: 1, fontWeight: 600,
@@ -8306,8 +8322,7 @@ Payment terms:
                                           <button type="button"
                                             onClick={async () => {
                                               const next = !(entry.billable_hourly ?? false)
-                                              await supabase.from("timesheets").update({ billable_hourly: next }).eq("id", entry.id)
-                                              await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+                                              await patchTimesheetEntry(entry.id, { billable_hourly: next })
                                             }}
                                             title={entry.billable_hourly ? "Billable hourly — click to unmark" : "Not billable hourly — click to mark billable"}
                                             style={{
@@ -8336,8 +8351,7 @@ Payment terms:
                                             <input type="number" step="0.5" defaultValue={entry.ordinary_hours} key={`ord-${entry.id}`}
                                               style={{ ...tsField, fontSize: 16, fontWeight: 700, padding: "8px 10px", textAlign: "center" }}
                                               onBlur={async (e) => {
-                                                await supabase.from("timesheets").update({ ordinary_hours: Number(e.target.value) }).eq("id", entry.id)
-                                                await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+                                                await patchTimesheetEntry(entry.id, { ordinary_hours: Number(e.target.value) })
                                               }} />
                                           </div>
                                           <div>
@@ -8345,16 +8359,14 @@ Payment terms:
                                             <input type="number" step="0.5" defaultValue={entry.ot_hours} key={`ot-${entry.id}`}
                                               style={{ ...tsField, fontSize: 16, fontWeight: 700, padding: "8px 10px", textAlign: "center", borderColor: entry.ot_hours > 0 ? ts.amber : undefined, color: entry.ot_hours > 0 ? ts.amberText : undefined }}
                                               onBlur={async (e) => {
-                                                await supabase.from("timesheets").update({ ot_hours: Number(e.target.value) }).eq("id", entry.id)
-                                                await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+                                                await patchTimesheetEntry(entry.id, { ot_hours: Number(e.target.value) })
                                               }} />
                                           </div>
                                         </div>
                                         <input type="text" defaultValue={entry.notes ?? ""} key={`note-${entry.id}`} placeholder="Notes..."
                                           style={{ ...tsField, fontSize: 12, padding: "6px 8px" }}
                                           onBlur={async (e) => {
-                                            await supabase.from("timesheets").update({ notes: e.target.value || null }).eq("id", entry.id)
-                                            await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+                                            await patchTimesheetEntry(entry.id, { notes: e.target.value || null })
                                           }} />
                                       </div>
                                     ))}
@@ -8363,7 +8375,7 @@ Payment terms:
                                         if (!e.target.value) return
                                         const proj = projects.find(p => p.id === e.target.value)
                                         await supabase.from("timesheets").insert({ date: d, worker_id: w.id, project_id: e.target.value, ordinary_hours: 9, ot_hours: 0, billable_hourly: proj?.default_billable_hourly ?? false })
-                                        await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+                                        await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId, { silent: true })
                                       }}
                                         style={{ ...tsField, fontSize: 13, padding: "10px 12px", color: ts.textMuted, borderStyle: "dashed" }}>
                                         <option value="">+ Add site...</option>
@@ -8373,7 +8385,7 @@ Payment terms:
                                     {entries.length > 0 && (
                                       <button type="button" onClick={async () => {
                                         await supabase.from("timesheets").insert({ date: d, worker_id: w.id, project_id: null, ordinary_hours: 0, ot_hours: 0 })
-                                        await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId)
+                                        await loadTimesheetEntries(timesheetWeekStart, timesheetCrewId, { silent: true })
                                       }}
                                         style={{ fontSize: 12, color: ts.accent, background: "none", border: `1px dashed ${ts.accentBorder}`, borderRadius: 6, cursor: "pointer", padding: "6px 8px", width: "100%", fontWeight: 600 }}>
                                         + Split day
