@@ -128,6 +128,11 @@ type Client = {
   phone: string | null
   company: string | null
   notes: string | null
+  abn: string | null
+  contact_person: string | null
+  billing_address: string | null
+  /** Days to pay, e.g. 14 or 30. Null = nothing agreed. */
+  payment_terms_days: number | null
 }
 
 type Worker = {
@@ -957,8 +962,9 @@ function MilestonesListModal({ onClose, milestones, projects, contracts, segment
   )
 }
 
-function ClientsListModal({ onClose, clients, projects, contracts, profitabilityData }: {
+function ClientsListModal({ onClose, onEdit, clients, projects, contracts, profitabilityData }: {
   onClose: () => void
+  onEdit: () => void
   clients: { id: string; name: string; email: string | null; phone: string | null; company: string | null; notes: string | null }[]
   projects: { id: string; name: string; client: string | null; client_id: string | null; archived: boolean | null }[]
   contracts: { id: string; project_id: string; value: number | null; color: string | null }[]
@@ -976,7 +982,13 @@ function ClientsListModal({ onClose, clients, projects, contracts, profitability
             <div style={{ fontSize: 24, fontWeight: 900, color: "#f0f4ff" }}>Clients</div>
             <div style={{ fontSize: 13, color: "#6b7a9a", marginTop: 2 }}>{clients.length} clients</div>
           </div>
-          <button type="button" onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Close</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {/* This screen is a report. The editable one used to have no way in at all. */}
+            <button type="button" onClick={onEdit} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #166534", background: "#141a28", color: "#4ade80", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+              Edit details / add client
+            </button>
+            <button type="button" onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Close</button>
+          </div>
         </div>
 
         {/* Client list */}
@@ -2802,32 +2814,6 @@ export default function Home() {
   }, [unplannedEntries])
   const dateIndexMap = useMemo(() => getDateIndexMap(dates), [dates])
 
-  // The SAME crew booked on the SAME job over some of the same days. Two different crews
-  // on one site together is normal and is deliberately not flagged — this is the shape
-  // that means the work got entered twice, usually when the unplanned review adds a
-  // segment beside one that was already planned. The plan then reads as two visits, and
-  // only one of the pair carries the milestone, so the other keeps flagging as unbilled.
-  const overlappingSegments = useMemo(() => {
-    const byProjectCrew = new Map<string, Segment[]>()
-    for (const s of segments) {
-      const key = `${s.project_id}|${s.crew_id}`
-      const arr = byProjectCrew.get(key) ?? []
-      arr.push(s)
-      byProjectCrew.set(key, arr)
-    }
-    const map = new Map<string, Segment[]>()
-    for (const list of byProjectCrew.values()) {
-      if (list.length < 2) continue
-      for (const a of list) {
-        const others = list.filter(
-          (b) => b.id !== a.id && a.start_date <= b.end_date && b.start_date <= a.end_date
-        )
-        if (others.length > 0) map.set(a.id, others)
-      }
-    }
-    return map
-  }, [segments])
-
   // Scroll to today ONCE on initial mount (once loading finishes)
   const hasScrolledToTodayRef = useRef(false)
   useEffect(() => {
@@ -3525,6 +3511,10 @@ export default function Home() {
       phone: c.phone,
       company: c.company,
       notes: c.notes,
+      abn: c.abn,
+      contact_person: c.contact_person,
+      billing_address: c.billing_address,
+      payment_terms_days: c.payment_terms_days,
     }).eq("id", c.id)
     await loadData()
   }
@@ -5077,7 +5067,6 @@ Payment terms:
                               ((s.milestone_id != null && m.id === s.milestone_id) || m.segment_id === s.id)
                             )
                             const isPastUnbilled = todayKey != null && s.end_date < todayKey && !hasMilestoneLinked
-                            const overlaps = overlappingSegments.get(s.id) ?? []
                             const top = ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP)
 
                             return (
@@ -5118,13 +5107,7 @@ Payment terms:
                                           : isPastUnbilled
                                             ? `⚠ Past segment with no milestone linked — needs invoicing\n${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
                                             : `${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
-                                        const overlapPart = overlaps.length === 0 ? "" :
-                                          `\n\n⧉ ${s.crews?.name ?? "This crew"} is booked on this job ${overlaps.length === 1 ? "twice" : `${overlaps.length + 1} times`} over the same days:\n` +
-                                          overlaps
-                                            .map(o => `   • ${formatDateLabel(parseDate(o.start_date))} – ${formatDateLabel(parseDate(o.end_date))}${o.name ? ` (${o.name})` : ""}`)
-                                            .join("\n") +
-                                          `\nProbably the same work entered twice — keep one and delete the other.`
-                                        return projectPart + conflictPart + overlapPart
+                                        return projectPart + conflictPart
                                       })()}
                                       style={{
                                         position: "absolute",
@@ -5155,19 +5138,6 @@ Payment terms:
                                         overflow: "hidden",
                                       }}
                                     >
-                                      {/* Same job, same days, more than one segment. White chip so it
-                                          reads on every crew colour, and first in the bar so a one-day
-                                          segment does not truncate it away. */}
-                                      {isFirstRun && overlaps.length > 0 && (
-                                        <span style={{
-                                          flexShrink: 0, marginRight: 6, height: 16, borderRadius: 4,
-                                          background: "#ffffff", border: "2px solid #7c3aed", color: "#5b21b6",
-                                          fontSize: 10, fontWeight: 900, lineHeight: 1, padding: "0 3px",
-                                          display: "inline-flex", alignItems: "center", justifyContent: "center",
-                                        }}>
-                                          ⧉{overlaps.length + 1}
-                                        </span>
-                                      )}
                                       {isFirstRun && (ganttViewMode === "crews" ? (
                                         <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
                                           <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.95 }}>
@@ -8933,6 +8903,60 @@ Payment terms:
                       <button type="button" onClick={() => deleteClient(c.id)} style={{ ...dangerButtonStyle, fontSize: 11, padding: "6px 10px", marginBottom: 2 }}>×</button>
                     </div>
 
+                    {/* Paperwork row — what an invoice needs. */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+                      <div>
+                        <FieldLabel>ABN</FieldLabel>
+                        <input
+                          defaultValue={c.abn ?? ""}
+                          key={`cabn-${c.id}`}
+                          placeholder="51 824 753 556"
+                          inputMode="numeric"
+                          style={fieldStyle}
+                          onBlur={async (e) => { await saveClient({ ...c, abn: e.target.value.trim() || null }) }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Contact person</FieldLabel>
+                        <input
+                          defaultValue={c.contact_person ?? ""}
+                          key={`ccp-${c.id}`}
+                          placeholder="Who you deal with"
+                          style={fieldStyle}
+                          onBlur={async (e) => { await saveClient({ ...c, contact_person: e.target.value.trim() || null }) }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Billing address</FieldLabel>
+                        <input
+                          defaultValue={c.billing_address ?? ""}
+                          key={`cba-${c.id}`}
+                          placeholder="Where invoices go"
+                          style={fieldStyle}
+                          onBlur={async (e) => { await saveClient({ ...c, billing_address: e.target.value.trim() || null }) }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Payment terms</FieldLabel>
+                        <input
+                          defaultValue={c.payment_terms_days ?? ""}
+                          key={`cpt-${c.id}`}
+                          placeholder="30"
+                          type="number"
+                          min={0}
+                          style={fieldStyle}
+                          onBlur={async (e) => {
+                            // Blank clears it; anything non-numeric is ignored rather than stored as 0,
+                            // which would read as "due immediately".
+                            const raw = e.target.value.trim()
+                            const days = raw === "" ? null : Number(raw)
+                            await saveClient({ ...c, payment_terms_days: Number.isFinite(days as number) ? days : null })
+                          }}
+                        />
+                        <div style={{ fontSize: 10, color: "#6b7a9a", marginTop: 3 }}>days to pay</div>
+                      </div>
+                    </div>
+
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div>
                         <FieldLabel>Notes</FieldLabel>
@@ -10309,6 +10333,7 @@ Payment terms:
       {showClientsListModal && (
         <ClientsListModal
           onClose={() => setShowClientsListModal(false)}
+          onEdit={() => { setShowClientsListModal(false); setShowClientsModal(true) }}
           clients={clients}
           projects={projects}
           contracts={contracts}
