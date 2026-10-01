@@ -174,6 +174,8 @@ type Crew = {
   name: string
   /** Who the crew actually is — "Jack" for Crew A, "Camcon" for a subbie crew. */
   nickname: string | null
+  /** Keep this crew's lane visible in crew view even with nothing booked. */
+  pinned: boolean | null
   color: string | null
   capacity: number | null
 }
@@ -2940,8 +2942,12 @@ export default function Home() {
   // We name the crew as 'projectName' so the same row-rendering code can be reused.
   const crewRows = useMemo(() => {
     const archivedIds = new Set(projects.filter(p => p.archived).map(p => p.id))
-    return crews
-      .filter(c => segments.some(s => s.crew_id === c.id && !archivedIds.has(s.project_id)))
+    // A crew earns a lane by having work booked. Starring one keeps its lane up
+    // regardless — that is how a brand new crew gets somewhere to drop work onto, and
+    // how a subbie you are about to start using stays in front of you.
+    // Copy before sorting: .sort() mutates in place and crews is state.
+    return [...crews]
+      .filter(c => c.pinned || segments.some(s => s.crew_id === c.id && !archivedIds.has(s.project_id)))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
       .map(c => ({
         projectId: c.id,  // reused key — actually the crew id in crew mode
@@ -3531,6 +3537,7 @@ export default function Home() {
     await supabase.from("crews").update({
       name: c.name,
       nickname: c.nickname,
+      pinned: c.pinned,
       color: c.color,
       capacity: c.capacity,
     }).eq("id", c.id)
@@ -3541,7 +3548,8 @@ export default function Home() {
     // Next free letter, so you get Crew F rather than "New crew".
     const used = new Set(crews.map((c) => (c.name.match(/^Crew\s+([A-Z])$/i)?.[1] ?? "").toUpperCase()))
     const letter = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").find((l) => !used.has(l)) ?? "?"
-    await supabase.from("crews").insert({ name: `Crew ${letter}`, nickname: null, color: "#2563eb", capacity: 1 })
+    // Pinned on creation — an unpinned crew with no work booked would not appear at all.
+    await supabase.from("crews").insert({ name: `Crew ${letter}`, nickname: null, pinned: true, color: "#2563eb", capacity: 1 })
     await loadData()
   }
 
@@ -4850,9 +4858,32 @@ Payment terms:
                                 ARCHIVED
                               </span>
                             )}
-                            {ganttViewMode === "crews" && (
-                              <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 999, background: crews.find(c => c.id === row.projectId)?.color ?? "#2563eb" }} />
-                            )}
+                            {ganttViewMode === "crews" && (() => {
+                              const crew = crews.find(c => c.id === row.projectId)
+                              if (!crew) return null
+                              const isPinned = !!crew.pinned
+                              return (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const next = !isPinned
+                                      setCrews(prev => prev.map(c => c.id === crew.id ? { ...c, pinned: next } : c))
+                                      const { error } = await supabase.from("crews").update({ pinned: next }).eq("id", crew.id)
+                                      if (error) {
+                                        setCrews(prev => prev.map(c => c.id === crew.id ? { ...c, pinned: !next } : c))
+                                        showToast("Could not save the star")
+                                      }
+                                    }}
+                                    title={isPinned ? "Unstar — this lane hides once there is no work booked" : "Star — keep this crew's lane up even with nothing booked"}
+                                    style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontSize: 16, lineHeight: 1, color: isPinned ? "#f59e0b" : "#c0c0c0" }}
+                                  >
+                                    {isPinned ? "★" : "☆"}
+                                  </button>
+                                  <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 999, background: crew.color ?? "#2563eb" }} />
+                                </>
+                              )
+                            })()}
                             <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", lineHeight: 1.3 }}>{row.projectName}</span>
                           </div>
                           {ganttViewMode === "projects" && projects.find((p) => p.id === row.projectId)?.client && (
@@ -8941,7 +8972,15 @@ Payment terms:
                 const crewWorkers = workers.filter((w) => w.crew_id === c.id)
                 return (
                   <div key={c.id} style={{ background: "#161d2e", border: "1px solid #252f45", borderRadius: 10, padding: 16 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr auto 90px auto", gap: 10, alignItems: "end" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr 1.4fr auto 90px auto", gap: 10, alignItems: "end" }}>
+                      <button
+                        type="button"
+                        onClick={async () => { await saveCrew({ ...c, pinned: !c.pinned }) }}
+                        title={c.pinned ? "Always shown in crew view" : "Only shown when this crew has work booked"}
+                        style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontSize: 20, lineHeight: 1, marginBottom: 6, color: c.pinned ? "#f59e0b" : "#3f4a63" }}
+                      >
+                        {c.pinned ? "★" : "☆"}
+                      </button>
                       <div>
                         <FieldLabel>Crew</FieldLabel>
                         <input
@@ -8993,6 +9032,7 @@ Payment terms:
                       {crewWorkers.length > 0
                         ? ` · ${crewWorkers.length} worker${crewWorkers.length === 1 ? "" : "s"}: ${crewWorkers.map((w) => w.name).join(", ")}`
                         : " · no workers assigned — fine for a subbie crew"}
+                      {c.pinned ? " · ★ always shown" : " · shown only when work is booked"}
                     </div>
                   </div>
                 )
