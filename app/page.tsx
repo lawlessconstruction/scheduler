@@ -2539,6 +2539,18 @@ export default function Home() {
   const [justAddedWorkerId, setJustAddedWorkerId] = useState<string | null>(null)
   const [showTimesheetReport, setShowTimesheetReport] = useState(false)
   const [unplannedModal, setUnplannedModal] = useState<{ open: boolean; weekStart: string | null }>({ open: false, weekStart: null })
+
+  // The weekly report reads whatever is in timesheetEntries, but on desktop that array is
+  // only ever filled one crew at a time — and loadTimesheetEntries bails out entirely when
+  // no crew is picked. So the report was showing leftovers from whatever was last loaded:
+  // a scattering of workers, often a single day each, presented as the whole week.
+  //
+  // The report is a company-wide view, so load the company-wide week whenever it is open.
+  useEffect(() => {
+    if (!showTimesheetReport) return
+    loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
+  }, [showTimesheetReport, timesheetWeekStart])
+
   useEffect(() => {
     if (typeof window === "undefined") return
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -7439,6 +7451,14 @@ Payment terms:
                   bucket.rows.push({ projectId: r.projectId, ord: r.ord, ot: r.ot })
                   rowsByWorker.set(r.workerId, bucket)
                 }
+                // Anyone on a crew who logged nothing this week still gets a line, at zero.
+                // A name missing from the report is indistinguishable from a name that was
+                // never loaded — which is exactly how the stale-data bug stayed hidden.
+                for (const w of workers) {
+                  if (w.crew_id == null) continue
+                  if (rowsByWorker.has(w.id)) continue
+                  rowsByWorker.set(w.id, { worker: w, rows: [] })
+                }
                 const workerOrder = Array.from(rowsByWorker.entries()).sort((a, b) =>
                   (a[1].worker?.name ?? "zzz").localeCompare(b[1].worker?.name ?? "zzz")
                 )
@@ -7522,7 +7542,19 @@ Payment terms:
                               const workerOrdTotal = rows.reduce((s, r) => s + r.ord, 0)
                               const workerOtTotal = rows.reduce((s, r) => s + r.ot, 0)
                               // Return an array of trs so React can flatten them into the tbody
-                              const trs: React.ReactNode[] = sortedRows.map((r, i) => {
+                              const trs: React.ReactNode[] = rows.length === 0 ? [(
+                                // On a crew but logged nothing this week — say so, rather than
+                                // leaving a nameless 0.0 subtotal floating in the table.
+                                <tr key={`${workerId}-none`} style={{ borderBottom: `1px solid ${ts.border}` }}>
+                                  <td style={{ padding: "12px 16px", fontWeight: 700, color: ts.textMuted, verticalAlign: "top", fontSize: 14 }}>
+                                    {worker?.name ?? "Unknown"}
+                                  </td>
+                                  <td style={{ padding: "12px 16px", color: ts.amberText, fontSize: 13, fontStyle: "italic" }}>No hours logged</td>
+                                  <td style={{ padding: "12px 16px", textAlign: "right", color: ts.textSubtle, fontVariantNumeric: "tabular-nums", fontSize: 14 }}>0.0</td>
+                                  <td style={{ padding: "12px 16px", textAlign: "right", color: ts.textSubtle, fontVariantNumeric: "tabular-nums", fontSize: 14 }}>0.0</td>
+                                  <td style={{ padding: "12px 16px", textAlign: "right", color: ts.textSubtle, fontVariantNumeric: "tabular-nums", fontSize: 14 }}>0.0</td>
+                                </tr>
+                              )] : sortedRows.map((r, i) => {
                                 const projName = projects.find(p => p.id === r.projectId)?.name ?? "No project"
                                 const isPinned = r.projectId ? projects.find(p => p.id === r.projectId)?.pinned : false
                                 return (
