@@ -172,6 +172,8 @@ type ClassificationRate = {
 type Crew = {
   id: string
   name: string
+  /** Who the crew actually is — "Jack" for Crew A, "Camcon" for a subbie crew. */
+  nickname: string | null
   color: string | null
   capacity: number | null
 }
@@ -189,7 +191,7 @@ type Segment = {
   /** Which stage/milestone this block of work counts toward. Many segments → one milestone. */
   milestone_id: string | null
   projects?: { name: string } | null
-  crews?: { name: string; color: string | null; capacity: number | null } | null
+  crews?: { name: string; nickname?: string | null; color: string | null; capacity: number | null } | null
 }
 
 type DayLabel = {
@@ -441,6 +443,13 @@ function absenceLabel(key: string | null | undefined) {
 
 function absenceColor(key: string | null | undefined) {
   return ABSENCE_TYPES.find((a) => a.key === key)?.color ?? "#5f6368"
+}
+
+// "Crew A" on its own means nothing to anyone who hasn't memorised the roster.
+// Show who it actually is wherever the crew is named.
+function crewLabel(c?: { name: string; nickname?: string | null } | null) {
+  if (!c) return "Crew"
+  return c.nickname ? `${c.name} — ${c.nickname}` : c.name
 }
 
 function parseDate(dateStr: string) {
@@ -2485,6 +2494,7 @@ export default function Home() {
   const [showMilestonesListModal, setShowMilestonesListModal] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
   const [showClientsModal, setShowClientsModal] = useState(false)
+  const [showCrewsModal, setShowCrewsModal] = useState(false)
   const [showProjectsListModal, setShowProjectsListModal] = useState(false)
   const [showClientsListModal, setShowClientsListModal] = useState(false)
   const [estimates, setEstimates] = useState<Estimate[]>([])
@@ -2659,7 +2669,7 @@ export default function Home() {
     const [projectsRes, crewsRes, segmentsRes, labelsRes, milestonesRes, contractsRes, contractTypesRes, contractTypeMilestonesRes, workersRes, classificationRatesRes, clientsRes, allTimesheetsRes, projectCostsRes, estimatesRes, estimateItemsRes, scopeTemplatesRes, estimateTemplatesRes, estimateTemplateItemsRes] = await Promise.all([
       supabase.from("projects").select("*").order("name"),
       supabase.from("crews").select("*").order("name"),
-      supabase.from("segments").select(`*, projects(name), crews(name, color, capacity)`).order("start_date"),
+      supabase.from("segments").select(`*, projects(name), crews(name, nickname, color, capacity)`).order("start_date"),
       supabase.from("project_day_labels").select(`*, projects(name)`),
       supabase.from("milestones").select("*").order("sort_order"),
       supabase.from("contracts").select("*").order("sort_order"),
@@ -2935,7 +2945,7 @@ export default function Home() {
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }))
       .map(c => ({
         projectId: c.id,  // reused key — actually the crew id in crew mode
-        projectName: c.name,
+        projectName: crewLabel(c),
         segments: segments.filter(s => s.crew_id === c.id && !archivedIds.has(s.project_id)),
       }))
   }, [crews, segments, projects])
@@ -3263,7 +3273,7 @@ export default function Home() {
       invoice_number: m.invoice_number ?? null,
     }).eq("id", m.id)
     // Reload segments first so reorder has fresh data
-    const { data: freshSegments } = await supabase.from("segments").select("*,projects(name),crews(name,color,capacity)").order("start_date")
+    const { data: freshSegments } = await supabase.from("segments").select("*,projects(name),crews(name,nickname,color,capacity)").order("start_date")
     if (freshSegments) {
       await reorderMilestonesForProject(m.project_id, freshSegments as Segment[])
     }
@@ -3514,6 +3524,40 @@ export default function Home() {
     await Promise.all(crewWorkers.map((w) =>
       saveTimesheetEntry({ worker_id: w.id, date, project_id: projectId, ordinary_hours: 9, ot_hours: 0 })
     ))
+  }
+
+  // Crews previously had no editor at all — they could only be changed in Supabase.
+  async function saveCrew(c: Crew) {
+    await supabase.from("crews").update({
+      name: c.name,
+      nickname: c.nickname,
+      color: c.color,
+      capacity: c.capacity,
+    }).eq("id", c.id)
+    await loadData()
+  }
+
+  async function addCrew() {
+    // Next free letter, so you get Crew F rather than "New crew".
+    const used = new Set(crews.map((c) => (c.name.match(/^Crew\s+([A-Z])$/i)?.[1] ?? "").toUpperCase()))
+    const letter = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").find((l) => !used.has(l)) ?? "?"
+    await supabase.from("crews").insert({ name: `Crew ${letter}`, nickname: null, color: "#2563eb", capacity: 1 })
+    await loadData()
+  }
+
+  async function deleteCrew(id: string) {
+    // Segments and workers point at a crew, so deleting one with work booked would
+    // either fail on the foreign key or orphan the rows. Say which, rather than letting
+    // the database throw something cryptic.
+    const segCount = segments.filter((s) => s.crew_id === id).length
+    const workerCount = workers.filter((w) => w.crew_id === id).length
+    if (segCount > 0 || workerCount > 0) {
+      showToast(`Can't delete — ${segCount} segment${segCount === 1 ? "" : "s"} and ${workerCount} worker${workerCount === 1 ? "" : "s"} still on this crew`)
+      return
+    }
+    if (!window.confirm("Delete this crew?")) return
+    await supabase.from("crews").delete().eq("id", id)
+    await loadData()
   }
 
   async function saveClient(c: Client) {
@@ -4357,7 +4401,7 @@ Payment terms:
         >
           <span style={{ fontSize: 32 }}>⏱️</span>
           <span>Enter today's timesheets</span>
-          {userCrew && <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85, letterSpacing: "0.4px" }}>{userCrew.name}</span>}
+          {userCrew && <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85, letterSpacing: "0.4px" }}>{crewLabel(userCrew)}</span>}
         </button>
 
         {/* Continue link */}
@@ -4593,6 +4637,10 @@ Payment terms:
             {canSeeAll && <button type="button" onClick={() => setShowClientsListModal(true)} style={pillBase}>
               <span style={{ ...iconStyle, background: "#f3f4f6" }}>👤</span>
               Clients
+            </button>}
+            {canSeeAll && <button type="button" onClick={() => setShowCrewsModal(true)} style={pillBase}>
+              <span style={{ ...iconStyle, background: "#f3f4f6" }}>👷</span>
+              Crews
             </button>}
             {canSeeAll && <button type="button" onClick={() => setShowContractTypesModal(true)} style={pillBase}>
               <span style={{ ...iconStyle, background: "#f3f4f6" }}>📄</span>
@@ -5115,10 +5163,10 @@ Payment terms:
                                           ? `${s.projects?.name ?? projects.find(p => p.id === s.project_id)?.name ?? "?"}${s.name ? ` — ${s.name}` : ""}\n`
                                           : ""
                                         const conflictPart = conflict
-                                          ? `${s.crews?.name} overbooked: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
+                                          ? `${crewLabel(s.crews)} overbooked: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
                                           : isPastUnbilled
-                                            ? `⚠ Past segment with no milestone linked — needs invoicing\n${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
-                                            : `${s.crews?.name}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
+                                            ? `⚠ Past segment with no milestone linked — needs invoicing\n${crewLabel(s.crews)}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
+                                            : `${crewLabel(s.crews)}: ${conflictInfo.maxTotalCapacity} / ${conflictInfo.crewCapacity}`
                                         return projectPart + conflictPart
                                       })()}
                                       style={{
@@ -5168,7 +5216,7 @@ Payment terms:
                                             <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.95 }}>{s.name}</span>
                                           )}
                                           <span style={{ fontSize: s.name ? 10 : 12, opacity: s.name ? 0.7 : 1 }}>
-                                            {s.crews?.name}
+                                            {crewLabel(s.crews)}
                                             {Number(s.capacity_fraction ?? 1) === 0 ? " (tentative)" : Number(s.capacity_fraction ?? 1) < 1 ? ` (${s.capacity_fraction})` : ""}
                                             {conflict ? " ⚠" : ""}
                                             {!conflict && isPastUnbilled ? " 💲" : ""}
@@ -5390,7 +5438,7 @@ Payment terms:
                         style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
                       >
                         <div style={{ width: 10, height: 10, borderRadius: "50%", background: crew.color ?? "#22c55e", flexShrink: 0 }} />
-                        <div style={{ fontWeight: 600, fontSize: 13, color: "#166534", flex: 1 }}>{crew.name}</div>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: "#166534", flex: 1 }}>{crewLabel(crew)}</div>
                         <div style={{ fontSize: 11, color: "#16a34a", flexShrink: 0 }}>{expanded ? "▲" : "▼"}</div>
                       </div>
                     </td>
@@ -5419,7 +5467,7 @@ Payment terms:
                             return (
                               <div
                                 key={dk}
-                                title={weekend ? undefined : `${crew.name}: ${booked} / ${capacity} booked${hasGap ? ` — ${free} free` : ""}`}
+                                title={weekend ? undefined : `${crewLabel(crew)}: ${booked} / ${capacity} booked${hasGap ? ` — ${free} free` : ""}`}
                                 onClick={() => {
                                   if (!hasGap) return
                                   setSegmentForm((prev) => ({ ...prev, crew_id: crew.id, start_date: dk, end_date: dk }))
@@ -5860,7 +5908,7 @@ Payment terms:
                     const seg = segments.find((s) => s.id === id)
                     return (
                       <option key={id} value={id}>
-                        {(seg?.crews?.name ?? crews.find((c) => c.id === seg?.crew_id)?.name ?? "Crew")}
+                        {(seg?.crews ? crewLabel(seg.crews) : crewLabel(crews.find((c) => c.id === seg?.crew_id)))}
                         {seg?.name ? ` - ${seg.name}` : ""} ({seg?.start_date} to {seg?.end_date})
                       </option>
                     )
@@ -6495,7 +6543,7 @@ Payment terms:
                   <select value={m.segment_id ?? ""} onChange={(e) => { const updated = { ...m, segment_id: e.target.value || null }; setMilestones((prev) => prev.map((x) => x.id === m.id ? updated : x)); saveMilestone(updated) }} style={fieldStyle}>
                     <option value="">None</option>
                     {projectSegments.map((s, si) => {
-                      const crewName = s.crews?.name ?? s.name ?? "Crew"
+                      const crewName = s.crews ? crewLabel(s.crews) : (s.name ?? "Crew")
                       const segLabel = s.name ? `${s.name} (${crewName})` : crewName
                       return <option key={s.id} value={s.id}>{si + 1}. {segLabel} — {formatLongDateLabel(s.start_date)} to {formatLongDateLabel(s.end_date)}</option>
                     })}
@@ -6903,7 +6951,7 @@ Payment terms:
                   style={{ ...fieldStyle, width: "auto", fontSize: 13, padding: "6px 10px" }}
                 >
                   <option value="all">All crews</option>
-                  {crews.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {crews.map((c) => <option key={c.id} value={c.id}>{crewLabel(c)}</option>)}
                 </select>
                 <button type="button" onClick={() => setShowWorkersModal(false)} style={secondaryButtonStyle}>Close</button>
               </div>
@@ -6949,7 +6997,7 @@ Payment terms:
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                         <div style={{ width: 20, height: 20, borderRadius: "50%", background: crew.color ?? "#666", flexShrink: 0, boxShadow: `0 0 8px ${crew.color ?? "#666"}88` }} />
-                        <span style={{ fontWeight: 900, fontSize: 28, color: "#f0f4ff", letterSpacing: "-0.5px" }}>{crew.name}</span>
+                        <span style={{ fontWeight: 900, fontSize: 28, color: "#f0f4ff", letterSpacing: "-0.5px" }}>{crewLabel(crew)}</span>
                         {blendedCostWithOT != null && (
                           <span style={{ fontSize: 14, color: "#8899bb", fontWeight: 600, background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 6, padding: "3px 10px" }}>
                             {crewWorkers.filter(w => w.total_cost_hourly_with_ot != null).length} workers
@@ -7403,7 +7451,7 @@ Payment terms:
                       style={{ ...tsField, width: "auto", fontSize: 13, padding: "6px 10px", fontWeight: 600 }}
                     >
                       <option value="">{timesheetCrewId ? "← Back to summary" : "Select crew..."}</option>
-                      {crews.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {crews.map((c) => <option key={c.id} value={c.id}>{crewLabel(c)}</option>)}
                     </select>
                   )}
                   {!isMobile && timesheetCrewId && (
@@ -7858,7 +7906,7 @@ Payment terms:
                             .slice(0, 20).map(m => (
                             <div key={m.worker.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 10px", background: ts.paper, border: `1px solid ${ts.amberBorder}`, borderRadius: 6 }}>
                               <div style={{ minWidth: 160, fontSize: 13, fontWeight: 700, color: ts.text }}>{m.worker.name}</div>
-                              <div style={{ minWidth: 80, fontSize: 12, color: ts.textMuted }}>{m.crew.name}</div>
+                              <div style={{ minWidth: 80, fontSize: 12, color: ts.textMuted }}>{crewLabel(m.crew)}</div>
                               <div style={{ flex: 1, fontSize: 12, color: ts.textMuted }}>
                                 Missing: {m.missingDates.map(d => parseDate(d).toLocaleDateString("en-AU", { weekday: "short" })).join(", ")}
                               </div>
@@ -7893,7 +7941,7 @@ Payment terms:
                           <div key={crew.id} style={{ background: ts.paper, border: `1px solid ${ts.border}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                               <span style={{ display: "inline-block", width: 12, height: 12, borderRadius: 999, background: crew.color ?? ts.accent }} />
-                              <div style={{ fontSize: 15, fontWeight: 800, color: ts.text, flex: 1 }}>{crew.name}</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: ts.text, flex: 1 }}>{crewLabel(crew)}</div>
                               <div style={{ fontSize: 12, color: ts.textMuted }}>{crewOrdHours.toFixed(1)}h{crewOtHours > 0 ? ` + ${crewOtHours.toFixed(1)} OT` : ""} · ${crewCost.toLocaleString("en-AU", { maximumFractionDigits: 0 })}</div>
                               <button type="button" onClick={() => { setTimesheetCrewId(crew.id); loadTimesheetEntries(timesheetWeekStart, crew.id) }}
                                 style={{ ...tsBtnActive, padding: "6px 12px", fontSize: 12 }}>
@@ -8061,7 +8109,7 @@ Payment terms:
                             {/* Crew heading + quick fill */}
                             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "8px 0", borderBottom: `1px solid ${ts.border}` }}>
                               <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 999, background: crew.color ?? ts.accent }} />
-                              <div style={{ fontSize: 16, fontWeight: 900, color: ts.text, flex: 1 }}>{crew.name}</div>
+                              <div style={{ fontSize: 16, fontWeight: 900, color: ts.text, flex: 1 }}>{crewLabel(crew)}</div>
                               <div style={{ fontSize: 11, color: ts.textMuted }}>{visibleWorkers.length}/{crewWorkersList.length}</div>
                             </div>
 
@@ -8083,7 +8131,7 @@ Payment terms:
                                     await loadAllTimesheetsForWeek(timesheetWeekStart, { silent: true })
                                   }}
                                   style={{ ...bigFieldStyle, background: ts.accentBg, border: `2px solid ${ts.accentBorder}`, color: ts.accentText, fontWeight: 700, fontSize: 14 }}>
-                                  <option value="">⚡ Quick fill {crew.name}…</option>
+                                  <option value="">⚡ Quick fill {crewLabel(crew)}…</option>
                                   {projects.filter(p => !p.archived).sort((a, b) => { const pa = a.pinned ? 1 : 0; const pb = b.pinned ? 1 : 0; if (pa !== pb) return pb - pa; return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) }).map(p => <option key={p.id} value={p.id}>{p.pinned ? "★ " : ""}{p.name}</option>)}
                                 </select>
                               </div>
@@ -8865,6 +8913,94 @@ Payment terms:
           </div>
         )
       })()}
+
+      {showCrewsModal && (
+        <div
+          onClick={() => setShowCrewsModal(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 720, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 22, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.45)", marginBottom: 20 }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 800 }}>Crews</div>
+                <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 4 }}>
+                  {crews.length} crews · a nickname shows everywhere the crew is named
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" onClick={addCrew} style={{ ...secondaryButtonStyle, color: "#4ade80", borderColor: "#166534" }}>+ Add crew</button>
+                <button type="button" onClick={() => setShowCrewsModal(false)} style={secondaryButtonStyle}>Close</button>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 10 }}>
+              {crews.map((c) => {
+                const crewWorkers = workers.filter((w) => w.crew_id === c.id)
+                return (
+                  <div key={c.id} style={{ background: "#161d2e", border: "1px solid #252f45", borderRadius: 10, padding: 16 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1.4fr auto 90px auto", gap: 10, alignItems: "end" }}>
+                      <div>
+                        <FieldLabel>Crew</FieldLabel>
+                        <input
+                          defaultValue={c.name}
+                          key={`crn-${c.id}`}
+                          style={fieldStyle}
+                          onBlur={async (e) => { await saveCrew({ ...c, name: e.target.value.trim() || c.name }) }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Who they are</FieldLabel>
+                        <input
+                          defaultValue={c.nickname ?? ""}
+                          key={`crnick-${c.id}`}
+                          placeholder="Jack, or Camcon for a subbie"
+                          style={fieldStyle}
+                          onBlur={async (e) => { await saveCrew({ ...c, nickname: e.target.value.trim() || null }) }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Colour</FieldLabel>
+                        <input
+                          type="color"
+                          defaultValue={c.color ?? "#2563eb"}
+                          key={`crc-${c.id}`}
+                          style={{ ...fieldStyle, padding: 2, width: 52, height: 38, cursor: "pointer" }}
+                          onBlur={async (e) => { await saveCrew({ ...c, color: e.target.value }) }}
+                        />
+                      </div>
+                      <div>
+                        <FieldLabel>Capacity</FieldLabel>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min={0}
+                          defaultValue={c.capacity ?? 1}
+                          key={`crcap-${c.id}`}
+                          style={fieldStyle}
+                          onBlur={async (e) => {
+                            const v = Number(e.target.value)
+                            await saveCrew({ ...c, capacity: Number.isFinite(v) ? v : c.capacity })
+                          }}
+                        />
+                      </div>
+                      <button type="button" onClick={() => deleteCrew(c.id)} style={{ ...dangerButtonStyle, fontSize: 11, padding: "6px 10px", marginBottom: 2 }}>×</button>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#6b7a9a", marginTop: 8 }}>
+                      Shows as <strong style={{ color: "#c8d4f0" }}>{crewLabel(c)}</strong>
+                      {crewWorkers.length > 0
+                        ? ` · ${crewWorkers.length} worker${crewWorkers.length === 1 ? "" : "s"}: ${crewWorkers.map((w) => w.name).join(", ")}`
+                        : " · no workers assigned — fine for a subbie crew"}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showClientsModal && (
         <div
@@ -9934,7 +10070,7 @@ Payment terms:
                                     await saveEstimateItem({ ...item, crew_id: crewId, unit_cost: Math.round(newCost * 100) / 100 })
                                   }}>
                                   <option value="">No crew</option>
-                                  {crews.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                  {crews.map(c => <option key={c.id} value={c.id}>{crewLabel(c)}</option>)}
                                 </select>
                                 <input type="number" step="0.5" defaultValue={item.quantity} key={`iq-${item.id}`} style={{ ...rowInput, fontSize: 13, textAlign: "right" }}
                                   onBlur={async (e) => { await saveEstimateItem({ ...item, quantity: Number(e.target.value) }) }} />
@@ -10321,7 +10457,7 @@ Payment terms:
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 8, background: cardBg, color: text, border: `1px solid ${convertToProject.crewId ? border : "#f87171"}`, fontSize: 14 }}
                   >
                     <option value="">Pick a crew…</option>
-                    {crews.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    {crews.map(c => <option key={c.id} value={c.id}>{crewLabel(c)}</option>)}
                   </select>
                 </div>
                 <div>
