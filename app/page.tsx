@@ -2707,7 +2707,10 @@ export default function Home() {
     const workersData = (workersRes.data ?? []) as Worker[]
     const classificationRatesData = (classificationRatesRes.data ?? []) as ClassificationRate[]
     const clientsData = (clientsRes.data ?? []) as Client[]
-    const allTimesheetsData = (allTimesheetsRes.data ?? []) as TimesheetEntry[]
+    // The parallel fetch above is capped like any other single select, so if it came
+    // back full we page the rest in rather than silently holding a partial table.
+    let allTimesheetsData = (allTimesheetsRes.data ?? []) as TimesheetEntry[]
+    if (allTimesheetsData.length >= 1000) allTimesheetsData = await fetchAllTimesheetRows()
     const projectCostsData = (projectCostsRes.data ?? []) as ProjectCost[]
     const estimatesData = (estimatesRes.data ?? []) as Estimate[]
     const estimateItemsData = (estimateItemsRes.data ?? []) as EstimateItem[]
@@ -3444,11 +3447,40 @@ export default function Home() {
     await loadData()
   }
 
-  // Fetch every timesheet row. Used when the modal needs the whole picture (summary
-  // view, week nav with no crew chosen) and whenever the gantt needs its data back.
+  // Fetch EVERY timesheet row, a page at a time.
+  //
+  // A plain .select() is capped by the server (1000 rows by default) and says nothing
+  // when it truncates. Ordered by date ascending, that meant the app held the OLDEST
+  // thousand entries and simply could not see recent ones — so the unplanned banner
+  // stopped noticing new work the moment the table passed a thousand rows. Page through
+  // until a short page comes back.
+  async function fetchAllTimesheetRows(): Promise<TimesheetEntry[]> {
+    const PAGE = 1000
+    const out: TimesheetEntry[] = []
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from("timesheets")
+        .select("*")
+        .order("date")
+        .range(from, from + PAGE - 1)
+      if (error) {
+        showToast("Could not load all timesheets")
+        break
+      }
+      const rows = (data ?? []) as TimesheetEntry[]
+      out.push(...rows)
+      // A short page means we have reached the end.
+      if (rows.length < PAGE) break
+      // Guard against an unbounded loop if the server ever ignores .range().
+      if (out.length >= 100000) break
+    }
+    return out
+  }
+
+  // Used when the modal needs the whole picture (summary view, week nav with no crew
+  // chosen) and whenever the gantt needs its data back.
   async function loadAllTimesheets() {
-    const { data } = await supabase.from("timesheets").select("*").order("date")
-    const rows = (data ?? []) as TimesheetEntry[]
+    const rows = await fetchAllTimesheetRows()
     setTimesheetEntries(rows)
     setAllTimesheets(rows)
     return rows
