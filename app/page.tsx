@@ -8198,7 +8198,7 @@ Payment terms:
                                               const away = val.startsWith("away:") ? val.slice(5) : null
                                               const newProjectId = away ? null : (val || null)
                                               const newProj = newProjectId ? projects.find(p => p.id === newProjectId) : null
-                                              await supabase.from("timesheets").update({
+                                              await patchTimesheetEntry(entry.id, {
                                                 project_id: newProjectId,
                                                 absence_type: away,
                                                 // Leave is never billable to a builder.
