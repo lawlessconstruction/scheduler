@@ -2495,6 +2495,13 @@ export default function Home() {
   const [showContractTypesModal, setShowContractTypesModal] = useState(false)
   const [showMilestonesListModal, setShowMilestonesListModal] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
+  // Every timesheet row, for the gantt's unplanned-entries check.
+  //
+  // timesheetEntries is deliberately narrowed by the timesheets modal — one week, often
+  // one crew. The unplanned banner was reading that same array, so after opening
+  // timesheets it was judging "has this work got a segment?" against a sliver of the
+  // data and quietly missing most of it. Keep the two apart.
+  const [allTimesheets, setAllTimesheets] = useState<TimesheetEntry[]>([])
   const [showClientsModal, setShowClientsModal] = useState(false)
   const [showCrewsModal, setShowCrewsModal] = useState(false)
   const [showProjectsListModal, setShowProjectsListModal] = useState(false)
@@ -2718,6 +2725,7 @@ export default function Home() {
     setClassificationRates(classificationRatesData)
     setClients(clientsData)
     setTimesheetEntries(allTimesheetsData)
+    setAllTimesheets(allTimesheetsData)
     setProjectCosts(projectCostsData)
     setEstimates(estimatesData)
     setEstimateItems(estimateItemsData)
@@ -2806,7 +2814,7 @@ export default function Home() {
       segsByProject.set(s.project_id, arr)
     }
     const result: TimesheetEntry[] = []
-    for (const t of timesheetEntries) {
+    for (const t of allTimesheets) {
       if (!t.project_id) continue
       if (t.unplanned_ignored) continue
       if (t.date < rangeStart || t.date > rangeEnd) continue
@@ -2817,7 +2825,7 @@ export default function Home() {
       if (!covered) result.push(t)
     }
     return result
-  }, [timesheetEntries, segments, dates])
+  }, [allTimesheets, segments, dates])
 
   // Group unplanned entries by week (Monday date as key) for the banner
   const unplannedByWeek = useMemo(() => {
@@ -3436,6 +3444,16 @@ export default function Home() {
     await loadData()
   }
 
+  // Fetch every timesheet row. Used when the modal needs the whole picture (summary
+  // view, week nav with no crew chosen) and whenever the gantt needs its data back.
+  async function loadAllTimesheets() {
+    const { data } = await supabase.from("timesheets").select("*").order("date")
+    const rows = (data ?? []) as TimesheetEntry[]
+    setTimesheetEntries(rows)
+    setAllTimesheets(rows)
+    return rows
+  }
+
   async function loadTimesheetEntries(weekStart: string, crewId: string, opts?: { silent?: boolean }) {
     if (!crewId) return
     // silent = don't flip timesheetLoading. That flag swaps the sheet for a spinner, which
@@ -3467,11 +3485,17 @@ export default function Home() {
   // number. Update the row in place instead: instant, keeps scroll position, one round trip.
   async function patchTimesheetEntry(id: string, patch: Partial<TimesheetEntry>) {
     const before = timesheetEntries.find((e) => e.id === id)
+    // Both arrays, so picking a site in timesheets updates the gantt's unplanned
+    // banner straight away rather than whenever the full set next happens to reload.
     setTimesheetEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)))
+    setAllTimesheets((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)))
     const { error } = await supabase.from("timesheets").update(patch).eq("id", id)
     if (error) {
       // Put the old value back rather than leaving a number on screen the DB rejected.
-      if (before) setTimesheetEntries((prev) => prev.map((e) => (e.id === id ? before : e)))
+      if (before) {
+        setTimesheetEntries((prev) => prev.map((e) => (e.id === id ? before : e)))
+        setAllTimesheets((prev) => prev.map((e) => (e.id === id ? before : e)))
+      }
       showToast("Could not save that entry — try again")
     }
   }
@@ -4367,6 +4391,7 @@ Payment terms:
             const freshCrews = (crewsRes.data ?? []) as Crew[]
             const freshProjects = (projRes.data ?? []) as Project[]
             setTimesheetEntries(freshTs)
+            setAllTimesheets(freshTs)
             setCrews(freshCrews)
             setProjects(freshProjects)
 
@@ -4627,8 +4652,7 @@ Payment terms:
             </button>}
             {canSeeTimesheets && <button type="button" onClick={async () => {
               // Fetch all timesheets fresh so the summary shows accurate data (may have been scoped to a single crew from a previous open)
-              const { data } = await supabase.from("timesheets").select("*").order("date")
-              setTimesheetEntries((data ?? []) as TimesheetEntry[])
+              await loadAllTimesheets()
               setTimesheetCrewId("")  // Start on summary
               // Default the mobile day toggle to today
               const today = new Date()
@@ -7428,7 +7452,7 @@ Payment terms:
 
         return (
           <div
-            onClick={() => setShowTimesheetModal(false)}
+            onClick={async () => { setShowTimesheetModal(false); await loadAllTimesheets() }}
             style={{ position: "fixed", inset: 0, background: "rgba(32,33,36,0.55)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: isMobile ? 0 : 16 }}
           >
             <div
@@ -7448,8 +7472,7 @@ Payment terms:
                       loadTimesheetEntries(d, timesheetCrewId)
                     } else {
                       // Summary view — refresh all
-                      const { data } = await supabase.from("timesheets").select("*").order("date")
-                      setTimesheetEntries((data ?? []) as TimesheetEntry[])
+                      await loadAllTimesheets()
                     }
                   }} style={{ ...tsBtn, padding: "6px 12px" }}>◀</button>
                   <span style={{ fontSize: 14, color: ts.textMuted, minWidth: 160, textAlign: "center", fontWeight: 600 }}>{weekLabel}</span>
@@ -7461,8 +7484,7 @@ Payment terms:
                     } else if (timesheetCrewId) {
                       loadTimesheetEntries(d, timesheetCrewId)
                     } else {
-                      const { data } = await supabase.from("timesheets").select("*").order("date")
-                      setTimesheetEntries((data ?? []) as TimesheetEntry[])
+                      await loadAllTimesheets()
                     }
                   }} style={{ ...tsBtn, padding: "6px 12px" }}>▶</button>
                   {!isMobile && (
@@ -7475,8 +7497,7 @@ Payment terms:
                           loadTimesheetEntries(timesheetWeekStart, newId)
                         } else {
                           // Going back to summary — refresh all
-                          const { data } = await supabase.from("timesheets").select("*").order("date")
-                          setTimesheetEntries((data ?? []) as TimesheetEntry[])
+                          await loadAllTimesheets()
                         }
                       }}
                       style={{ ...tsField, width: "auto", fontSize: 13, padding: "6px 10px", fontWeight: 600 }}
@@ -7489,8 +7510,7 @@ Payment terms:
                     <button type="button"
                       onClick={async () => {
                         setTimesheetCrewId("")
-                        const { data } = await supabase.from("timesheets").select("*").order("date")
-                        setTimesheetEntries((data ?? []) as TimesheetEntry[])
+                        await loadAllTimesheets()
                       }}
                       style={{ ...tsBtnActive, padding: "6px 12px" }}>
                       ← Summary
@@ -7502,7 +7522,7 @@ Payment terms:
                       {showTimesheetReport ? "← Back to view" : "📊 Weekly report"}
                     </button>
                   )}
-                  <button type="button" onClick={() => setShowTimesheetModal(false)} style={{ ...tsBtn, padding: "8px 16px" }}>Close</button>
+                  <button type="button" onClick={async () => { setShowTimesheetModal(false); await loadAllTimesheets() }} style={{ ...tsBtn, padding: "8px 16px" }}>Close</button>
                 </div>
               </div>
 
@@ -10411,11 +10431,35 @@ Payment terms:
                               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                                 <button type="button"
                                   onClick={async () => {
-                                    // Open the cell editor for the entry's project + date, so user can create a segment
+                                    // Cover the whole run, not just this one day.
+                                    //
+                                    // Unplanned entries are per worker per day, so a crew that spent
+                                    // Monday to Friday on one job produces five of them. Opening the
+                                    // editor on a single date meant creating five one-day segments by
+                                    // hand. Gather every unplanned day for this job and this crew, and
+                                    // pre-fill the editor from the first to the last.
+                                    const crewId = worker?.crew_id ?? null
+                                    const sameRun = unplannedEntries.filter((u) => {
+                                      if (u.project_id !== t.project_id) return false
+                                      const uw = workers.find((w) => w.id === u.worker_id)
+                                      return (uw?.crew_id ?? null) === crewId
+                                    })
+                                    const dates = sameRun.map((u) => u.date).sort(compareDateStrings)
+                                    const first = dates[0] ?? t.date
+                                    const last = dates[dates.length - 1] ?? t.date
                                     setUnplannedModal({ open: false, weekStart: null })
-                                    openCellEditor(t.project_id!, project?.name ?? "", t.date)
+                                    openCellEditor(t.project_id!, project?.name ?? "", first)
+                                    setCellSegmentForm((prev) => ({
+                                      ...prev,
+                                      crew_id: crewId ?? prev.crew_id,
+                                      start_date: first,
+                                      end_date: last,
+                                    }))
+                                    if (dates.length > 1) {
+                                      showToast(`${dates.length} unplanned days on this job — editor set to ${formatDateLabel(parseDate(first))} – ${formatDateLabel(parseDate(last))}`)
+                                    }
                                   }}
-                                  title="Create a segment for this project on this day"
+                                  title="Create a segment covering every unplanned day this crew spent on this job"
                                   style={{ padding: "6px 10px", background: "#0f2030", border: "1px solid #0891b2", borderRadius: 6, color: "#67e8f9", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                                   + Segment
                                 </button>
@@ -10424,6 +10468,7 @@ Payment terms:
                                     // Dismiss just this entry
                                     await supabase.from("timesheets").update({ unplanned_ignored: true }).eq("id", t.id)
                                     setTimesheetEntries(prev => prev.map(x => x.id === t.id ? { ...x, unplanned_ignored: true } : x))
+                                    setAllTimesheets(prev => prev.map(x => x.id === t.id ? { ...x, unplanned_ignored: true } : x))
                                   }}
                                   title="Mark this entry as intentionally unplanned (won't warn again)"
                                   style={{ padding: "6px 10px", background: "#141a28", border: "1px solid #2e3650", borderRadius: 6, color: "#8899bb", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
@@ -10440,7 +10485,7 @@ Payment terms:
               </div>
 
               <div style={{ marginTop: 14, fontSize: 11, color: "#6b7a9a", textAlign: "center" }}>
-                <strong>+ Segment</strong> opens the segment editor pre-filled for that project + date · <strong>Ignore</strong> hides the entry from future warnings
+                <strong>+ Segment</strong> opens the editor covering every unplanned day that crew spent on the job · <strong>Ignore</strong> hides the entry from future warnings
               </div>
             </div>
           </div>
