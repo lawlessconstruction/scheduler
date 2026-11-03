@@ -3092,6 +3092,24 @@ export default function Home() {
         await reattachMilestone(cellSegmentForm.segmentId, oldProjectId, cellEditor.projectId)
       }
     } else {
+      // Don't create a segment that already exists.
+      //
+      // The unplanned list shows one row per worker per day, so a crew of four
+      // on one job hands you four "+ Segment" buttons that all pre-fill the
+      // same job, crew and dates. Saving more than one of them used to make
+      // identical copies, which then read as the crew being double booked.
+      const duplicate = segments.find(
+        (s) =>
+          s.project_id === payload.project_id &&
+          s.crew_id === payload.crew_id &&
+          s.start_date === payload.start_date &&
+          s.end_date === payload.end_date
+      )
+      if (duplicate) {
+        showToast("That crew is already scheduled on this job for those dates")
+        closeCellEditor()
+        return
+      }
       // New segments no longer auto-claim a milestone. A segment is "when a crew
       // is on site"; a milestone is "when a stage of work is finished". On jobs
       // that stop and restart those are not the same thing, so guessing produced
@@ -10479,6 +10497,22 @@ Payment terms:
                                     const dates = sameRun.map((u) => u.date).sort(compareDateStrings)
                                     const first = dates[0] ?? t.date
                                     const last = dates[dates.length - 1] ?? t.date
+                                    // If this run is already scheduled, say so instead of
+                                    // opening the editor. Clicking a second row for the same
+                                    // job and crew used to produce a duplicate segment.
+                                    const already = crewId
+                                      ? segments.find(
+                                          (s) =>
+                                            s.project_id === t.project_id &&
+                                            s.crew_id === crewId &&
+                                            compareDateStrings(s.start_date, first) <= 0 &&
+                                            compareDateStrings(s.end_date, last) >= 0
+                                        )
+                                      : null
+                                    if (already) {
+                                      showToast("Already scheduled — that crew has a segment covering those days")
+                                      return
+                                    }
                                     setUnplannedModal({ open: false, weekStart: null })
                                     openCellEditor(t.project_id!, project?.name ?? "", first)
                                     setCellSegmentForm((prev) => ({
