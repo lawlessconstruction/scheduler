@@ -2639,6 +2639,13 @@ export default function Home() {
     existingSegmentIds: [],
   })
 
+  // Guard against double-clicking the save button. The ref is what actually
+  // blocks the second click: state updates are async, so two clicks in the
+  // same tick would both read the old value and both insert. The ref flips
+  // synchronously; the state is only there to grey the button out.
+  const savingSegmentRef = useRef(false)
+  const [savingSegment, setSavingSegment] = useState(false)
+
   const [cellSegmentForm, setCellSegmentForm] = useState({
     segmentId: "",
     crew_id: "",
@@ -3060,6 +3067,21 @@ export default function Home() {
   }
 
   async function saveCellSegment() {
+    // One save at a time. Without this, impatient double-clicks each fired an
+    // insert before the first had finished reloading, so the duplicate check
+    // below was still reading the old segment list and let every copy through.
+    if (savingSegmentRef.current) return
+    savingSegmentRef.current = true
+    setSavingSegment(true)
+    try {
+      await saveCellSegmentInner()
+    } finally {
+      savingSegmentRef.current = false
+      setSavingSegment(false)
+    }
+  }
+
+  async function saveCellSegmentInner() {
     if (!cellEditor.projectId || !cellSegmentForm.crew_id || !cellSegmentForm.start_date || !cellSegmentForm.end_date) {
       return
     }
@@ -3098,14 +3120,17 @@ export default function Home() {
       // on one job hands you four "+ Segment" buttons that all pre-fill the
       // same job, crew and dates. Saving more than one of them used to make
       // identical copies, which then read as the crew being double booked.
-      const duplicate = segments.find(
-        (s) =>
-          s.project_id === payload.project_id &&
-          s.crew_id === payload.crew_id &&
-          s.start_date === payload.start_date &&
-          s.end_date === payload.end_date
-      )
-      if (duplicate) {
+      // Ask the database, not React state. State is only as fresh as the last
+      // loadData(), so a check against it can wave a duplicate through.
+      const { data: existingRows } = await supabase
+        .from("segments")
+        .select("id")
+        .eq("project_id", payload.project_id)
+        .eq("crew_id", payload.crew_id)
+        .eq("start_date", payload.start_date)
+        .eq("end_date", payload.end_date)
+        .limit(1)
+      if (existingRows && existingRows.length > 0) {
         showToast("That crew is already scheduled on this job for those dates")
         closeCellEditor()
         return
@@ -4539,6 +4564,9 @@ Payment terms:
         @keyframes unbilledPulse {
           0%, 100% { box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.9), 0 0 0 4px rgba(217, 119, 6, 0.0); }
           50%      { box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.8), 0 0 14px 6px rgba(217, 119, 6, 0.45); }
+        }
+        @keyframes segmentSpin {
+          to { transform: rotate(360deg); }
         }
       `}</style>
       {/* ── Branded header bar ── */}
@@ -6144,9 +6172,26 @@ Payment terms:
                     <button
                       type="button"
                       onClick={saveCellSegment}
-                      style={baseButtonStyle}
+                      disabled={savingSegment}
+                      style={{
+                        ...baseButtonStyle,
+                        display: "inline-flex", alignItems: "center", gap: 8,
+                        opacity: savingSegment ? 0.6 : 1,
+                        cursor: savingSegment ? "wait" : "pointer",
+                      }}
                     >
-                      {cellSegmentForm.segmentId ? "Save segment" : "Add segment"}
+                      {savingSegment && (
+                        <span style={{
+                          width: 13, height: 13, borderRadius: "50%",
+                          border: "2px solid rgba(255,255,255,0.35)",
+                          borderTopColor: "#ffffff",
+                          animation: "segmentSpin 0.7s linear infinite",
+                          display: "inline-block",
+                        }} />
+                      )}
+                      {savingSegment
+                        ? "Saving…"
+                        : cellSegmentForm.segmentId ? "Save segment" : "Add segment"}
                     </button>
 
                     {cellSegmentForm.segmentId && (
