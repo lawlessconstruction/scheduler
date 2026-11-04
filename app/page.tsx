@@ -959,7 +959,7 @@ function MilestonesListModal({ onClose, milestones, projects, contracts, segment
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1013,7 +1013,7 @@ function MilestonesListModal({ onClose, milestones, projects, contracts, segment
         </div>
 
         {/* Rows */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 28px 20px" }}>
+        <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "8px 28px 20px" }}>
           {allMilestones.length === 0 && (
             <div style={{ textAlign: "center", padding: "40px 0", color: "#6b7a9a", fontSize: 14 }}>No milestones in this category</div>
           )}
@@ -1077,7 +1077,7 @@ function ClientsListModal({ onClose, onEdit, clients, projects, contracts, profi
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1095,7 +1095,7 @@ function ClientsListModal({ onClose, onEdit, clients, projects, contracts, profi
         </div>
 
         {/* Client list */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "16px 28px", display: "grid", gap: 16 }}>
+        <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 28px", display: "grid", gap: 16 }}>
           {clients.length === 0 && <div style={{ color: "#6b7a9a", fontSize: 14, textAlign: "center", padding: 40 }}>No clients yet</div>}
 
           {clients.map(c => {
@@ -1216,7 +1216,7 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, segments,
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1243,7 +1243,7 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, segments,
         </div>
 
         {/* Rows */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto" }}>
           {displayed.length === 0 && (
             <div style={{ padding: "60px 28px", textAlign: "center", color: "#6b7a9a", fontSize: 14 }}>No projects</div>
           )}
@@ -1356,7 +1356,7 @@ function ChangePinModal({ userName, userId, onClose, onSuccess }: {
   const fs: React.CSSProperties = { width: "100%", padding: "12px 14px", borderRadius: 10, background: "#111827", border: "1.5px solid #2e3a58", color: "#f0f4ff", fontSize: 24, letterSpacing: "0.3em", textAlign: "center", outline: "none", boxSizing: "border-box" }
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 360, background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 16, padding: 32, color: "white" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-scroll" style={{ width: "100%", maxWidth: 360, background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 16, padding: 32, color: "white" }}>
         <div style={{ fontSize: 20, fontWeight: 900, color: "#f0f4ff", marginBottom: 6 }}>Change PIN</div>
         <div style={{ fontSize: 13, color: "#6b7a9a", marginBottom: 24 }}>Set a new 4-digit PIN for {userName}</div>
         <div style={{ display: "grid", gap: 16 }}>
@@ -1578,10 +1578,10 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", overflow: "hidden" }}>
 
         {/* Sidebar */}
-        <div style={{ width: 280, minWidth: 280, borderRight: "1px solid #252f45", padding: 20, display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
+        <div className="modal-body-scroll" style={{ width: 280, minWidth: 280, borderRight: "1px solid #252f45", padding: 20, display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
             <div style={{ fontSize: 18, fontWeight: 900, color: "#f0f4ff" }}>Extras</div>
             <div style={{ display: "flex", gap: 6 }}>
@@ -1620,7 +1620,7 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
         </div>
 
         {/* Right panel */}
-        <div style={{ flex: 1, padding: 28, overflowY: "auto" }}>
+        <div className="modal-body-scroll" style={{ flex: 1, padding: 28, overflowY: "auto" }}>
 
           {/* History view */}
           {!activeId && (
@@ -2099,7 +2099,7 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 1280, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: 1280, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{ padding: "16px 24px", borderBottom: "1px solid #252f45" }}>
@@ -2170,7 +2170,7 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
         )}
 
         {/* List */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+        <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
           {loading && <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a" }}>Loading…</div>}
           {!loading && filtered.length === 0 && (
             <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a" }}>No expenses match. Try changing filters or click + New expense.</div>
@@ -4788,6 +4788,39 @@ Payment terms:
         @keyframes segmentSpin {
           to { transform: rotate(360deg); }
         }
+        /* Dialogs stay inside the screen and scroll on their own.
+           overscroll-behavior keeps wheel and touch on the dialog,
+           not the page behind the backdrop. */
+        .modal-scroll {
+          max-height: calc(100dvh - 2rem);
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+        }
+        .modal-frame {
+          max-height: calc(100dvh - 2rem);
+          min-height: 0;
+        }
+        .modal-body-scroll {
+          min-height: 0;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+        }
+        .modal-overlay-scroll {
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+        }
+        .cell-editor-columns {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 20px;
+          align-items: start;
+        }
+        @media (max-width: 720px) {
+          .cell-editor-columns {
+            grid-template-columns: 1fr;
+          }
+        }
       `}</style>
       {/* ── Branded header bar ── */}
       <div style={{
@@ -6023,6 +6056,7 @@ Payment terms:
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal-scroll"
             style={{
               width: "100%",
               maxWidth: 720,
@@ -6225,6 +6259,7 @@ Payment terms:
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal-scroll"
             style={{
               width: "100%",
               maxWidth: 760,
@@ -6267,13 +6302,7 @@ Payment terms:
               </div>
             )}
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 20,
-              }}
-            >
+            <div className="cell-editor-columns">
               <div style={sectionCardStyle}>
                 <div style={{ fontWeight: 800, marginBottom: 12, fontSize: 18 }}>Crew booking</div>
 
@@ -6421,6 +6450,46 @@ Payment terms:
                       </button>
                     )}
                   </div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
+              <div style={sectionCardStyle}>
+                <div style={{ fontWeight: 800, marginBottom: 12, fontSize: 18 }}>Day label</div>
+
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div>
+                    <FieldLabel>Label</FieldLabel>
+                    <input
+                      placeholder="Materials, Steel, Windows"
+                      value={cellLabelForm.label}
+                      onChange={(e) => setCellLabelForm((prev) => ({ ...prev, label: e.target.value }))}
+                      style={fieldStyle}
+                    />
+                    <div style={helperStyle}>Leave blank and save to remove the label.</div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={saveCellLabel}
+                      style={{ ...secondaryButtonStyle, background: "#4b5563" }}
+                    >
+                      {cellLabelForm.labelId ? "Save label" : "Add label"}
+                    </button>
+
+                    {cellLabelForm.labelId && (
+                      <button
+                        type="button"
+                        onClick={deleteCellLabel}
+                        style={dangerButtonStyle}
+                      >
+                        Delete label
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
 
                   {cellEditor.projectId && (() => {
                     const projectMilestones = milestones
@@ -6469,7 +6538,7 @@ Payment terms:
                     })()
 
                     return (
-                      <div style={{ borderTop: "1px solid #2e3650", paddingTop: 12, marginTop: 4 }}>
+                      <div style={sectionCardStyle}>
                         <FieldLabel>Stage this work counts toward</FieldLabel>
                         <select
                           value={selectedId}
@@ -6606,44 +6675,6 @@ Payment terms:
                       </div>
                     )
                   })()}
-                </div>
-              </div>
-
-              <div style={sectionCardStyle}>
-                <div style={{ fontWeight: 800, marginBottom: 12, fontSize: 18 }}>Day label</div>
-
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div>
-                    <FieldLabel>Label</FieldLabel>
-                    <input
-                      placeholder="Materials, Steel, Windows"
-                      value={cellLabelForm.label}
-                      onChange={(e) => setCellLabelForm((prev) => ({ ...prev, label: e.target.value }))}
-                      style={fieldStyle}
-                    />
-                    <div style={helperStyle}>Leave blank and save to remove the label.</div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={saveCellLabel}
-                      style={{ ...secondaryButtonStyle, background: "#4b5563" }}
-                    >
-                      {cellLabelForm.labelId ? "Save label" : "Add label"}
-                    </button>
-
-                    {cellLabelForm.labelId && (
-                      <button
-                        type="button"
-                        onClick={deleteCellLabel}
-                        style={dangerButtonStyle}
-                      >
-                        Delete label
-                      </button>
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -6666,6 +6697,7 @@ Payment terms:
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal-scroll"
             style={{
               width: "100%",
               maxWidth: 680,
@@ -6675,8 +6707,6 @@ Payment terms:
               padding: 22,
               color: "white",
               boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
-              maxHeight: "90vh",
-              overflowY: "auto",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 22 }}>
@@ -7005,7 +7035,7 @@ Payment terms:
 
         return (
           <div onClick={closeModal} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 110, padding: 20 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 720, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 22, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.45)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div onClick={(e) => e.stopPropagation()} className="modal-scroll" style={{ width: "100%", maxWidth: 720, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 22, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.45)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div>
                   <div style={{ fontSize: 22, fontWeight: 800 }}>Milestones</div>
@@ -7101,7 +7131,7 @@ Payment terms:
       {/* ── Estimate Template Manager ── */}
       {showTemplateManager && (
         <div onClick={() => setShowTemplateManager(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.80)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 130, padding: 20, overflowY: "auto" }}>
+          className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.80)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 130, padding: 20, overflowY: "auto" }}>
           <div onClick={e => e.stopPropagation()}
             style={{ width: "100%", maxWidth: 900, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 28, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", marginBottom: 20 }}>
 
@@ -7217,7 +7247,7 @@ Payment terms:
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ width: "100%", maxWidth: 680, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 22, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.45)", maxHeight: "90vh", overflowY: "auto" }}
+            className="modal-scroll" style={{ width: "100%", maxWidth: 680, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 22, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.45)" }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <div style={{ fontSize: 22, fontWeight: 800 }}>Contract types</div>
@@ -7318,7 +7348,7 @@ Payment terms:
       {showWorkersModal && (
         <div
           onClick={() => setShowWorkersModal(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+          className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -7784,7 +7814,7 @@ Payment terms:
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: isMobile ? "100vw" : "calc(100vw - 32px)", background: ts.panel, border: isMobile ? "none" : `1px solid ${ts.border}`, borderRadius: isMobile ? 0 : 14, padding: isMobile ? 12 : 24, color: ts.text, boxShadow: "0 20px 60px rgba(60,64,67,0.28)", display: "flex", flexDirection: "column", overflow: "hidden" }}
+              className="modal-frame" style={{ width: "100%", maxWidth: isMobile ? "100vw" : "calc(100vw - 32px)", background: ts.panel, border: isMobile ? "none" : `1px solid ${ts.border}`, borderRadius: isMobile ? 0 : 14, padding: isMobile ? 12 : 24, color: ts.text, boxShadow: "0 20px 60px rgba(60,64,67,0.28)", display: "flex", flexDirection: "column", overflow: "hidden" }}
             >
               {/* Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 8, flexWrap: "wrap" }}>
@@ -7928,7 +7958,7 @@ Payment terms:
                 }
 
                 return (
-                  <div style={{ flex: 1, overflowY: "auto", background: ts.panel, margin: "-16px -16px 0", padding: 24, borderRadius: "10px 10px 0 0" }}>
+                  <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", background: ts.panel, margin: "-16px -16px 0", padding: 24, borderRadius: "10px 10px 0 0" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
                       <div>
                         <div style={{ fontSize: 22, fontWeight: 900, color: ts.text, letterSpacing: "-0.01em" }}>Weekly Report</div>
@@ -8215,7 +8245,7 @@ Payment terms:
                 const submittedCount = weekWorkers.filter(w => submittedWorkerIds.has(w.id)).length
 
                 return (
-                  <div style={{ flex: 1, overflowY: "auto", padding: "8px 4px 24px" }}>
+                  <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "8px 4px 24px" }}>
                     {/* Top stats strip */}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
                       <div style={{ background: ts.paper, border: `1px solid ${ts.border}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
@@ -8414,7 +8444,7 @@ Payment terms:
                 }
 
                 return (
-                  <div style={{ flex: 1, overflowY: "auto", padding: "0 0 100px 0", display: "flex", flexDirection: "column" }}>
+                  <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "0 0 100px 0", display: "flex", flexDirection: "column" }}>
                     {/* Day tabs + search — sticky */}
                     <div style={{ position: "sticky", top: 0, background: ts.panel, zIndex: 5, padding: "8px 0 12px" }}>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
@@ -8654,7 +8684,7 @@ Payment terms:
               })()}
 
               {!showTimesheetReport && timesheetCrewId && !timesheetLoading && !isMobile && (
-                <div style={{ overflowX: "auto", overflowY: "auto", flex: 1 }}>
+                <div className="modal-body-scroll" style={{ overflowX: "auto", overflowY: "auto", flex: 1 }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                     <thead>
                       <tr>
@@ -8994,7 +9024,7 @@ Payment terms:
         return (
           <div
             onClick={() => setShowProfitabilityModal(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+            className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
@@ -9295,7 +9325,7 @@ Payment terms:
       {showCrewsModal && (
         <div
           onClick={() => setShowCrewsModal(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+          className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -9392,7 +9422,7 @@ Payment terms:
       {showClientsModal && (
         <div
           onClick={() => setShowClientsModal(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+          className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -9738,7 +9768,7 @@ Payment terms:
         return (
           <div
             onClick={() => setShowCashflowModal(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+            className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
@@ -9897,7 +9927,7 @@ Payment terms:
         return (
           <div
             onClick={() => setCostsModal(null)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+            className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
@@ -10146,10 +10176,10 @@ Payment terms:
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: em.paper, border: `1px solid ${em.cardBorder}`, borderRadius: 14, color: em.text, boxShadow: "0 20px 60px rgba(0,0,0,0.35)", display: "flex", flexDirection: "row", overflow: "hidden" }}
+              className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: em.paper, border: `1px solid ${em.cardBorder}`, borderRadius: 14, color: em.text, boxShadow: "0 20px 60px rgba(0,0,0,0.35)", display: "flex", flexDirection: "row", overflow: "hidden" }}
             >
               {/* Left sidebar — estimate list */}
-              <div style={{ width: 320, minWidth: 320, borderRight: `1px solid ${em.cardBorder}`, padding: 20, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", background: em.sidebarBg }}>
+              <div className="modal-body-scroll" style={{ width: 320, minWidth: 320, borderRight: `1px solid ${em.cardBorder}`, padding: 20, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", background: em.sidebarBg }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 20, fontWeight: 900, color: em.text }}>Estimates</div>
                   <div style={{ display: "flex", gap: 6 }}>
@@ -10198,7 +10228,7 @@ Payment terms:
               </div>
 
               {/* Right panel — active estimate */}
-              <div style={{ flex: 1, padding: 28, overflowY: "auto", background: em.paper }}>
+              <div className="modal-body-scroll" style={{ flex: 1, padding: 28, overflowY: "auto", background: em.paper }}>
                 {!activeEstimate && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16 }}>
                     <div style={{ fontSize: 14, color: em.textSubtle }}>Select an estimate or create a new one</div>
@@ -10720,7 +10750,7 @@ Payment terms:
           <div onClick={() => setUnplannedModal({ open: false, weekStart: null })}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 16 }}>
             <div onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: 720, maxHeight: "85vh", background: "#1e2130", border: "1px solid #b45309", borderRadius: 14, padding: 24, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.55)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              className="modal-frame" style={{ width: "100%", maxWidth: 720, background: "#1e2130", border: "1px solid #b45309", borderRadius: 14, padding: 24, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.55)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
                 <div>
                   <div style={{ fontSize: 20, fontWeight: 900, color: "#fbbf24" }}>⚠ Unplanned timesheet entries</div>
@@ -10730,7 +10760,7 @@ Payment terms:
                   style={{ padding: "6px 12px", background: "#141a28", color: "#c8d4f0", border: "1px solid #2e3650", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
               </div>
 
-              <div style={{ flex: 1, overflowY: "auto", marginTop: 14, background: "#141a28", border: "1px solid #252f45", borderRadius: 10 }}>
+              <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", marginTop: 14, background: "#141a28", border: "1px solid #252f45", borderRadius: 10 }}>
                 {dateKeys.length === 0 ? (
                   <div style={{ padding: 40, textAlign: "center", color: "#8899bb" }}>Nothing unplanned in the visible range. 🎉</div>
                 ) : (
@@ -10849,7 +10879,7 @@ Payment terms:
         return (
           <div onClick={() => setConvertToProject(prev => ({ ...prev, open: false }))}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 16 }}>
-            <div onClick={(e) => e.stopPropagation()}
+            <div onClick={(e) => e.stopPropagation()} className="modal-scroll"
               style={{ width: "100%", maxWidth: 520, background: paperBg, border: `1px solid ${border}`, borderRadius: 14, padding: 28, color: text, boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
               <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 6 }}>Convert to project</div>
               <div style={{ fontSize: 13, color: textMuted, marginBottom: 20 }}>
