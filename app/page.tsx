@@ -15,6 +15,10 @@ type Project = {
   client: string | null
   client_id: string | null
   archived: boolean | null
+  /** Finished on site. Independent of archived, which only hides the job. */
+  completed: boolean | null
+  /** Postgres date, YYYY-MM-DD. Null when the job is not completed. */
+  completed_at: string | null
   contract_value: number | null
   profitability_included: boolean | null
   pinned: boolean | null
@@ -337,6 +341,8 @@ type ProjectEditorState = {
   client: string
   client_id: string | null
   archived: boolean
+  completed: boolean
+  completed_at: string
   contract_value: string
   default_billable_hourly: boolean
 }
@@ -573,6 +579,43 @@ function formatLongDateLabel(dateStr: string) {
     month: "short",
     year: "numeric",
   })
+}
+
+function dateOnly(value: string | null | undefined) {
+  if (!value) return null
+  const day = value.slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null
+}
+
+function formatCompletedBadge(date: string | null | undefined) {
+  const day = dateOnly(date)
+  if (!day) return "Completed"
+  const label = parseDate(day).toLocaleDateString("en-AU", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  })
+  return `Completed ${label}`
+}
+
+function CompletedBadge({ date, tone }: { date: string | null | undefined; tone: "light" | "dark" }) {
+  const light = tone === "light"
+  return (
+    <span
+      style={{
+        fontSize: light ? 10 : 11,
+        fontWeight: 700,
+        color: light ? "#166534" : "#86efac",
+        background: light ? "#dcfce7" : "#14532d",
+        borderRadius: light ? 4 : 6,
+        padding: light ? "2px 6px" : "2px 8px",
+        lineHeight: 1.3,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {formatCompletedBadge(date)}
+    </span>
+  )
 }
 
 function getDates(start: Date, end: Date) {
@@ -1069,7 +1112,7 @@ function ClientsListModal({ onClose, onEdit, clients, projects, contracts, profi
   onClose: () => void
   onEdit: () => void
   clients: { id: string; name: string; email: string | null; phone: string | null; company: string | null; notes: string | null }[]
-  projects: { id: string; name: string; client: string | null; client_id: string | null; archived: boolean | null }[]
+  projects: { id: string; name: string; client: string | null; client_id: string | null; archived: boolean | null; completed: boolean | null; completed_at: string | null }[]
   contracts: { id: string; project_id: string; value: number | null; color: string | null }[]
   profitabilityData: any[]
 }) {
@@ -1162,7 +1205,14 @@ function ClientsListModal({ onClose, onEdit, clients, projects, contracts, profi
                                 const mc = projMargin == null ? "#94a3b8" : projMargin >= 30 ? "#4ade80" : projMargin >= 0 ? "#fbbf24" : "#f87171"
                                 return (
                                   <tr key={p.id} style={{ borderTop: "1px solid #1a2035" }}>
-                                    <td style={{ padding: "6px 4px", fontWeight: 600, fontSize: 14, color: "#c8d4f0" }}>{p.name}</td>
+                                    <td style={{ padding: "6px 4px", fontWeight: 600, fontSize: 14, color: "#c8d4f0" }}>
+                                      <div>{p.name}</div>
+                                      {p.completed && (
+                                        <div style={{ marginTop: 4 }}>
+                                          <CompletedBadge date={p.completed_at} tone="dark" />
+                                        </div>
+                                      )}
+                                    </td>
                                     <td style={{ padding: "6px 4px", fontSize: 13, fontWeight: 700, color: "#ffffff" }}>{projContractValue > 0 ? `$${fmt(projContractValue)}` : "—"}</td>
                                     <td style={{ padding: "6px 4px", fontSize: 14, fontWeight: 800, color: mc }}>{projMargin != null ? `${projMargin.toFixed(1)}%` : "—"}</td>
                                     <td style={{ padding: "6px 4px", fontSize: 11, fontWeight: 700, color: p.archived ? "#94a3b8" : "#4ade80" }}>
@@ -1189,7 +1239,7 @@ function ClientsListModal({ onClose, onEdit, clients, projects, contracts, profi
 
 function ProjectsListModal({ onClose, projects, contracts, milestones, segments, profitabilityData, extras, extraItems, onEditProject }: {
   onClose: () => void
-  projects: { id: string; name: string; client: string | null; archived: boolean | null; contract_value: number | null }[]
+  projects: { id: string; name: string; client: string | null; archived: boolean | null; completed: boolean | null; completed_at: string | null; contract_value: number | null }[]
   contracts: { id: string; project_id: string; name: string | null; value: number | null; color: string | null }[]
   milestones: { id: string; project_id: string; name: string | null; amount: number | null; segment_id: string | null; due_date_override: string | null }[]
   segments: { id: string; end_date: string; milestone_id: string | null }[]
@@ -1206,6 +1256,7 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, segments,
     active: projects.filter(p => !p.archived),
     archived: projects.filter(p => p.archived),
   }
+  const completedCount = projects.filter(p => p.completed).length
 
   const displayed = (filter === "all" ? projects : grouped[filter] ?? [])
     .slice()
@@ -1222,7 +1273,7 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, segments,
         <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 24, fontWeight: 900, color: "#f0f4ff" }}>Projects</div>
-            <div style={{ fontSize: 13, color: "#6b7a9a", marginTop: 2 }}>{projects.length} total · {grouped.active.length} active · {grouped.archived.length} archived</div>
+            <div style={{ fontSize: 13, color: "#6b7a9a", marginTop: 2 }}>{projects.length} total · {grouped.active.length} active · {grouped.archived.length} archived · {completedCount} completed</div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {(["active", "archived", "all"] as const).map(f => (
@@ -1271,14 +1322,19 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, segments,
               return s + items.reduce((si: number, i: any) => si + (i.unit_cost ?? 0) * (1 + (i.margin_percent ?? 0) / 100), 0) * 1.1
             }, 0)
 
+            const rowBg = p.completed ? "#14261c" : "#1e2130"
+            const hoverBg = p.completed ? "#1c3326" : "#242838"
             return (
-              <div key={p.id} style={{ padding: "14px 28px", borderBottom: "1px solid #1a2035", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 80px", gap: 12, alignItems: "center", background: "#1e2130" }}
-                onMouseEnter={e => (e.currentTarget.style.background = "#242838")}
-                onMouseLeave={e => (e.currentTarget.style.background = "#1e2130")}>
+              <div key={p.id} style={{ padding: "14px 28px", borderBottom: "1px solid #1a2035", display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 80px", gap: 12, alignItems: "center", background: rowBg }}
+                onMouseEnter={e => (e.currentTarget.style.background = hoverBg)}
+                onMouseLeave={e => (e.currentTarget.style.background = rowBg)}>
 
                 {/* Project / Client */}
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: "#f0f4ff" }}>{p.name}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: "#f0f4ff" }}>{p.name}</div>
+                    {p.completed && <CompletedBadge date={p.completed_at} tone="dark" />}
+                  </div>
                   <div style={{ fontSize: 12, color: "#6b7a9a", marginTop: 2 }}>{p.client ?? "—"}</div>
                 </div>
 
@@ -2699,6 +2755,8 @@ export default function Home() {
     client: "",
     client_id: null,
     archived: false,
+    completed: false,
+    completed_at: "",
     contract_value: "",
     default_billable_hourly: false,
   })
@@ -2737,6 +2795,10 @@ export default function Home() {
   // synchronously; the state is only there to grey the button out.
   const savingSegmentRef = useRef(false)
   const [savingSegment, setSavingSegment] = useState(false)
+  // Same trick as the segment save: state lags a click, so the ref is what
+  // actually stops a second Mark completed / Undo from firing.
+  const savingCompletedRef = useRef(false)
+  const [savingCompleted, setSavingCompleted] = useState(false)
   // Set when someone tries to mark a stage invoiced/paid with no money on it.
   const [milestoneBillBlockId, setMilestoneBillBlockId] = useState<string | null>(null)
   const [qboLookupEnabled, setQboLookupEnabled] = useState(false)
@@ -4446,13 +4508,15 @@ Payment terms:
       client: project.client ?? "",
       client_id: project.client_id ?? null,
       archived: project.archived ?? false,
+      completed: !!project.completed,
+      completed_at: dateOnly(project.completed_at) ?? formatDateKey(new Date()),
       contract_value: project.contract_value != null ? String(project.contract_value) : "",
       default_billable_hourly: project.default_billable_hourly ?? false,
     })
   }
 
   function closeProjectEditor() {
-    setProjectEditor({ open: false, projectId: "", name: "", client: "", client_id: null, archived: false, contract_value: "", default_billable_hourly: false })
+    setProjectEditor({ open: false, projectId: "", name: "", client: "", client_id: null, archived: false, completed: false, completed_at: "", contract_value: "", default_billable_hourly: false })
   }
 
   async function saveProject() {
@@ -4506,6 +4570,63 @@ Payment terms:
       .eq("id", projectEditor.projectId)
     await loadData()
     closeProjectEditor()
+  }
+
+  function completionDateChanged() {
+    const saved = dateOnly(projects.find((p) => p.id === projectEditor.projectId)?.completed_at) ?? ""
+    return projectEditor.completed_at !== saved
+  }
+
+  // Writes completed / completed_at only. Archive is a different flag and is
+  // left alone. The button lock is the ref; savingCompleted just greys the button.
+  async function setProjectCompletion(nextCompleted: boolean) {
+    if (savingCompletedRef.current) return
+    const projectId = projectEditor.projectId
+    if (!projectId) return
+    savingCompletedRef.current = true
+    setSavingCompleted(true)
+    try {
+      const date = dateOnly(projectEditor.completed_at) ?? formatDateKey(new Date())
+      const payload = nextCompleted
+        ? { completed: true, completed_at: date }
+        : { completed: false, completed_at: null }
+      const { error } = await supabase
+        .from("projects")
+        .update(payload)
+        .eq("id", projectId)
+      if (error) {
+        showToast(`Could not update completion: ${error.message}`)
+        return
+      }
+      const { data, error: readError } = await supabase
+        .from("projects")
+        .select("id, completed, completed_at")
+        .eq("id", projectId)
+        .maybeSingle()
+      if (readError || !data) {
+        showToast("Could not confirm the save. Refreshing from the database.")
+        await loadData()
+        return
+      }
+      const row = data as { id: string; completed: boolean | null; completed_at: string | null }
+      const savedCompleted = !!row.completed
+      const savedDate = dateOnly(row.completed_at)
+      const matches = savedCompleted === nextCompleted && (nextCompleted ? savedDate === date : savedDate == null)
+      setProjectEditor((prev) => prev.projectId !== projectId ? prev : {
+        ...prev,
+        completed: savedCompleted,
+        completed_at: savedDate ?? formatDateKey(new Date()),
+      })
+      if (!matches) {
+        showToast("Completion did not match the database. Showing what was stored.")
+      } else {
+        showToast(nextCompleted ? formatCompletedBadge(savedDate) : "Completion cleared")
+      }
+      await loadData()
+    } finally {
+      savingCompletedRef.current = false
+      setSavingCompleted(false)
+    }
   }
 
   // A segment that moves to a different project can no longer stand for the old
@@ -5161,7 +5282,7 @@ Payment terms:
                         border: "1px solid #e5e7eb",
                         padding: 8,
                         fontWeight: 600,
-                        background: "#ffffff",
+                        background: ganttViewMode === "projects" && projects.find((p) => p.id === row.projectId)?.completed ? "#f0fdf4" : "#ffffff",
                         position: "sticky",
                         left: 0,
                         zIndex: 4,
@@ -5212,6 +5333,9 @@ Payment terms:
                               <span style={{ fontSize: 10, background: "#e5e7eb", color: "#6b7280", borderRadius: 4, padding: "2px 6px", fontWeight: 600 }}>
                                 ARCHIVED
                               </span>
+                            )}
+                            {ganttViewMode === "projects" && projects.find((p) => p.id === row.projectId)?.completed && (
+                              <CompletedBadge date={projects.find((p) => p.id === row.projectId)?.completed_at} tone="light" />
                             )}
                             {ganttViewMode === "crews" && (() => {
                               const crew = crews.find(c => c.id === row.projectId)
@@ -6847,6 +6971,77 @@ Payment terms:
                     Total: ${formatMoney(contracts.filter((c) => c.project_id === projectEditor.projectId).reduce((s, c) => s + (c.value ?? 0), 0))} inc. GST
                   </div>
                 )}
+              </div>
+
+              {/* Completion is its own save. Save changes does not touch these columns,
+                  and archive stays a separate button below. */}
+              <div style={{ ...sectionCardStyle, display: "grid", gap: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>Completion</div>
+                    <div style={{ fontSize: 11, color: "#8899bb", marginTop: 2, lineHeight: 1.4 }}>
+                      Mark the job finished. It stays on the board — archive is what hides it.
+                    </div>
+                  </div>
+                  {projectEditor.completed && <CompletedBadge date={projectEditor.completed_at} tone="dark" />}
+                </div>
+                <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 180px" }}>
+                    <FieldLabel>Completed on</FieldLabel>
+                    <input
+                      type="date"
+                      value={projectEditor.completed_at}
+                      disabled={savingCompleted}
+                      onChange={(e) => setProjectEditor((prev) => ({ ...prev, completed_at: e.target.value }))}
+                      style={{ ...fieldStyle, opacity: savingCompleted ? 0.6 : 1 }}
+                    />
+                  </div>
+                  {projectEditor.completed ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={savingCompleted || !completionDateChanged()}
+                        onClick={() => setProjectCompletion(true)}
+                        style={{
+                          ...baseButtonStyle,
+                          background: "#166534",
+                          borderColor: "#14532d",
+                          opacity: savingCompleted || !completionDateChanged() ? 0.55 : 1,
+                          cursor: savingCompleted || !completionDateChanged() ? "default" : "pointer",
+                        }}
+                      >
+                        {savingCompleted ? "Saving…" : "Save date"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingCompleted}
+                        onClick={() => setProjectCompletion(false)}
+                        style={{
+                          ...secondaryButtonStyle,
+                          opacity: savingCompleted ? 0.6 : 1,
+                          cursor: savingCompleted ? "default" : "pointer",
+                        }}
+                      >
+                        {savingCompleted ? "Saving…" : "Undo completion"}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={savingCompleted}
+                      onClick={() => setProjectCompletion(true)}
+                      style={{
+                        ...baseButtonStyle,
+                        background: "#166534",
+                        borderColor: "#14532d",
+                        opacity: savingCompleted ? 0.6 : 1,
+                        cursor: savingCompleted ? "default" : "pointer",
+                      }}
+                    >
+                      {savingCompleted ? "Saving…" : "Mark completed"}
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Billable hourly default toggle */}
