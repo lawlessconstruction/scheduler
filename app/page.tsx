@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../src/lib/supabase"
+import {
+  amountCanBeInvoiced,
+  pastVisitsForInvoice,
+  segmentIsBilled,
+  segmentIsUntagged,
+} from "../src/lib/milestone-billing"
 
 type Project = {
   id: string
@@ -412,6 +418,92 @@ const sectionCardStyle: React.CSSProperties = {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <div style={labelStyle}>{children}</div>
+}
+
+type BulkVisit = {
+  id: string
+  crew: string
+  when: string
+  untagged: boolean
+  isThis: boolean
+}
+
+// Same spot as the old "tag the other visits that week" button, but the list
+// is every past visit on the job that isn't already on an invoiced stage.
+function BulkTagPastVisits({
+  visits,
+  onApply,
+}: {
+  visits: BulkVisit[]
+  onApply: (ids: string[]) => Promise<void>
+}) {
+  const [checked, setChecked] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const v of visits) init[v.id] = v.untagged
+    return init
+  })
+  const lock = useRef(false)
+  const [busy, setBusy] = useState(false)
+  const ticked = visits.filter((v) => checked[v.id]).length
+
+  async function apply() {
+    if (lock.current || ticked === 0) return
+    const ids = visits.filter((v) => checked[v.id]).map((v) => v.id)
+    lock.current = true
+    setBusy(true)
+    try {
+      await onApply(ids)
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 10, background: "#151a28", border: "1px solid #252f45", borderRadius: 8, padding: "10px 12px" }}>
+      <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.4px", color: "#8899bb", fontWeight: 700, marginBottom: 6 }}>
+        Past visits this invoice can cover
+      </div>
+      <div style={{ maxHeight: 200, overflowY: "auto", display: "grid", gap: 2 }}>
+        {visits.map((v) => (
+          <label key={v.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#c8d4f0", cursor: "pointer", padding: "3px 0" }}>
+            <input
+              type="checkbox"
+              checked={!!checked[v.id]}
+              onChange={(e) => setChecked((prev) => ({ ...prev, [v.id]: e.target.checked }))}
+              style={{ accentColor: "#4ade80", width: 15, height: 15, flexShrink: 0 }}
+            />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              {v.crew}
+              {v.isThis ? " (this one)" : ""}
+              {!v.untagged ? " · already on another stage" : ""}
+            </span>
+            <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: "#8899bb" }}>{v.when}</span>
+          </label>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={apply}
+        disabled={busy || ticked === 0}
+        style={{
+          ...secondaryButtonStyle,
+          fontSize: 11,
+          padding: "6px 12px",
+          color: "#4ade80",
+          borderColor: "#14532d",
+          marginTop: 8,
+          opacity: busy || ticked === 0 ? 0.55 : 1,
+          cursor: busy ? "wait" : ticked === 0 ? "default" : "pointer",
+        }}
+      >
+        {busy ? "Tagging…" : `Tag the ${ticked} ticked visit${ticked === 1 ? "" : "s"} to this stage`}
+      </button>
+      <div style={{ fontSize: 11, color: "#8899bb", marginTop: 6, lineHeight: 1.5 }}>
+        One invoice covers every ticked visit — any crew, any week. They stop the amber flag once this stage is invoiced or paid. Visits with no stage yet start ticked. A visit already on another stage is left unticked.
+      </div>
+    </div>
+  )
 }
 
 function formatMoney(value: number) {
@@ -2645,6 +2737,13 @@ export default function Home() {
   // synchronously; the state is only there to grey the button out.
   const savingSegmentRef = useRef(false)
   const [savingSegment, setSavingSegment] = useState(false)
+  // Set when someone tries to mark a stage invoiced/paid with no money on it.
+  const [milestoneBillBlockId, setMilestoneBillBlockId] = useState<string | null>(null)
+  const [qboLookupEnabled, setQboLookupEnabled] = useState(false)
+  const [qboBusyId, setQboBusyId] = useState<string | null>(null)
+  const [qboFillNote, setQboFillNote] = useState<{ id: string; exGst: number; total: number; tax: number } | null>(null)
+  const qboLookupRef = useRef(false)
+  const invoiceNumberRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const [cellSegmentForm, setCellSegmentForm] = useState({
     segmentId: "",
@@ -2776,6 +2875,18 @@ export default function Home() {
     setTodayKey(formatDateKey(new Date()))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // The Look up button only appears once the server confirms QuickBooks
+  // env vars are set. The check returns no secrets.
+  useEffect(() => {
+    if (!milestoneModal.open) return
+    let cancelled = false
+    fetch("/api/qbo/invoice")
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setQboLookupEnabled(!!d?.configured) })
+      .catch(() => { if (!cancelled) setQboLookupEnabled(false) })
+    return () => { cancelled = true }
+  }, [milestoneModal.open])
 
 
 
@@ -3321,6 +3432,21 @@ export default function Home() {
   }
 
   async function saveMilestone(m: Milestone) {
+    const wantsBilled = m.status === "invoiced" || m.status === "paid"
+    if (wantsBilled && !amountCanBeInvoiced(m.amount)) {
+      // Read the row we're about to change. A stage that is already invoiced
+      // can still have its invoice number edited; the block is on *becoming*
+      // invoiced or paid while the amount is $0, blank, or not a number.
+      const { data: existing, error } = await supabase.from("milestones").select("status").eq("id", m.id).maybeSingle()
+      const sameStatus = !error && existing?.status === m.status
+      if (!sameStatus) {
+        setMilestoneBillBlockId(m.id)
+        if (existing) {
+          setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, status: existing.status } : x))
+        }
+        return
+      }
+    }
     await supabase.from("milestones").update({
       name: m.name,
       amount: m.amount,
@@ -3338,6 +3464,100 @@ export default function Home() {
       await reorderMilestonesForProject(m.project_id, freshSegments as Segment[])
     }
     await loadData()
+  }
+
+  // Tag several visits to one stage. Re-read the rows first so a visit that
+  // was invoiced since the page loaded (either link shape) is left alone.
+  async function tagSegmentsToStage(ids: string[], stageId: string, projectId: string, stageName: string) {
+    const unique = [...new Set(ids)].filter(Boolean)
+    if (unique.length === 0 || !stageId) return
+
+    const [{ data: freshSegs, error: segErr }, { data: freshMs, error: msErr }] = await Promise.all([
+      supabase.from("segments").select("id, milestone_id, project_id").in("id", unique),
+      supabase.from("milestones").select("id, status, segment_id, project_id").eq("project_id", projectId),
+    ])
+    if (segErr || msErr || !freshSegs || !freshMs) {
+      showToast("Could not check those visits — nothing was tagged")
+      return
+    }
+
+    const safeIds = freshSegs
+      .filter((s) => s.project_id === projectId && s.milestone_id !== stageId && !segmentIsBilled(s, freshMs))
+      .map((s) => s.id)
+    if (safeIds.length === 0) {
+      showToast("Those visits are already covered")
+      await loadData()
+      return
+    }
+
+    const results = await Promise.all(safeIds.map(async (id) => {
+      const res = await supabase.from("segments").update({ milestone_id: stageId }).eq("id", id)
+      return { id, error: res.error }
+    }))
+    const succeeded = results.filter((r) => !r.error).map((r) => r.id)
+    if (succeeded.length === 0) {
+      showToast("Could not tag those visits")
+      return
+    }
+
+    // A visit moved onto this stage shouldn't stay pinned to a different stage
+    // the old way, or it would still be counted there too.
+    const legacy = freshMs.filter((m) => m.id !== stageId && m.segment_id && succeeded.includes(m.segment_id))
+    for (const m of legacy) {
+      await supabase.from("milestones").update({ segment_id: null }).eq("id", m.id)
+    }
+
+    if (succeeded.includes(cellSegmentForm.segmentId)) {
+      setCellSegmentForm((prev) => ({ ...prev, milestone_id: stageId }))
+    }
+    await loadData()
+    const noun = succeeded.length === 1 ? "visit" : "visits"
+    showToast(
+      succeeded.length === results.length
+        ? `Tagged ${succeeded.length} ${noun} to “${stageName}”`
+        : `Tagged ${succeeded.length} of ${results.length} visits to “${stageName}”`
+    )
+  }
+
+  async function lookupQboInvoice(m: Milestone, contractValue: number | null) {
+    if (qboLookupRef.current) return
+    const number = (invoiceNumberRefs.current[m.id]?.value ?? m.invoice_number ?? "").trim()
+    if (!number) {
+      showToast("Enter the invoice number first")
+      return
+    }
+    qboLookupRef.current = true
+    setQboBusyId(m.id)
+    try {
+      const res = await fetch(`/api/qbo/invoice?number=${encodeURIComponent(number)}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || typeof data.amountExGst !== "number") {
+        showToast(typeof data.error === "string" ? data.error : "QuickBooks lookup failed")
+        return
+      }
+      const amount = data.amountExGst as number
+      const invoiceDate = typeof data.txnDate === "string" ? data.txnDate : m.invoice_date
+      const percent = contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent
+      const updated: Milestone = {
+        ...m,
+        invoice_number: number,
+        invoice_date: invoiceDate,
+        amount,
+        percent,
+      }
+      setMilestones((prev) => prev.map((x) => x.id === m.id ? updated : x))
+      setQboFillNote({
+        id: m.id,
+        exGst: amount,
+        total: typeof data.totalAmt === "number" ? data.totalAmt : amount,
+        tax: typeof data.totalTax === "number" ? data.totalTax : 0,
+      })
+      if (amountCanBeInvoiced(amount)) setMilestoneBillBlockId((prev) => prev === m.id ? null : prev)
+      await saveMilestone(updated)
+    } finally {
+      qboLookupRef.current = false
+      setQboBusyId(null)
+    }
   }
 
   async function addMilestone(projectId: string, contractId?: string) {
@@ -5255,10 +5475,7 @@ Payment terms:
                             //     them stop chasing once that stage is billed.
                             //   • legacy    — the milestone points back at a single segment.
                             // Either link counts as billed, so nothing already invoiced keeps nagging.
-                            const hasMilestoneLinked = milestones.some(m =>
-                              (m.status === "invoiced" || m.status === "paid") &&
-                              ((s.milestone_id != null && m.id === s.milestone_id) || m.segment_id === s.id)
-                            )
+                            const hasMilestoneLinked = segmentIsBilled(s, milestones)
                             const isPastUnbilled = todayKey != null && s.end_date < todayKey && !hasMilestoneLinked
                             const top = ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP)
 
@@ -6231,29 +6448,24 @@ Payment terms:
                       ? milestones.find((m) => m.segment_id === cellSegmentForm.segmentId) ?? null
                       : null
 
-                    // A week worked without a schedule comes back from the unplanned-entries
-                    // review as one segment per day. They are all one invoice, so tagging them
-                    // one at a time is pure clicking. Find this segment's week-mates on the
-                    // same job that aren't already on the chosen stage.
-                    const weekMates = (() => {
-                      if (!selectedId || !cellSegmentForm.segmentId) return []
-                      const self = segments.find((s) => s.id === cellSegmentForm.segmentId)
-                      if (!self) return []
-                      const start = parseDate(self.start_date)
-                      const monday = new Date(start)
-                      monday.setDate(start.getDate() - ((start.getDay() + 6) % 7))
-                      const sunday = new Date(monday)
-                      sunday.setDate(monday.getDate() + 6)
-                      const from = formatDateKey(monday)
-                      const to = formatDateKey(sunday)
-                      return segments
-                        .filter((s) =>
-                          s.project_id === self.project_id &&
-                          s.id !== self.id &&
-                          s.milestone_id !== selectedId &&
-                          s.start_date >= from && s.start_date <= to
-                        )
-                        .sort((a, b) => compareDateStrings(a.start_date, b.start_date))
+                    // Every past visit on this job that isn't already on an invoiced/paid
+                    // stage (either link shape) and isn't already on the stage picked above.
+                    // Any crew, any week — so four visits over two weeks is one tick-list.
+                    const coverVisits: BulkVisit[] = (() => {
+                      if (!selectedId) return []
+                      const rows = pastVisitsForInvoice(segments, milestones, cellEditor.projectId, todayKey, selectedId)
+                      return rows.map((s) => {
+                        const crew = s.crews ?? crews.find((c) => c.id === s.crew_id) ?? null
+                        const startLabel = formatDateLabel(parseDate(s.start_date))
+                        const endLabel = formatDateLabel(parseDate(s.end_date))
+                        return {
+                          id: s.id,
+                          crew: crewLabel(crew),
+                          when: s.start_date === s.end_date ? startLabel : `${startLabel} – ${endLabel}`,
+                          untagged: segmentIsUntagged(s, milestones),
+                          isThis: s.id === cellSegmentForm.segmentId,
+                        }
+                      })
                     })()
 
                     return (
@@ -6307,7 +6519,7 @@ Payment terms:
                               return (
                                 <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, padding: "3px 0", color: isAnchor ? "#4ade80" : "#c8d4f0" }}>
                                   <span>
-                                    {crews.find((c) => c.id === s.crew_id)?.name ?? "Crew"}
+                                    {crewLabel(s.crews ?? crews.find((c) => c.id === s.crew_id) ?? null)}
                                     {isThis ? " (this one)" : ""}
                                   </span>
                                   <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
@@ -6321,27 +6533,12 @@ Payment terms:
                           </div>
                         )}
 
-                        {selected && weekMates.length > 0 && (
-                          <div style={{ marginTop: 10 }}>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                // Include this segment, so the button works even when the stage
-                                // was just picked and not saved yet.
-                                const ids = [cellSegmentForm.segmentId, ...weekMates.map((s) => s.id)]
-                                await supabase.from("segments").update({ milestone_id: selectedId }).in("id", ids)
-                                await loadData()
-                                showToast(`Tagged ${ids.length} visits to “${selected.name ?? "stage"}”`)
-                              }}
-                              style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 12px", color: "#4ade80", borderColor: "#14532d" }}
-                            >
-                              Tag the other {weekMates.length} visit{weekMates.length === 1 ? "" : "s"} on this job that week
-                            </button>
-                            <div style={{ fontSize: 11, color: "#8899bb", marginTop: 6, lineHeight: 1.5 }}>
-                              {weekMates.map((s) => formatDateLabel(parseDate(s.start_date))).join(", ")} — all counted toward
-                              this one stage, so one invoice covers the week and none of them keep flagging.
-                            </div>
-                          </div>
+                        {selected && coverVisits.length > 0 && (
+                          <BulkTagPastVisits
+                            key={`${selectedId}:${coverVisits.map((v) => `${v.id}:${v.untagged ? 1 : 0}`).join(",")}`}
+                            visits={coverVisits}
+                            onApply={(ids) => tagSegmentsToStage(ids, selectedId, cellEditor.projectId, selected.name ?? "stage")}
+                          />
                         )}
 
                         {legacy && legacy.id !== selectedId && (
@@ -6717,11 +6914,11 @@ Payment terms:
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
                   <FieldLabel>Amount ($ inc. GST)</FieldLabel>
-                  <input type="number" value={m.amount ?? ""} onChange={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, amount, percent } : x)) }} onBlur={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; saveMilestone({ ...m, amount, percent }) }} placeholder="0.00" style={fieldStyle} />
+                  <input type="number" value={m.amount ?? ""} onChange={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; if (amountCanBeInvoiced(amount)) setMilestoneBillBlockId((prev) => prev === m.id ? null : prev); setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, amount, percent } : x)) }} onBlur={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; saveMilestone({ ...m, amount, percent }) }} placeholder="0.00" style={fieldStyle} />
                 </div>
                 <div>
                   <FieldLabel>% of contract{contractValue ? ` ($${formatMoney(contractValue)} inc. GST)` : ""}</FieldLabel>
-                  <input type="number" value={m.percent ?? ""} onChange={(e) => { const percent = e.target.value ? Number(e.target.value) : null; const amount = percent != null && contractValue ? Math.round(contractValue * percent / 100) : m.amount; setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, percent, amount } : x)) }} onBlur={(e) => { const percent = e.target.value ? Number(e.target.value) : null; const amount = percent != null && contractValue ? Math.round(contractValue * percent / 100) : m.amount; saveMilestone({ ...m, percent, amount }) }} placeholder="25" style={fieldStyle} />
+                  <input type="number" value={m.percent ?? ""} onChange={(e) => { const percent = e.target.value ? Number(e.target.value) : null; const amount = percent != null && contractValue ? Math.round(contractValue * percent / 100) : m.amount; if (amountCanBeInvoiced(amount)) setMilestoneBillBlockId((prev) => prev === m.id ? null : prev); setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, percent, amount } : x)) }} onBlur={(e) => { const percent = e.target.value ? Number(e.target.value) : null; const amount = percent != null && contractValue ? Math.round(contractValue * percent / 100) : m.amount; saveMilestone({ ...m, percent, amount }) }} placeholder="25" style={fieldStyle} />
                 </div>
               </div>
               <button type="button" onClick={() => deleteMilestone(m.id)} style={{ ...dangerButtonStyle, fontSize: 12, padding: "6px 12px", width: "fit-content" }}>Delete milestone</button>
@@ -6735,26 +6932,54 @@ Payment terms:
                     { value: "paid", label: "Paid ✓", color: "#4ade80", bg: "#0a1f0f" },
                   ].map(s => (
                     <button key={s.value} type="button"
-                      onClick={() => { const updated = { ...m, status: s.value }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); saveMilestone(updated) }}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        if ((s.value === "invoiced" || s.value === "paid") && !amountCanBeInvoiced(m.amount)) {
+                          setMilestoneBillBlockId(m.id)
+                          return
+                        }
+                        if (s.value === "pending") setMilestoneBillBlockId((prev) => prev === m.id ? null : prev)
+                        const updated = { ...m, status: s.value }
+                        setMilestones(prev => prev.map(x => x.id === m.id ? updated : x))
+                        saveMilestone(updated)
+                      }}
                       style={{ padding: "6px 14px", borderRadius: 8, border: `1.5px solid ${(m.status ?? "pending") === s.value ? s.color : "#252f45"}`, background: (m.status ?? "pending") === s.value ? s.bg : "#111", color: (m.status ?? "pending") === s.value ? s.color : "#6b7a9a", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                       {s.label}
                     </button>
                   ))}
                   {!m.amount && <span style={{ fontSize: 11, color: "#f87171", background: "#2a0a0a", border: "1px solid #7f1d1d", borderRadius: 6, padding: "3px 8px" }}>⚠ No amount set</span>}
+                  {milestoneBillBlockId === m.id && (
+                    <div style={{ flexBasis: "100%", fontSize: 12, fontWeight: 700, color: "#f87171", background: "#2a0a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 10px" }}>
+                      Set an amount greater than $0 before marking this invoiced or paid.
+                    </div>
+                  )}
                 </div>
-                {(m.status === "invoiced" || m.status === "paid") && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                {(m.status === "invoiced" || m.status === "paid" || qboLookupEnabled) && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                     <div>
                       <FieldLabel>Invoice number</FieldLabel>
-                      <input defaultValue={m.invoice_number ?? ""} key={`inv-${m.id}`} placeholder="e.g. INV-001"
-                        style={fieldStyle}
-                        onBlur={async e => { const updated = { ...m, invoice_number: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input defaultValue={m.invoice_number ?? ""} key={`inv-${m.id}-${m.invoice_number ?? ""}`} placeholder="e.g. 1689"
+                          ref={(el) => { invoiceNumberRefs.current[m.id] = el }}
+                          style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
+                          onBlur={async e => { if (qboLookupRef.current) return; const updated = { ...m, invoice_number: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
+                        {qboLookupEnabled && (
+                          <button type="button"
+                            disabled={qboBusyId === m.id}
+                            title="Fill the ex-GST amount and the invoice date from QuickBooks. The QuickBooks total includes GST."
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => lookupQboInvoice(m, contractValue)}
+                            style={{ ...secondaryButtonStyle, fontSize: 11, padding: "8px 10px", whiteSpace: "nowrap", color: "#93c5fd", borderColor: "#1e3a5f", opacity: qboBusyId === m.id ? 0.6 : 1, cursor: qboBusyId === m.id ? "wait" : "pointer" }}>
+                            {qboBusyId === m.id ? "…" : "Look up"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <FieldLabel>Invoice date</FieldLabel>
-                      <input type="date" defaultValue={m.invoice_date ?? ""} key={`invd-${m.id}`}
+                      <input type="date" defaultValue={m.invoice_date ?? ""} key={`invd-${m.id}-${m.invoice_date ?? ""}`}
                         style={fieldStyle}
-                        onBlur={async e => { const updated = { ...m, invoice_date: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
+                        onBlur={async e => { if (qboLookupRef.current) return; const updated = { ...m, invoice_date: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
                     </div>
                     {m.status === "paid" && (
                       <div>
@@ -6764,6 +6989,13 @@ Payment terms:
                           onBlur={async e => { const updated = { ...m, paid_date: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
                       </div>
                     )}
+                  </div>
+                )}
+                {qboFillNote?.id === m.id && (
+                  <div style={{ fontSize: 11, color: "#93c5fd", lineHeight: 1.45 }}>
+                    Filled ${formatMoney(qboFillNote.exGst)} ex. GST from QuickBooks
+                    (total ${formatMoney(qboFillNote.total)} inc. GST, tax ${formatMoney(qboFillNote.tax)}).
+                    QuickBooks totals include GST; this amount is the ex-GST figure.
                   </div>
                 )}
               </div>

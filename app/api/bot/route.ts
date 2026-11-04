@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js"
 import { NextRequest, NextResponse } from "next/server"
+import { amountCanBeInvoiced } from "../../../src/lib/milestone-billing"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -133,6 +134,21 @@ export async function POST(req: NextRequest) {
 
     if (!milestone_id || !status) {
       return NextResponse.json({ error: "milestone_id and status required" }, { status: 400 })
+    }
+
+    if (status === "invoiced" || status === "paid") {
+      const { data: existing, error: readErr } = await supabase
+        .from("milestones")
+        .select("amount")
+        .eq("id", milestone_id)
+        .maybeSingle()
+      if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 })
+      if (!existing) return NextResponse.json({ error: "Milestone not found" }, { status: 404 })
+      if (!amountCanBeInvoiced(existing.amount)) {
+        return NextResponse.json({
+          error: "Can't mark a milestone invoiced or paid until its amount is greater than $0.",
+        }, { status: 400 })
+      }
     }
 
     const update: any = { status }
