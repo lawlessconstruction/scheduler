@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../src/lib/supabase"
+import {
+  amountCanBeInvoiced,
+  pastVisitsForInvoice,
+  segmentIsBilled,
+  segmentIsUntagged,
+} from "../src/lib/milestone-billing"
 
 type Project = {
   id: string
@@ -412,6 +418,92 @@ const sectionCardStyle: React.CSSProperties = {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return <div style={labelStyle}>{children}</div>
+}
+
+type BulkVisit = {
+  id: string
+  crew: string
+  when: string
+  untagged: boolean
+  isThis: boolean
+}
+
+// Same spot as the old "tag the other visits that week" button, but the list
+// is every past visit on the job that isn't already on an invoiced stage.
+function BulkTagPastVisits({
+  visits,
+  onApply,
+}: {
+  visits: BulkVisit[]
+  onApply: (ids: string[]) => Promise<void>
+}) {
+  const [checked, setChecked] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {}
+    for (const v of visits) init[v.id] = v.untagged
+    return init
+  })
+  const lock = useRef(false)
+  const [busy, setBusy] = useState(false)
+  const ticked = visits.filter((v) => checked[v.id]).length
+
+  async function apply() {
+    if (lock.current || ticked === 0) return
+    const ids = visits.filter((v) => checked[v.id]).map((v) => v.id)
+    lock.current = true
+    setBusy(true)
+    try {
+      await onApply(ids)
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 10, background: "#151a28", border: "1px solid #252f45", borderRadius: 8, padding: "10px 12px" }}>
+      <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.4px", color: "#8899bb", fontWeight: 700, marginBottom: 6 }}>
+        Past visits this invoice can cover
+      </div>
+      <div style={{ maxHeight: 200, overflowY: "auto", display: "grid", gap: 2 }}>
+        {visits.map((v) => (
+          <label key={v.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#c8d4f0", cursor: "pointer", padding: "3px 0" }}>
+            <input
+              type="checkbox"
+              checked={!!checked[v.id]}
+              onChange={(e) => setChecked((prev) => ({ ...prev, [v.id]: e.target.checked }))}
+              style={{ accentColor: "#4ade80", width: 15, height: 15, flexShrink: 0 }}
+            />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              {v.crew}
+              {v.isThis ? " (this one)" : ""}
+              {!v.untagged ? " · already on another stage" : ""}
+            </span>
+            <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: "#8899bb" }}>{v.when}</span>
+          </label>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={apply}
+        disabled={busy || ticked === 0}
+        style={{
+          ...secondaryButtonStyle,
+          fontSize: 11,
+          padding: "6px 12px",
+          color: "#4ade80",
+          borderColor: "#14532d",
+          marginTop: 8,
+          opacity: busy || ticked === 0 ? 0.55 : 1,
+          cursor: busy ? "wait" : ticked === 0 ? "default" : "pointer",
+        }}
+      >
+        {busy ? "Tagging…" : `Tag the ${ticked} ticked visit${ticked === 1 ? "" : "s"} to this stage`}
+      </button>
+      <div style={{ fontSize: 11, color: "#8899bb", marginTop: 6, lineHeight: 1.5 }}>
+        One invoice covers every ticked visit — any crew, any week. They stop the amber flag once this stage is invoiced or paid. Visits with no stage yet start ticked. A visit already on another stage is left unticked.
+      </div>
+    </div>
+  )
 }
 
 function formatMoney(value: number) {
@@ -867,7 +959,7 @@ function MilestonesListModal({ onClose, milestones, projects, contracts, segment
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -921,7 +1013,7 @@ function MilestonesListModal({ onClose, milestones, projects, contracts, segment
         </div>
 
         {/* Rows */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 28px 20px" }}>
+        <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "8px 28px 20px" }}>
           {allMilestones.length === 0 && (
             <div style={{ textAlign: "center", padding: "40px 0", color: "#6b7a9a", fontSize: 14 }}>No milestones in this category</div>
           )}
@@ -985,7 +1077,7 @@ function ClientsListModal({ onClose, onEdit, clients, projects, contracts, profi
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1003,7 +1095,7 @@ function ClientsListModal({ onClose, onEdit, clients, projects, contracts, profi
         </div>
 
         {/* Client list */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "16px 28px", display: "grid", gap: 16 }}>
+        <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "16px 28px", display: "grid", gap: 16 }}>
           {clients.length === 0 && <div style={{ color: "#6b7a9a", fontSize: 14, textAlign: "center", padding: 40 }}>No clients yet</div>}
 
           {clients.map(c => {
@@ -1124,7 +1216,7 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, segments,
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1151,7 +1243,7 @@ function ProjectsListModal({ onClose, projects, contracts, milestones, segments,
         </div>
 
         {/* Rows */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto" }}>
           {displayed.length === 0 && (
             <div style={{ padding: "60px 28px", textAlign: "center", color: "#6b7a9a", fontSize: 14 }}>No projects</div>
           )}
@@ -1264,7 +1356,7 @@ function ChangePinModal({ userName, userId, onClose, onSuccess }: {
   const fs: React.CSSProperties = { width: "100%", padding: "12px 14px", borderRadius: 10, background: "#111827", border: "1.5px solid #2e3a58", color: "#f0f4ff", fontSize: 24, letterSpacing: "0.3em", textAlign: "center", outline: "none", boxSizing: "border-box" }
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 360, background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 16, padding: 32, color: "white" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-scroll" style={{ width: "100%", maxWidth: 360, background: "#1e2535", border: "1px solid #2e3a58", borderRadius: 16, padding: 32, color: "white" }}>
         <div style={{ fontSize: 20, fontWeight: 900, color: "#f0f4ff", marginBottom: 6 }}>Change PIN</div>
         <div style={{ fontSize: 13, color: "#6b7a9a", marginBottom: 24 }}>Set a new 4-digit PIN for {userName}</div>
         <div style={{ display: "grid", gap: 16 }}>
@@ -1486,10 +1578,10 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", overflow: "hidden" }}>
 
         {/* Sidebar */}
-        <div style={{ width: 280, minWidth: 280, borderRight: "1px solid #252f45", padding: 20, display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
+        <div className="modal-body-scroll" style={{ width: 280, minWidth: 280, borderRight: "1px solid #252f45", padding: 20, display: "flex", flexDirection: "column", gap: 8, overflowY: "auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, gap: 8 }}>
             <div style={{ fontSize: 18, fontWeight: 900, color: "#f0f4ff" }}>Extras</div>
             <div style={{ display: "flex", gap: 6 }}>
@@ -1528,7 +1620,7 @@ function ExtrasModal({ onClose, projects, workers, classificationRates }: {
         </div>
 
         {/* Right panel */}
-        <div style={{ flex: 1, padding: 28, overflowY: "auto" }}>
+        <div className="modal-body-scroll" style={{ flex: 1, padding: 28, overflowY: "auto" }}>
 
           {/* History view */}
           {!activeId && (
@@ -2007,7 +2099,7 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 1280, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div onClick={e => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: 1280, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         {/* Header */}
         <div style={{ padding: "16px 24px", borderBottom: "1px solid #252f45" }}>
@@ -2078,7 +2170,7 @@ function ExpensesModal({ onClose, projects, workers, initialProjectId }: {
         )}
 
         {/* List */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+        <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
           {loading && <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a" }}>Loading…</div>}
           {!loading && filtered.length === 0 && (
             <div style={{ padding: 40, textAlign: "center", color: "#6b7a9a" }}>No expenses match. Try changing filters or click + New expense.</div>
@@ -2645,6 +2737,13 @@ export default function Home() {
   // synchronously; the state is only there to grey the button out.
   const savingSegmentRef = useRef(false)
   const [savingSegment, setSavingSegment] = useState(false)
+  // Set when someone tries to mark a stage invoiced/paid with no money on it.
+  const [milestoneBillBlockId, setMilestoneBillBlockId] = useState<string | null>(null)
+  const [qboLookupEnabled, setQboLookupEnabled] = useState(false)
+  const [qboBusyId, setQboBusyId] = useState<string | null>(null)
+  const [qboFillNote, setQboFillNote] = useState<{ id: string; exGst: number; total: number; tax: number } | null>(null)
+  const qboLookupRef = useRef(false)
+  const invoiceNumberRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const [cellSegmentForm, setCellSegmentForm] = useState({
     segmentId: "",
@@ -2776,6 +2875,18 @@ export default function Home() {
     setTodayKey(formatDateKey(new Date()))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // The Look up button only appears once the server confirms QuickBooks
+  // env vars are set. The check returns no secrets.
+  useEffect(() => {
+    if (!milestoneModal.open) return
+    let cancelled = false
+    fetch("/api/qbo/invoice")
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setQboLookupEnabled(!!d?.configured) })
+      .catch(() => { if (!cancelled) setQboLookupEnabled(false) })
+    return () => { cancelled = true }
+  }, [milestoneModal.open])
 
 
 
@@ -3321,6 +3432,21 @@ export default function Home() {
   }
 
   async function saveMilestone(m: Milestone) {
+    const wantsBilled = m.status === "invoiced" || m.status === "paid"
+    if (wantsBilled && !amountCanBeInvoiced(m.amount)) {
+      // Read the row we're about to change. A stage that is already invoiced
+      // can still have its invoice number edited; the block is on *becoming*
+      // invoiced or paid while the amount is $0, blank, or not a number.
+      const { data: existing, error } = await supabase.from("milestones").select("status").eq("id", m.id).maybeSingle()
+      const sameStatus = !error && existing?.status === m.status
+      if (!sameStatus) {
+        setMilestoneBillBlockId(m.id)
+        if (existing) {
+          setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, status: existing.status } : x))
+        }
+        return
+      }
+    }
     await supabase.from("milestones").update({
       name: m.name,
       amount: m.amount,
@@ -3338,6 +3464,100 @@ export default function Home() {
       await reorderMilestonesForProject(m.project_id, freshSegments as Segment[])
     }
     await loadData()
+  }
+
+  // Tag several visits to one stage. Re-read the rows first so a visit that
+  // was invoiced since the page loaded (either link shape) is left alone.
+  async function tagSegmentsToStage(ids: string[], stageId: string, projectId: string, stageName: string) {
+    const unique = [...new Set(ids)].filter(Boolean)
+    if (unique.length === 0 || !stageId) return
+
+    const [{ data: freshSegs, error: segErr }, { data: freshMs, error: msErr }] = await Promise.all([
+      supabase.from("segments").select("id, milestone_id, project_id").in("id", unique),
+      supabase.from("milestones").select("id, status, segment_id, project_id").eq("project_id", projectId),
+    ])
+    if (segErr || msErr || !freshSegs || !freshMs) {
+      showToast("Could not check those visits — nothing was tagged")
+      return
+    }
+
+    const safeIds = freshSegs
+      .filter((s) => s.project_id === projectId && s.milestone_id !== stageId && !segmentIsBilled(s, freshMs))
+      .map((s) => s.id)
+    if (safeIds.length === 0) {
+      showToast("Those visits are already covered")
+      await loadData()
+      return
+    }
+
+    const results = await Promise.all(safeIds.map(async (id) => {
+      const res = await supabase.from("segments").update({ milestone_id: stageId }).eq("id", id)
+      return { id, error: res.error }
+    }))
+    const succeeded = results.filter((r) => !r.error).map((r) => r.id)
+    if (succeeded.length === 0) {
+      showToast("Could not tag those visits")
+      return
+    }
+
+    // A visit moved onto this stage shouldn't stay pinned to a different stage
+    // the old way, or it would still be counted there too.
+    const legacy = freshMs.filter((m) => m.id !== stageId && m.segment_id && succeeded.includes(m.segment_id))
+    for (const m of legacy) {
+      await supabase.from("milestones").update({ segment_id: null }).eq("id", m.id)
+    }
+
+    if (succeeded.includes(cellSegmentForm.segmentId)) {
+      setCellSegmentForm((prev) => ({ ...prev, milestone_id: stageId }))
+    }
+    await loadData()
+    const noun = succeeded.length === 1 ? "visit" : "visits"
+    showToast(
+      succeeded.length === results.length
+        ? `Tagged ${succeeded.length} ${noun} to “${stageName}”`
+        : `Tagged ${succeeded.length} of ${results.length} visits to “${stageName}”`
+    )
+  }
+
+  async function lookupQboInvoice(m: Milestone, contractValue: number | null) {
+    if (qboLookupRef.current) return
+    const number = (invoiceNumberRefs.current[m.id]?.value ?? m.invoice_number ?? "").trim()
+    if (!number) {
+      showToast("Enter the invoice number first")
+      return
+    }
+    qboLookupRef.current = true
+    setQboBusyId(m.id)
+    try {
+      const res = await fetch(`/api/qbo/invoice?number=${encodeURIComponent(number)}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || typeof data.amountExGst !== "number") {
+        showToast(typeof data.error === "string" ? data.error : "QuickBooks lookup failed")
+        return
+      }
+      const amount = data.amountExGst as number
+      const invoiceDate = typeof data.txnDate === "string" ? data.txnDate : m.invoice_date
+      const percent = contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent
+      const updated: Milestone = {
+        ...m,
+        invoice_number: number,
+        invoice_date: invoiceDate,
+        amount,
+        percent,
+      }
+      setMilestones((prev) => prev.map((x) => x.id === m.id ? updated : x))
+      setQboFillNote({
+        id: m.id,
+        exGst: amount,
+        total: typeof data.totalAmt === "number" ? data.totalAmt : amount,
+        tax: typeof data.totalTax === "number" ? data.totalTax : 0,
+      })
+      if (amountCanBeInvoiced(amount)) setMilestoneBillBlockId((prev) => prev === m.id ? null : prev)
+      await saveMilestone(updated)
+    } finally {
+      qboLookupRef.current = false
+      setQboBusyId(null)
+    }
   }
 
   async function addMilestone(projectId: string, contractId?: string) {
@@ -4568,6 +4788,39 @@ Payment terms:
         @keyframes segmentSpin {
           to { transform: rotate(360deg); }
         }
+        /* Dialogs stay inside the screen and scroll on their own.
+           overscroll-behavior keeps wheel and touch on the dialog,
+           not the page behind the backdrop. */
+        .modal-scroll {
+          max-height: calc(100dvh - 2rem);
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+        }
+        .modal-frame {
+          max-height: calc(100dvh - 2rem);
+          min-height: 0;
+        }
+        .modal-body-scroll {
+          min-height: 0;
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+        }
+        .modal-overlay-scroll {
+          overscroll-behavior: contain;
+          -webkit-overflow-scrolling: touch;
+        }
+        .cell-editor-columns {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 20px;
+          align-items: start;
+        }
+        @media (max-width: 720px) {
+          .cell-editor-columns {
+            grid-template-columns: 1fr;
+          }
+        }
       `}</style>
       {/* ── Branded header bar ── */}
       <div style={{
@@ -5255,10 +5508,7 @@ Payment terms:
                             //     them stop chasing once that stage is billed.
                             //   • legacy    — the milestone points back at a single segment.
                             // Either link counts as billed, so nothing already invoiced keeps nagging.
-                            const hasMilestoneLinked = milestones.some(m =>
-                              (m.status === "invoiced" || m.status === "paid") &&
-                              ((s.milestone_id != null && m.id === s.milestone_id) || m.segment_id === s.id)
-                            )
+                            const hasMilestoneLinked = segmentIsBilled(s, milestones)
                             const isPastUnbilled = todayKey != null && s.end_date < todayKey && !hasMilestoneLinked
                             const top = ROW_PADDING_TOP + laneIndex * (BAR_HEIGHT + LANE_GAP)
 
@@ -5806,6 +6056,7 @@ Payment terms:
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal-scroll"
             style={{
               width: "100%",
               maxWidth: 720,
@@ -6008,6 +6259,7 @@ Payment terms:
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal-scroll"
             style={{
               width: "100%",
               maxWidth: 760,
@@ -6050,13 +6302,7 @@ Payment terms:
               </div>
             )}
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 20,
-              }}
-            >
+            <div className="cell-editor-columns">
               <div style={sectionCardStyle}>
                 <div style={{ fontWeight: 800, marginBottom: 12, fontSize: 18 }}>Crew booking</div>
 
@@ -6204,6 +6450,46 @@ Payment terms:
                       </button>
                     )}
                   </div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
+              <div style={sectionCardStyle}>
+                <div style={{ fontWeight: 800, marginBottom: 12, fontSize: 18 }}>Day label</div>
+
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div>
+                    <FieldLabel>Label</FieldLabel>
+                    <input
+                      placeholder="Materials, Steel, Windows"
+                      value={cellLabelForm.label}
+                      onChange={(e) => setCellLabelForm((prev) => ({ ...prev, label: e.target.value }))}
+                      style={fieldStyle}
+                    />
+                    <div style={helperStyle}>Leave blank and save to remove the label.</div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={saveCellLabel}
+                      style={{ ...secondaryButtonStyle, background: "#4b5563" }}
+                    >
+                      {cellLabelForm.labelId ? "Save label" : "Add label"}
+                    </button>
+
+                    {cellLabelForm.labelId && (
+                      <button
+                        type="button"
+                        onClick={deleteCellLabel}
+                        style={dangerButtonStyle}
+                      >
+                        Delete label
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
 
                   {cellEditor.projectId && (() => {
                     const projectMilestones = milestones
@@ -6231,33 +6517,28 @@ Payment terms:
                       ? milestones.find((m) => m.segment_id === cellSegmentForm.segmentId) ?? null
                       : null
 
-                    // A week worked without a schedule comes back from the unplanned-entries
-                    // review as one segment per day. They are all one invoice, so tagging them
-                    // one at a time is pure clicking. Find this segment's week-mates on the
-                    // same job that aren't already on the chosen stage.
-                    const weekMates = (() => {
-                      if (!selectedId || !cellSegmentForm.segmentId) return []
-                      const self = segments.find((s) => s.id === cellSegmentForm.segmentId)
-                      if (!self) return []
-                      const start = parseDate(self.start_date)
-                      const monday = new Date(start)
-                      monday.setDate(start.getDate() - ((start.getDay() + 6) % 7))
-                      const sunday = new Date(monday)
-                      sunday.setDate(monday.getDate() + 6)
-                      const from = formatDateKey(monday)
-                      const to = formatDateKey(sunday)
-                      return segments
-                        .filter((s) =>
-                          s.project_id === self.project_id &&
-                          s.id !== self.id &&
-                          s.milestone_id !== selectedId &&
-                          s.start_date >= from && s.start_date <= to
-                        )
-                        .sort((a, b) => compareDateStrings(a.start_date, b.start_date))
+                    // Every past visit on this job that isn't already on an invoiced/paid
+                    // stage (either link shape) and isn't already on the stage picked above.
+                    // Any crew, any week — so four visits over two weeks is one tick-list.
+                    const coverVisits: BulkVisit[] = (() => {
+                      if (!selectedId) return []
+                      const rows = pastVisitsForInvoice(segments, milestones, cellEditor.projectId, todayKey, selectedId)
+                      return rows.map((s) => {
+                        const crew = s.crews ?? crews.find((c) => c.id === s.crew_id) ?? null
+                        const startLabel = formatDateLabel(parseDate(s.start_date))
+                        const endLabel = formatDateLabel(parseDate(s.end_date))
+                        return {
+                          id: s.id,
+                          crew: crewLabel(crew),
+                          when: s.start_date === s.end_date ? startLabel : `${startLabel} – ${endLabel}`,
+                          untagged: segmentIsUntagged(s, milestones),
+                          isThis: s.id === cellSegmentForm.segmentId,
+                        }
+                      })
                     })()
 
                     return (
-                      <div style={{ borderTop: "1px solid #2e3650", paddingTop: 12, marginTop: 4 }}>
+                      <div style={sectionCardStyle}>
                         <FieldLabel>Stage this work counts toward</FieldLabel>
                         <select
                           value={selectedId}
@@ -6307,7 +6588,7 @@ Payment terms:
                               return (
                                 <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 12, padding: "3px 0", color: isAnchor ? "#4ade80" : "#c8d4f0" }}>
                                   <span>
-                                    {crews.find((c) => c.id === s.crew_id)?.name ?? "Crew"}
+                                    {crewLabel(s.crews ?? crews.find((c) => c.id === s.crew_id) ?? null)}
                                     {isThis ? " (this one)" : ""}
                                   </span>
                                   <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
@@ -6321,27 +6602,12 @@ Payment terms:
                           </div>
                         )}
 
-                        {selected && weekMates.length > 0 && (
-                          <div style={{ marginTop: 10 }}>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                // Include this segment, so the button works even when the stage
-                                // was just picked and not saved yet.
-                                const ids = [cellSegmentForm.segmentId, ...weekMates.map((s) => s.id)]
-                                await supabase.from("segments").update({ milestone_id: selectedId }).in("id", ids)
-                                await loadData()
-                                showToast(`Tagged ${ids.length} visits to “${selected.name ?? "stage"}”`)
-                              }}
-                              style={{ ...secondaryButtonStyle, fontSize: 11, padding: "6px 12px", color: "#4ade80", borderColor: "#14532d" }}
-                            >
-                              Tag the other {weekMates.length} visit{weekMates.length === 1 ? "" : "s"} on this job that week
-                            </button>
-                            <div style={{ fontSize: 11, color: "#8899bb", marginTop: 6, lineHeight: 1.5 }}>
-                              {weekMates.map((s) => formatDateLabel(parseDate(s.start_date))).join(", ")} — all counted toward
-                              this one stage, so one invoice covers the week and none of them keep flagging.
-                            </div>
-                          </div>
+                        {selected && coverVisits.length > 0 && (
+                          <BulkTagPastVisits
+                            key={`${selectedId}:${coverVisits.map((v) => `${v.id}:${v.untagged ? 1 : 0}`).join(",")}`}
+                            visits={coverVisits}
+                            onApply={(ids) => tagSegmentsToStage(ids, selectedId, cellEditor.projectId, selected.name ?? "stage")}
+                          />
                         )}
 
                         {legacy && legacy.id !== selectedId && (
@@ -6409,44 +6675,6 @@ Payment terms:
                       </div>
                     )
                   })()}
-                </div>
-              </div>
-
-              <div style={sectionCardStyle}>
-                <div style={{ fontWeight: 800, marginBottom: 12, fontSize: 18 }}>Day label</div>
-
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div>
-                    <FieldLabel>Label</FieldLabel>
-                    <input
-                      placeholder="Materials, Steel, Windows"
-                      value={cellLabelForm.label}
-                      onChange={(e) => setCellLabelForm((prev) => ({ ...prev, label: e.target.value }))}
-                      style={fieldStyle}
-                    />
-                    <div style={helperStyle}>Leave blank and save to remove the label.</div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={saveCellLabel}
-                      style={{ ...secondaryButtonStyle, background: "#4b5563" }}
-                    >
-                      {cellLabelForm.labelId ? "Save label" : "Add label"}
-                    </button>
-
-                    {cellLabelForm.labelId && (
-                      <button
-                        type="button"
-                        onClick={deleteCellLabel}
-                        style={dangerButtonStyle}
-                      >
-                        Delete label
-                      </button>
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -6469,6 +6697,7 @@ Payment terms:
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            className="modal-scroll"
             style={{
               width: "100%",
               maxWidth: 680,
@@ -6478,8 +6707,6 @@ Payment terms:
               padding: 22,
               color: "white",
               boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
-              maxHeight: "90vh",
-              overflowY: "auto",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 22 }}>
@@ -6717,11 +6944,11 @@ Payment terms:
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
                   <FieldLabel>Amount ($ inc. GST)</FieldLabel>
-                  <input type="number" value={m.amount ?? ""} onChange={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, amount, percent } : x)) }} onBlur={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; saveMilestone({ ...m, amount, percent }) }} placeholder="0.00" style={fieldStyle} />
+                  <input type="number" value={m.amount ?? ""} onChange={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; if (amountCanBeInvoiced(amount)) setMilestoneBillBlockId((prev) => prev === m.id ? null : prev); setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, amount, percent } : x)) }} onBlur={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; saveMilestone({ ...m, amount, percent }) }} placeholder="0.00" style={fieldStyle} />
                 </div>
                 <div>
                   <FieldLabel>% of contract{contractValue ? ` ($${formatMoney(contractValue)} inc. GST)` : ""}</FieldLabel>
-                  <input type="number" value={m.percent ?? ""} onChange={(e) => { const percent = e.target.value ? Number(e.target.value) : null; const amount = percent != null && contractValue ? Math.round(contractValue * percent / 100) : m.amount; setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, percent, amount } : x)) }} onBlur={(e) => { const percent = e.target.value ? Number(e.target.value) : null; const amount = percent != null && contractValue ? Math.round(contractValue * percent / 100) : m.amount; saveMilestone({ ...m, percent, amount }) }} placeholder="25" style={fieldStyle} />
+                  <input type="number" value={m.percent ?? ""} onChange={(e) => { const percent = e.target.value ? Number(e.target.value) : null; const amount = percent != null && contractValue ? Math.round(contractValue * percent / 100) : m.amount; if (amountCanBeInvoiced(amount)) setMilestoneBillBlockId((prev) => prev === m.id ? null : prev); setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, percent, amount } : x)) }} onBlur={(e) => { const percent = e.target.value ? Number(e.target.value) : null; const amount = percent != null && contractValue ? Math.round(contractValue * percent / 100) : m.amount; saveMilestone({ ...m, percent, amount }) }} placeholder="25" style={fieldStyle} />
                 </div>
               </div>
               <button type="button" onClick={() => deleteMilestone(m.id)} style={{ ...dangerButtonStyle, fontSize: 12, padding: "6px 12px", width: "fit-content" }}>Delete milestone</button>
@@ -6735,26 +6962,54 @@ Payment terms:
                     { value: "paid", label: "Paid ✓", color: "#4ade80", bg: "#0a1f0f" },
                   ].map(s => (
                     <button key={s.value} type="button"
-                      onClick={() => { const updated = { ...m, status: s.value }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); saveMilestone(updated) }}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => {
+                        if ((s.value === "invoiced" || s.value === "paid") && !amountCanBeInvoiced(m.amount)) {
+                          setMilestoneBillBlockId(m.id)
+                          return
+                        }
+                        if (s.value === "pending") setMilestoneBillBlockId((prev) => prev === m.id ? null : prev)
+                        const updated = { ...m, status: s.value }
+                        setMilestones(prev => prev.map(x => x.id === m.id ? updated : x))
+                        saveMilestone(updated)
+                      }}
                       style={{ padding: "6px 14px", borderRadius: 8, border: `1.5px solid ${(m.status ?? "pending") === s.value ? s.color : "#252f45"}`, background: (m.status ?? "pending") === s.value ? s.bg : "#111", color: (m.status ?? "pending") === s.value ? s.color : "#6b7a9a", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
                       {s.label}
                     </button>
                   ))}
                   {!m.amount && <span style={{ fontSize: 11, color: "#f87171", background: "#2a0a0a", border: "1px solid #7f1d1d", borderRadius: 6, padding: "3px 8px" }}>⚠ No amount set</span>}
+                  {milestoneBillBlockId === m.id && (
+                    <div style={{ flexBasis: "100%", fontSize: 12, fontWeight: 700, color: "#f87171", background: "#2a0a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "8px 10px" }}>
+                      Set an amount greater than $0 before marking this invoiced or paid.
+                    </div>
+                  )}
                 </div>
-                {(m.status === "invoiced" || m.status === "paid") && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                {(m.status === "invoiced" || m.status === "paid" || qboLookupEnabled) && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
                     <div>
                       <FieldLabel>Invoice number</FieldLabel>
-                      <input defaultValue={m.invoice_number ?? ""} key={`inv-${m.id}`} placeholder="e.g. INV-001"
-                        style={fieldStyle}
-                        onBlur={async e => { const updated = { ...m, invoice_number: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input defaultValue={m.invoice_number ?? ""} key={`inv-${m.id}-${m.invoice_number ?? ""}`} placeholder="e.g. 1689"
+                          ref={(el) => { invoiceNumberRefs.current[m.id] = el }}
+                          style={{ ...fieldStyle, flex: 1, minWidth: 0 }}
+                          onBlur={async e => { if (qboLookupRef.current) return; const updated = { ...m, invoice_number: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
+                        {qboLookupEnabled && (
+                          <button type="button"
+                            disabled={qboBusyId === m.id}
+                            title="Fill the ex-GST amount and the invoice date from QuickBooks. The QuickBooks total includes GST."
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => lookupQboInvoice(m, contractValue)}
+                            style={{ ...secondaryButtonStyle, fontSize: 11, padding: "8px 10px", whiteSpace: "nowrap", color: "#93c5fd", borderColor: "#1e3a5f", opacity: qboBusyId === m.id ? 0.6 : 1, cursor: qboBusyId === m.id ? "wait" : "pointer" }}>
+                            {qboBusyId === m.id ? "…" : "Look up"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <FieldLabel>Invoice date</FieldLabel>
-                      <input type="date" defaultValue={m.invoice_date ?? ""} key={`invd-${m.id}`}
+                      <input type="date" defaultValue={m.invoice_date ?? ""} key={`invd-${m.id}-${m.invoice_date ?? ""}`}
                         style={fieldStyle}
-                        onBlur={async e => { const updated = { ...m, invoice_date: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
+                        onBlur={async e => { if (qboLookupRef.current) return; const updated = { ...m, invoice_date: e.target.value || null }; setMilestones(prev => prev.map(x => x.id === m.id ? updated : x)); await saveMilestone(updated) }} />
                     </div>
                     {m.status === "paid" && (
                       <div>
@@ -6766,6 +7021,13 @@ Payment terms:
                     )}
                   </div>
                 )}
+                {qboFillNote?.id === m.id && (
+                  <div style={{ fontSize: 11, color: "#93c5fd", lineHeight: 1.45 }}>
+                    Filled ${formatMoney(qboFillNote.exGst)} ex. GST from QuickBooks
+                    (total ${formatMoney(qboFillNote.total)} inc. GST, tax ${formatMoney(qboFillNote.tax)}).
+                    QuickBooks totals include GST; this amount is the ex-GST figure.
+                  </div>
+                )}
               </div>
             </div>
           )
@@ -6773,7 +7035,7 @@ Payment terms:
 
         return (
           <div onClick={closeModal} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 110, padding: 20 }}>
-            <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 720, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 22, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.45)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div onClick={(e) => e.stopPropagation()} className="modal-scroll" style={{ width: "100%", maxWidth: 720, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 22, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.45)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div>
                   <div style={{ fontSize: 22, fontWeight: 800 }}>Milestones</div>
@@ -6869,7 +7131,7 @@ Payment terms:
       {/* ── Estimate Template Manager ── */}
       {showTemplateManager && (
         <div onClick={() => setShowTemplateManager(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.80)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 130, padding: 20, overflowY: "auto" }}>
+          className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.80)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 130, padding: 20, overflowY: "auto" }}>
           <div onClick={e => e.stopPropagation()}
             style={{ width: "100%", maxWidth: 900, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 28, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.6)", marginBottom: 20 }}>
 
@@ -6985,7 +7247,7 @@ Payment terms:
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ width: "100%", maxWidth: 680, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 22, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.45)", maxHeight: "90vh", overflowY: "auto" }}
+            className="modal-scroll" style={{ width: "100%", maxWidth: 680, background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, padding: 22, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.45)" }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
               <div style={{ fontSize: 22, fontWeight: 800 }}>Contract types</div>
@@ -7086,7 +7348,7 @@ Payment terms:
       {showWorkersModal && (
         <div
           onClick={() => setShowWorkersModal(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+          className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -7552,7 +7814,7 @@ Payment terms:
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: isMobile ? "100vw" : "calc(100vw - 32px)", background: ts.panel, border: isMobile ? "none" : `1px solid ${ts.border}`, borderRadius: isMobile ? 0 : 14, padding: isMobile ? 12 : 24, color: ts.text, boxShadow: "0 20px 60px rgba(60,64,67,0.28)", display: "flex", flexDirection: "column", overflow: "hidden" }}
+              className="modal-frame" style={{ width: "100%", maxWidth: isMobile ? "100vw" : "calc(100vw - 32px)", background: ts.panel, border: isMobile ? "none" : `1px solid ${ts.border}`, borderRadius: isMobile ? 0 : 14, padding: isMobile ? 12 : 24, color: ts.text, boxShadow: "0 20px 60px rgba(60,64,67,0.28)", display: "flex", flexDirection: "column", overflow: "hidden" }}
             >
               {/* Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 8, flexWrap: "wrap" }}>
@@ -7696,7 +7958,7 @@ Payment terms:
                 }
 
                 return (
-                  <div style={{ flex: 1, overflowY: "auto", background: ts.panel, margin: "-16px -16px 0", padding: 24, borderRadius: "10px 10px 0 0" }}>
+                  <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", background: ts.panel, margin: "-16px -16px 0", padding: 24, borderRadius: "10px 10px 0 0" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 8 }}>
                       <div>
                         <div style={{ fontSize: 22, fontWeight: 900, color: ts.text, letterSpacing: "-0.01em" }}>Weekly Report</div>
@@ -7983,7 +8245,7 @@ Payment terms:
                 const submittedCount = weekWorkers.filter(w => submittedWorkerIds.has(w.id)).length
 
                 return (
-                  <div style={{ flex: 1, overflowY: "auto", padding: "8px 4px 24px" }}>
+                  <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "8px 4px 24px" }}>
                     {/* Top stats strip */}
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
                       <div style={{ background: ts.paper, border: `1px solid ${ts.border}`, borderRadius: 10, padding: 14, boxShadow: "0 1px 2px rgba(60,64,67,0.08)" }}>
@@ -8182,7 +8444,7 @@ Payment terms:
                 }
 
                 return (
-                  <div style={{ flex: 1, overflowY: "auto", padding: "0 0 100px 0", display: "flex", flexDirection: "column" }}>
+                  <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", padding: "0 0 100px 0", display: "flex", flexDirection: "column" }}>
                     {/* Day tabs + search — sticky */}
                     <div style={{ position: "sticky", top: 0, background: ts.panel, zIndex: 5, padding: "8px 0 12px" }}>
                       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 8 }}>
@@ -8422,7 +8684,7 @@ Payment terms:
               })()}
 
               {!showTimesheetReport && timesheetCrewId && !timesheetLoading && !isMobile && (
-                <div style={{ overflowX: "auto", overflowY: "auto", flex: 1 }}>
+                <div className="modal-body-scroll" style={{ overflowX: "auto", overflowY: "auto", flex: 1 }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                     <thead>
                       <tr>
@@ -8762,7 +9024,7 @@ Payment terms:
         return (
           <div
             onClick={() => setShowProfitabilityModal(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+            className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
@@ -9063,7 +9325,7 @@ Payment terms:
       {showCrewsModal && (
         <div
           onClick={() => setShowCrewsModal(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+          className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -9160,7 +9422,7 @@ Payment terms:
       {showClientsModal && (
         <div
           onClick={() => setShowClientsModal(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+          className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
@@ -9506,7 +9768,7 @@ Payment terms:
         return (
           <div
             onClick={() => setShowCashflowModal(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+            className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
@@ -9665,7 +9927,7 @@ Payment terms:
         return (
           <div
             onClick={() => setCostsModal(null)}
-            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
+            className="modal-overlay-scroll" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 120, padding: 20, overflowY: "auto" }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
@@ -9914,10 +10176,10 @@ Payment terms:
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: em.paper, border: `1px solid ${em.cardBorder}`, borderRadius: 14, color: em.text, boxShadow: "0 20px 60px rgba(0,0,0,0.35)", display: "flex", flexDirection: "row", overflow: "hidden" }}
+              className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: em.paper, border: `1px solid ${em.cardBorder}`, borderRadius: 14, color: em.text, boxShadow: "0 20px 60px rgba(0,0,0,0.35)", display: "flex", flexDirection: "row", overflow: "hidden" }}
             >
               {/* Left sidebar — estimate list */}
-              <div style={{ width: 320, minWidth: 320, borderRight: `1px solid ${em.cardBorder}`, padding: 20, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", background: em.sidebarBg }}>
+              <div className="modal-body-scroll" style={{ width: 320, minWidth: 320, borderRight: `1px solid ${em.cardBorder}`, padding: 20, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", background: em.sidebarBg }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 20, fontWeight: 900, color: em.text }}>Estimates</div>
                   <div style={{ display: "flex", gap: 6 }}>
@@ -9966,7 +10228,7 @@ Payment terms:
               </div>
 
               {/* Right panel — active estimate */}
-              <div style={{ flex: 1, padding: 28, overflowY: "auto", background: em.paper }}>
+              <div className="modal-body-scroll" style={{ flex: 1, padding: 28, overflowY: "auto", background: em.paper }}>
                 {!activeEstimate && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16 }}>
                     <div style={{ fontSize: 14, color: em.textSubtle }}>Select an estimate or create a new one</div>
@@ -10488,7 +10750,7 @@ Payment terms:
           <div onClick={() => setUnplannedModal({ open: false, weekStart: null })}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 16 }}>
             <div onClick={(e) => e.stopPropagation()}
-              style={{ width: "100%", maxWidth: 720, maxHeight: "85vh", background: "#1e2130", border: "1px solid #b45309", borderRadius: 14, padding: 24, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.55)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              className="modal-frame" style={{ width: "100%", maxWidth: 720, background: "#1e2130", border: "1px solid #b45309", borderRadius: 14, padding: 24, color: "white", boxShadow: "0 20px 60px rgba(0,0,0,0.55)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
                 <div>
                   <div style={{ fontSize: 20, fontWeight: 900, color: "#fbbf24" }}>⚠ Unplanned timesheet entries</div>
@@ -10498,7 +10760,7 @@ Payment terms:
                   style={{ padding: "6px 12px", background: "#141a28", color: "#c8d4f0", border: "1px solid #2e3650", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Close</button>
               </div>
 
-              <div style={{ flex: 1, overflowY: "auto", marginTop: 14, background: "#141a28", border: "1px solid #252f45", borderRadius: 10 }}>
+              <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto", marginTop: 14, background: "#141a28", border: "1px solid #252f45", borderRadius: 10 }}>
                 {dateKeys.length === 0 ? (
                   <div style={{ padding: 40, textAlign: "center", color: "#8899bb" }}>Nothing unplanned in the visible range. 🎉</div>
                 ) : (
@@ -10617,7 +10879,7 @@ Payment terms:
         return (
           <div onClick={() => setConvertToProject(prev => ({ ...prev, open: false }))}
             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 130, padding: 16 }}>
-            <div onClick={(e) => e.stopPropagation()}
+            <div onClick={(e) => e.stopPropagation()} className="modal-scroll"
               style={{ width: "100%", maxWidth: 520, background: paperBg, border: `1px solid ${border}`, borderRadius: 14, padding: 28, color: text, boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}>
               <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 6 }}>Convert to project</div>
               <div style={{ fontSize: 13, color: textMuted, marginBottom: 20 }}>
