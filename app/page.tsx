@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../src/lib/supabase"
+import { AskButton, AskPanel } from "../src/components/AskPanel"
 import {
   amountCanBeInvoiced,
   pastVisitsForInvoice,
@@ -2510,7 +2511,7 @@ function ExpenseForm({ mode, existing, workers, projects, extras, defaultProject
   )
 }
 
-function LoginScreen({ onLogin }: { onLogin: (user: { id: string; name: string; app_role: string; crew_id: string | null }) => void }) {
+function LoginScreen({ onLogin }: { onLogin: (user: { id: string; name: string; app_role: string; crew_id: string | null }, pin: string) => void }) {
   const [email, setEmail] = useState("")
   const [pin, setPin] = useState("")
   const [error, setError] = useState("")
@@ -2522,7 +2523,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: { id: string; name: string; 
     const { data, error: dbError } = await supabase.from("workers").select("id, name, app_role, crew_id, pin, email").ilike("email", email.trim()).single()
     if (dbError || !data) { setError("Email not found. Ask your boss to add you."); setLoading(false); return }
     if (data.pin !== pin) { setError("Wrong PIN. Try again."); setLoading(false); return }
-    onLogin({ id: data.id, name: data.name, app_role: data.app_role ?? "worker", crew_id: data.crew_id })
+    onLogin({ id: data.id, name: data.name, app_role: data.app_role ?? "worker", crew_id: data.crew_id }, pin)
   }
 
   function handlePinKey(digit: string) { if (pin.length < 4) setPin(p => p + digit) }
@@ -2683,6 +2684,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [showChangePinModal, setShowChangePinModal] = useState(false)
   const [currentUser, setCurrentUser] = useState<{ id: string; name: string; app_role: string; crew_id: string | null } | null>(null)
+  const [sessionPin, setSessionPin] = useState("")
+  const [askOpen, setAskOpen] = useState(false)
+  const [askConfigured, setAskConfigured] = useState(false)
   const [authChecked, setAuthChecked] = useState(false)
   const [draggingToken, setDraggingToken] = useState<string | null>(null)
   const [todayKey, setTodayKey] = useState<string | null>(null)
@@ -2771,6 +2775,9 @@ export default function Home() {
   function logout() {
     localStorage.removeItem("lc_user")
     setCurrentUser(null)
+    setSessionPin("")
+    setAskOpen(false)
+    setAskConfigured(false)
     // Clear all state so stale data doesn't persist
     setProjects([])
     setSegments([])
@@ -2875,6 +2882,18 @@ export default function Home() {
     setTodayKey(formatDateKey(new Date()))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // The Ask button stays hidden until the server says the model key is set.
+  // The check returns no secrets.
+  useEffect(() => {
+    if (!currentUser) return
+    let cancelled = false
+    fetch("/api/ask", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => { if (!cancelled) setAskConfigured(!!d?.configured) })
+      .catch(() => { if (!cancelled) setAskConfigured(false) })
+    return () => { cancelled = true }
+  }, [currentUser])
 
   // The Look up button only appears once the server confirms QuickBooks
   // env vars are set. The check returns no secrets.
@@ -4627,11 +4646,22 @@ Payment terms:
   // ── Auth gate ──
   if (!authChecked) return null // wait for client mount before rendering
   if (!currentUser) {
-    return <LoginScreen onLogin={(user) => {
+    return <LoginScreen onLogin={(user, pin) => {
       localStorage.setItem("lc_user", JSON.stringify(user))
       setCurrentUser(user)
+      setSessionPin(pin)
     }} />
   }
+
+  const askPanel = askConfigured ? (
+    <AskPanel
+      open={askOpen}
+      onClose={() => setAskOpen(false)}
+      user={currentUser}
+      pin={sessionPin}
+      onPinChange={setSessionPin}
+    />
+  ) : null
 
   // Mobile landing: show a big Timesheets shortcut when a user first lands on mobile.
   // Dismissable — "Continue to full app" moves them into the normal scheduler for this session.
@@ -4732,6 +4762,8 @@ Payment terms:
           {userCrew && <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85, letterSpacing: "0.4px" }}>{crewLabel(userCrew)}</span>}
         </button>
 
+        {askConfigured && <AskButton variant="landing" onClick={() => setAskOpen(true)} />}
+
         {/* Continue link */}
         <div style={{ flex: 1 }} />
         <button
@@ -4758,6 +4790,9 @@ Payment terms:
           onClick={() => {
             localStorage.removeItem("lc_user")
             setCurrentUser(null)
+            setSessionPin("")
+            setAskOpen(false)
+            setAskConfigured(false)
           }}
           style={{
             width: "100%",
@@ -4774,6 +4809,7 @@ Payment terms:
         >
           Log out
         </button>
+        {askPanel}
       </div>
     )
   }
@@ -4847,6 +4883,7 @@ Payment terms:
           <div style={{ fontSize: 12, color: "#8a8a8a", fontWeight: 600 }}>
             {new Date().toLocaleDateString("en-AU", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
           </div>
+          {askConfigured && !isMobile && <AskButton variant="header" onClick={() => setAskOpen(true)} />}
           <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#f5f5f5", border: "1px solid #e5e7eb", borderRadius: 8, padding: "6px 12px" }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: isBoss ? "#f59e0b" : isCrewBoss ? "#10b981" : "#3b82f6" }} />
             <span style={{ fontSize: 12, fontWeight: 700, color: "#1a1a1a" }}>{currentUser.name}</span>
@@ -10986,10 +11023,12 @@ Payment terms:
           userName={currentUser.name}
           userId={currentUser.id}
           onClose={() => setShowChangePinModal(false)}
-          onSuccess={() => { showToast("PIN updated ✓"); setShowChangePinModal(false) }}
+          onSuccess={() => { showToast("PIN updated ✓"); setShowChangePinModal(false); setSessionPin("") }}
         />
       )}
 
+      {askConfigured && isMobile && !askOpen && <AskButton variant="float" onClick={() => setAskOpen(true)} />}
+      {askPanel}
     </div>
   )
 }
