@@ -19,6 +19,7 @@ const WORKER_PROMPTS = [
 
 const BOSS_PROMPTS = [
   "What's on tomorrow?",
+  "Which jobs have the star?",
   "Who's on site next week?",
   "How many hours did we log last week?",
 ]

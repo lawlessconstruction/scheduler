@@ -4,8 +4,8 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { NextRequest } from "next/server"
 import { GET, POST } from "../app/api/ask/route.ts"
-import { FORBIDDEN_COLUMN_WORDS, TOOL_COLUMN_LISTS, WORKER_AUTH_COLUMNS } from "../src/lib/ask/columns.ts"
-import { lookupHours, lookupSchedule, type AskReader } from "../src/lib/ask/data.ts"
+import { FORBIDDEN_COLUMN_WORDS, PROJECT_COLUMNS, TOOL_COLUMN_LISTS, WORKER_AUTH_COLUMNS } from "../src/lib/ask/columns.ts"
+import { SCHEDULE_JOB_LIMIT, lookupHours, lookupProjects, lookupSchedule, runAskTool, type AskReader } from "../src/lib/ask/data.ts"
 import { addDays, formatAu, mondayOf, parseRange } from "../src/lib/ask/dates.ts"
 import { modelExtras, resolveAskModel } from "../src/lib/ask/model.ts"
 import {
@@ -85,9 +85,14 @@ assert.equal(sanitizeHistory([{ role: "assistant", content: "hello" }]).ok, fals
 
 for (const list of TOOL_COLUMN_LISTS) {
   for (const word of FORBIDDEN_COLUMN_WORDS) {
-    assert.equal(list.toLowerCase().includes(word), false, `${word} in ${list}`)
+    // Word boundaries so the star column "pinned" is not read as the login "pin".
+    assert.equal(new RegExp(`\\b${word}\\b`).test(list.toLowerCase()), false, `${word} in ${list}`)
   }
 }
+assert.match(PROJECT_COLUMNS, /\bpinned\b/)
+assert.match(PROJECT_COLUMNS, /\bcompleted\b/)
+assert.match(PROJECT_COLUMNS, /\bcompleted_at\b/)
+assert.doesNotMatch(PROJECT_COLUMNS, /\bpin\b/)
 assert.equal(WORKER_AUTH_COLUMNS.includes("pin"), true)
 
 assert.equal(resolveAskModel(undefined), "claude-haiku-5-5")
@@ -105,6 +110,12 @@ assert.match(prompt, /Thursday 5 November/)
 assert.match(prompt, /Australia\/Melbourne/)
 assert.match(prompt, /Sam Jones/)
 assert.match(prompt, /Monday 9 November/)
+assert.match(prompt, /pinned/)
+assert.match(prompt, /lookup_projects/)
+assert.match(prompt, /board_empty/)
+assert.match(prompt, /Nothing booked on the board/)
+assert.match(prompt, /6 people at 8 Vista St Bullen/)
+assert.match(prompt, /completed job is not current/i)
 const bossPrompt = systemPrompt(boss, "2026-11-04")
 assert.match(bossPrompt, /boss/i)
 assert.doesNotMatch(bossPrompt, /Sam Jones/)
@@ -128,6 +139,9 @@ assert.equal(/console\.log\(/.test(route), false)
 assert.equal(/console\.log\(/.test(data), false)
 assert.equal(route.includes("NEXT_PUBLIC_ANTHROPIC"), false)
 assert.equal(route.includes("WORKER_AUTH_COLUMNS"), true)
+assert.equal(route.includes("lookup_projects"), true)
+assert.match(data, /segments\.slice\(\)\.sort/)
+assert.match(data, /projects\.slice\(\)\.sort/)
 assert.ok(panel.includes("sendingRef"))
 assert.ok(panel.indexOf('className="ask-log"') < panel.indexOf("<form"))
 assert.match(panel, /min-height:\s*0/)
@@ -147,7 +161,7 @@ function fakeReader(rows: Record<string, Record<string, unknown>[]>): { reader: 
       const call: Call = { table, columns: "", eqs: [], ins: [] }
       const filter = {
         select(columns: string) { call.columns = columns; return filter },
-        eq(column: string, value: string) { call.eqs.push([column, value]); return filter },
+        eq(column: string, value: string | boolean) { call.eqs.push([column, String(value)]); return filter },
         in(column: string, values: string[]) { call.ins.push([column, values]); return filter },
         ilike() { return filter },
         gte() { return filter },
@@ -166,6 +180,62 @@ function fakeReader(rows: Record<string, Record<string, unknown>[]>): { reader: 
     },
   }
   return { reader, calls }
+}
+
+function pagingReader(rows: Record<string, Record<string, unknown>[]>): { reader: AskReader; ranges: [number, number][] } {
+  const ranges: [number, number][] = []
+  const reader: AskReader = {
+    from(table) {
+      const state = {
+        eqs: [] as [string, string | boolean][],
+        ins: [] as [string, string[]][],
+        gte: [] as [string, string][],
+        lte: [] as [string, string][],
+        orders: [] as [string, boolean][],
+      }
+      const filter = {
+        select() { return filter },
+        eq(column: string, value: string | boolean) { state.eqs.push([column, value]); return filter },
+        in(column: string, values: string[]) { state.ins.push([column, values]); return filter },
+        ilike() { return filter },
+        gte(column: string, value: string) { state.gte.push([column, value]); return filter },
+        lte(column: string, value: string) { state.lte.push([column, value]); return filter },
+        order(column: string, options?: { ascending: boolean }) {
+          state.orders.push([column, options?.ascending !== false])
+          return filter
+        },
+        range(start: number, end: number) {
+          ranges.push([start, end])
+          return Promise.resolve({ data: take().slice(start, end + 1), error: null })
+        },
+        limit(count: number) {
+          return Promise.resolve({ data: take().slice(0, count), error: null })
+        },
+      }
+      function take() {
+        let list = (rows[table] ?? []).slice()
+        for (const [column, value] of state.eqs) list = list.filter((row) => row[column] === value)
+        for (const [column, values] of state.ins) list = list.filter((row) => values.includes(String(row[column])))
+        for (const [column, value] of state.gte) list = list.filter((row) => String(row[column] ?? "") >= value)
+        for (const [column, value] of state.lte) list = list.filter((row) => String(row[column] ?? "") <= value)
+        if (state.orders.length > 0) {
+          list.sort((a, b) => {
+            for (const [column, ascending] of state.orders) {
+              const left = String(a[column] ?? "")
+              const right = String(b[column] ?? "")
+              if (left === right) continue
+              const cmp = left < right ? -1 : 1
+              return ascending ? cmp : -cmp
+            }
+            return 0
+          })
+        }
+        return list
+      }
+      return filter
+    },
+  }
+  return { reader, ranges }
 }
 
 const from = "2026-11-02"
@@ -197,6 +267,14 @@ assert.equal(segmentCalls.some((call) => call.eqs.length === 0 && call.ins.lengt
 assert.equal(workerDb.calls.every((call) => TOOL_COLUMN_LISTS.includes(call.columns)), true)
 assert.equal(JSON.stringify(schedule).includes("base_rate"), false)
 assert.equal(JSON.stringify(schedule).includes("p1"), false)
+if ("jobs" in schedule && Array.isArray(schedule.jobs) && schedule.jobs[0]) {
+  const job = schedule.jobs[0] as { pinned?: boolean; completed?: boolean; address?: string }
+  assert.equal(job.pinned, false)
+  assert.equal(job.completed, false)
+  assert.equal(job.address, "7 Balmoral Rd")
+  assert.equal("board_empty" in schedule, false)
+  assert.equal("truncated" in schedule, false)
+}
 
 const denied = await lookupHours(workerDb.reader, worker, { from, to, person: "Alex Stone" })
 assert.deepEqual(denied, { error: "You can only see your own hours." })
@@ -220,6 +298,127 @@ assert.equal(bossDb.calls[0].eqs.some(([column]) => column === "worker_id"), fal
 
 const leadDenied = await lookupHours(fakeReader({}).reader, lead, { from, to, person: "Sam Jones" })
 assert.deepEqual(leadDenied, { error: "You can only see your own hours." })
+
+const vista = { id: "p1", name: "8 Vista St Bullen", client: "A", archived: false, pinned: true, completed: false, completed_at: null }
+const other = { id: "p2", name: "1 Other St", client: "B", archived: false, pinned: true, completed: false, completed_at: null }
+const done = { id: "p3", name: "9 Done St", client: "C", archived: false, pinned: true, completed: true, completed_at: "2026-10-01" }
+const creek = { id: "p4", name: "2 Creek Rd", client: null, archived: null, pinned: true, completed: null, completed_at: null }
+const yard = { id: "p5", name: "Old Yard", client: null, archived: true, pinned: false, completed: false, completed_at: null }
+const projectRows = [vista, other, done, creek, yard]
+const currentFilter = { pinned: true, archived: false, completed: false }
+
+const bossJobs = fakeReader({ projects: projectRows })
+const current = await lookupProjects(bossJobs.reader, boss, currentFilter)
+assert.equal(bossJobs.calls.some((call) => call.table === "segments"), false)
+assert.equal(bossJobs.calls.every((call) => call.columns === PROJECT_COLUMNS), true)
+assert.equal("jobs" in current, true)
+if ("jobs" in current) {
+  assert.deepEqual(current.jobs.map((job) => job.name), ["1 Other St", "2 Creek Rd", "8 Vista St Bullen"])
+  assert.equal(current.jobs.every((job) => job.pinned === true && job.completed === false), true)
+  assert.equal(current.scope, "company")
+}
+const finished = await lookupProjects(fakeReader({ projects: projectRows }).reader, boss, { completed: true })
+if ("jobs" in finished) {
+  assert.deepEqual(finished.jobs.map((job) => ({ name: job.name, completed_at: job.completed_at })), [
+    { name: "9 Done St", completed_at: "2026-10-01" },
+  ])
+}
+const byName = await lookupProjects(fakeReader({ projects: projectRows }).reader, boss, { name: "VISTA" })
+if ("jobs" in byName) assert.deepEqual(byName.jobs.map((job) => job.name), ["8 Vista St Bullen"])
+const shortName = await lookupProjects(fakeReader({ projects: projectRows }).reader, boss, { name: "v" })
+assert.deepEqual(shortName, { error: "Use a bit more of the street name." })
+
+const crewJobs = fakeReader({
+  segments: [{ id: "s1", name: null, project_id: "p1", crew_id: "crew-a", start_date: "2026-10-01", end_date: "2026-10-30", notes: null }],
+  timesheets: [{ id: "t1", date: "2026-11-09", worker_id: "1", project_id: "p1", ordinary_hours: 8, ot_hours: 0, notes: null, absence_type: null }],
+  projects: projectRows,
+})
+const crewCurrent = await lookupProjects(crewJobs.reader, worker, currentFilter)
+if ("jobs" in crewCurrent) {
+  assert.deepEqual(crewCurrent.jobs.map((job) => job.name), ["8 Vista St Bullen"])
+  assert.equal(crewCurrent.scope, "your jobs")
+}
+assert.equal(crewJobs.calls.some((call) => call.table === "segments" && call.eqs.some(([column, value]) => column === "crew_id" && value === "crew-a")), true)
+assert.equal(crewJobs.calls.some((call) => call.table === "timesheets" && call.eqs.some(([column, value]) => column === "worker_id" && value === "1")), true)
+const viaTool = await runAskTool(fakeReader({ projects: projectRows }).reader, boss, "lookup_projects", currentFilter)
+if ("jobs" in viaTool && Array.isArray(viaTool.jobs)) assert.equal(viaTool.jobs.length, 3)
+
+const emptyBoard = await lookupSchedule(fakeReader({ segments: [] }).reader, boss, { from: "2026-11-10", to: "2026-11-10" })
+if ("board_empty" in emptyBoard) {
+  assert.equal(emptyBoard.board_empty, true)
+  assert.equal(emptyBoard.hours_from, "2026-11-03")
+  assert.equal(emptyBoard.hours_to, "2026-11-10")
+  assert.match(String(emptyBoard.note), /lookup_hours/)
+  assert.deepEqual(emptyBoard.jobs, [])
+}
+const longEmpty = await lookupSchedule(fakeReader({ segments: [] }).reader, boss, { from: "2026-11-01", to: "2026-11-20" })
+assert.equal("board_empty" in longEmpty, false)
+if ("note" in longEmpty) assert.doesNotMatch(String(longEmpty.note), /lookup_hours/)
+const crewEmpty = await lookupSchedule(fakeReader({ segments: [] }).reader, worker, { from: "2026-11-10", to: "2026-11-10" })
+assert.equal("board_empty" in crewEmpty, true)
+
+const hourRows = [
+  ...["w1", "w2", "w3", "w4", "w5", "w6"].map((id, index) => ({
+    id: `t${index}`, date: "2026-11-09", worker_id: id, project_id: "p1", ordinary_hours: 8, ot_hours: 0, notes: "secret", absence_type: null,
+  })),
+  { id: "t-dup", date: "2026-11-09", worker_id: "w1", project_id: "p1", ordinary_hours: 1, ot_hours: 0, notes: null, absence_type: null },
+  { id: "t-old", date: "2026-11-08", worker_id: "w1", project_id: "p1", ordinary_hours: 8, ot_hours: 0, notes: null, absence_type: null },
+]
+const companyHours = await lookupHours(fakeReader({
+  timesheets: hourRows,
+  projects: [vista],
+  workers: hourRows.map((row) => ({ id: row.worker_id, name: row.worker_id, crew_id: "crew-a" })),
+}).reader, boss, { from: "2026-11-08", to: "2026-11-09" })
+if ("days" in companyHours && Array.isArray(companyHours.days)) {
+  assert.equal(companyHours.last_logged, "2026-11-09")
+  assert.equal(companyHours.days[0].date, "2026-11-09")
+  assert.deepEqual(companyHours.days[0].sites, [{ job: "8 Vista St Bullen", people: 6 }])
+  assert.equal(JSON.stringify(companyHours).includes("secret"), false)
+}
+
+const ordered = await lookupSchedule(fakeReader({
+  segments: [
+    { id: "late", name: null, project_id: "p1", crew_id: "crew-a", start_date: "2026-11-08", end_date: "2026-11-08", notes: null },
+    { id: "early", name: null, project_id: "p2", crew_id: "crew-a", start_date: "2026-11-02", end_date: "2026-11-03", notes: null },
+  ],
+  projects: [vista, other],
+  crews: [{ id: "crew-a", name: "Crew A", nickname: null }],
+  workers: [],
+  project_day_labels: [],
+}).reader, boss, { from, to })
+if ("jobs" in ordered && Array.isArray(ordered.jobs)) {
+  assert.equal(ordered.jobs[0].starts, "2026-11-02")
+  assert.equal(ordered.jobs[1].starts, "2026-11-08")
+  assert.equal(ordered.jobs[0].pinned, true)
+  assert.equal("truncated" in ordered, false)
+}
+
+const many = Array.from({ length: 1050 }, (_, index) => ({
+  id: `s${String(index).padStart(4, "0")}`,
+  name: null,
+  project_id: "p1",
+  crew_id: "crew-a",
+  start_date: index === 1049 ? "2026-11-08" : "2020-01-01",
+  end_date: "2026-12-01",
+  notes: null,
+}))
+const paged = pagingReader({
+  segments: many,
+  projects: [vista],
+  crews: [{ id: "crew-a", name: "Crew A", nickname: null }],
+  workers: [],
+  project_day_labels: [],
+})
+const wide = await lookupSchedule(paged.reader, boss, { from, to })
+assert.ok(paged.ranges.some(([start]) => start >= 1000), "schedule read must page past the first 1000")
+assert.equal("truncated" in wide, true)
+if ("truncated" in wide && "matched" in wide && "returned" in wide && "jobs" in wide && Array.isArray(wide.jobs)) {
+  assert.equal(wide.truncated, true)
+  assert.equal(wide.matched, 1050)
+  assert.equal(wide.returned, SCHEDULE_JOB_LIMIT)
+  assert.equal(wide.jobs.length, SCHEDULE_JOB_LIMIT)
+  assert.equal(wide.jobs[0].starts <= wide.jobs[wide.jobs.length - 1].starts, true)
+}
 
 process.env.ANTHROPIC_API_KEY = ""
 const hidden = await GET()

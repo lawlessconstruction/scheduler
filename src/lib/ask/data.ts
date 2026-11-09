@@ -7,7 +7,7 @@ import {
   TIMESHEET_COLUMNS,
   WORKER_LOOKUP_COLUMNS,
 } from "./columns"
-import { COMPANY_HOURS_MAX_DAYS, HOURS_MAX_DAYS, SCHEDULE_MAX_DAYS, parseRange } from "./dates"
+import { COMPANY_HOURS_MAX_DAYS, HOURS_MAX_DAYS, SCHEDULE_MAX_DAYS, addDays, diffDays, parseRange } from "./dates"
 import {
   clip,
   containsPattern,
@@ -27,7 +27,7 @@ type Result = { data: Row[] | null; error: { message: string } | null }
 
 interface Filter {
   select(columns: string): Filter
-  eq(column: string, value: string): Filter
+  eq(column: string, value: string | boolean): Filter
   in(column: string, values: string[]): Filter
   ilike(column: string, pattern: string): Filter
   gte(column: string, value: string): Filter
@@ -58,7 +58,15 @@ type Segment = {
   notes: string | null
 }
 
-type Project = { id: string; name: string; client: string | null; archived: boolean }
+type Project = {
+  id: string
+  name: string
+  client: string | null
+  archived: boolean
+  pinned: boolean
+  completed: boolean
+  completed_at: string | null
+}
 type Crew = { id: string; name: string; nickname: string | null }
 type Label = { project_id: string; date: string; label: string }
 type Crewmate = { name: string; crew_id: string; role: string | null }
@@ -83,6 +91,15 @@ const ABSENCE: Record<string, string> = {
 }
 
 const PAGE = 1000
+// A plain .select() stops at 1000 rows and says nothing. Page with .range().
+// The cap is only a backstop; hitting it sets truncated and a count.
+export const SCHEDULE_FETCH_CAP = 5000
+// How many bookings we hand the model. The rest stay counted in matched.
+export const SCHEDULE_JOB_LIMIT = 40
+export const PROJECT_LIMIT = 100
+const BOARD_EMPTY_MAX_DAYS = 14
+// Days before the window, so "next week" still reaches work logged this week.
+const BOARD_HOURS_LOOKBACK = 7
 
 function text(value: unknown): string | null {
   if (value == null) return null
@@ -103,6 +120,45 @@ function hours(value: unknown): number {
 function awayLabel(value: string | null): string | null {
   if (!value) return null
   return ABSENCE[value] ?? value.slice(0, 40)
+}
+
+function mapProject(row: Row): Project {
+  const completedAt = day(row.completed_at)
+  return {
+    id: String(row.id),
+    name: text(row.name) ?? "Untitled job",
+    client: text(row.client),
+    archived: row.archived === true,
+    pinned: row.pinned === true,
+    completed: row.completed === true,
+    completed_at: completedAt || null,
+  }
+}
+
+type ProjectFilter = { pinned?: boolean; archived?: boolean; completed?: boolean; name: string | null }
+
+function projectMatches(project: Project, filters: ProjectFilter): boolean {
+  if (filters.pinned !== undefined && project.pinned !== filters.pinned) return false
+  if (filters.archived !== undefined && project.archived !== filters.archived) return false
+  if (filters.completed !== undefined && project.completed !== filters.completed) return false
+  if (filters.name && !project.name.toLowerCase().includes(filters.name)) return false
+  return true
+}
+
+function emptySchedule(about: string, from: string, to: string, note: string) {
+  const span = diffDays(from, to) + 1
+  if (span > BOARD_EMPTY_MAX_DAYS) return { about, from, to, jobs: [] as [], note }
+  const hoursFrom = addDays(from, -BOARD_HOURS_LOOKBACK)
+  return {
+    about,
+    from,
+    to,
+    jobs: [] as [],
+    board_empty: true as const,
+    hours_from: hoursFrom,
+    hours_to: to,
+    note: `${note} The board has no booking in this short window. Call lookup_hours from ${hoursFrom} to ${to} and answer from what was last logged.`,
+  }
 }
 
 async function pages(
@@ -130,10 +186,17 @@ async function loadIn(reader: AskReader, table: string, columns: string, column:
   const rows: Row[] = []
   for (let i = 0; i < unique.length; i += 80) {
     const chunk = unique.slice(i, i + 80)
-    const { data, error } = await reader.from(table).select(columns).in(column, chunk).limit(PAGE)
-    if (error) throw new AskReadError()
-    rows.push(...(data ?? []))
-    if ((data ?? []).length >= PAGE) break
+    // Order by id as well as the filter column so a full page cannot skip rows.
+    const { rows: batch } = await pages((start, end) => {
+      return reader
+        .from(table)
+        .select(columns)
+        .in(column, chunk)
+        .order(column, { ascending: true })
+        .order("id", { ascending: true })
+        .range(start, end)
+    }, SCHEDULE_FETCH_CAP)
+    rows.push(...batch)
   }
   return rows
 }
@@ -177,34 +240,22 @@ async function segmentsOverlapping(
 
 async function loadProjects(reader: AskReader, ids: string[]): Promise<Project[]> {
   const rows = await loadIn(reader, "projects", PROJECT_COLUMNS, "id", ids)
-  return rows.map((row) => ({
-    id: String(row.id),
-    name: text(row.name) ?? "Untitled job",
-    client: text(row.client),
-    archived: row.archived === true,
-  }))
+  return rows.map(mapProject)
 }
 
 async function findProjectsByName(reader: AskReader, query: string): Promise<{ projects: Project[]; truncated: boolean }> {
   const pattern = containsPattern(query)
   if (!pattern) return { projects: [], truncated: false }
-  const { data, error } = await reader
-    .from("projects")
-    .select(PROJECT_COLUMNS)
-    .ilike("name", pattern)
-    .order("name", { ascending: true })
-    .limit(40)
-  if (error) throw new AskReadError()
-  const rows = data ?? []
-  return {
-    truncated: rows.length >= 40,
-    projects: rows.map((row) => ({
-      id: String(row.id),
-      name: text(row.name) ?? "Untitled job",
-      client: text(row.client),
-      archived: row.archived === true,
-    })),
-  }
+  const { rows, truncated } = await pages((start, end) => {
+    return reader
+      .from("projects")
+      .select(PROJECT_COLUMNS)
+      .ilike("name", pattern)
+      .order("name", { ascending: true })
+      .order("id", { ascending: true })
+      .range(start, end)
+  }, 200)
+  return { truncated, projects: rows.map(mapProject) }
 }
 
 async function findWorkers(reader: AskReader, query: string): Promise<WorkerHit[]> {
@@ -251,7 +302,17 @@ function presentJobs(args: {
     peopleByCrew.set(person.crew_id, list)
   }
 
-  const jobs = args.segments.slice(0, 60).map((segment) => {
+  // Copy before sorting. Nearest the asked start first, so a cap keeps those days.
+  const ordered = args.segments.slice().sort((a, b) => {
+    const aKey = a.start_date > args.from ? a.start_date : args.from
+    const bKey = b.start_date > args.from ? b.start_date : args.from
+    if (aKey !== bKey) return aKey < bKey ? -1 : 1
+    if (a.start_date !== b.start_date) return a.start_date < b.start_date ? -1 : 1
+    if (a.id !== b.id) return a.id < b.id ? -1 : 1
+    return 0
+  })
+  const shown = ordered.slice(0, SCHEDULE_JOB_LIMIT)
+  let jobs = shown.map((segment) => {
     const project = projectsById.get(segment.project_id)
     const dayNotes = args.labels
       .filter((label) =>
@@ -269,6 +330,9 @@ function presentJobs(args: {
       address: project?.name ?? "Unknown job",
       ...(project?.client ? { client: project.client } : {}),
       ...(project?.archived ? { archived: true } : {}),
+      pinned: project?.pinned === true,
+      completed: project?.completed === true,
+      ...(project?.completed_at ? { completed_at: project.completed_at } : {}),
       crew: crewLabel(crewsById.get(segment.crew_id)),
       starts: segment.start_date,
       ends: segment.end_date,
@@ -278,14 +342,29 @@ function presentJobs(args: {
       people: peopleByCrew.get(segment.crew_id) ?? [],
     }
   })
+  // The route drops a tool result past 14,000 characters. Shrink from the
+  // far end of the window so the truncated count still reaches the model.
+  while (jobs.length > 1 && JSON.stringify(jobs).length > 11000) jobs = jobs.slice(0, -1)
 
+  if (jobs.length === 0) return emptySchedule(args.about, args.from, args.to, args.emptyNote)
+
+  const hidden = args.truncated || ordered.length > jobs.length
+  const matchedNote = args.truncated
+    ? `Showing ${jobs.length} bookings nearest ${args.from}. At least ${ordered.length} overlap this window and the rest were not loaded. Ask about fewer days or one street.`
+    : `Showing ${jobs.length} of ${ordered.length} bookings, nearest ${args.from} first. Ask about fewer days or one street for the rest.`
   return {
     about: args.about,
     from: args.from,
     to: args.to,
     jobs,
-    ...(jobs.length === 0 ? { note: args.emptyNote } : {}),
-    ...(args.truncated || args.segments.length > 60 ? { truncated: true, note: "Some bookings were left out. Ask about fewer days or one street." } : {}),
+    ...(hidden
+      ? {
+          truncated: true,
+          returned: jobs.length,
+          ...(args.truncated ? { matched_at_least: ordered.length } : { matched: ordered.length }),
+          note: matchedNote,
+        }
+      : {}),
   }
 }
 
@@ -367,20 +446,16 @@ async function rosterForCrew(
   const nothing = voice === "self"
     ? "Nothing is booked for you in those dates."
     : "Nothing is booked for that person in those dates."
-  const mine = await segmentsOverlapping(reader, from, to, { kind: "crew", crewId }, 300)
+  const mine = await segmentsOverlapping(reader, from, to, { kind: "crew", crewId }, SCHEDULE_FETCH_CAP)
   const projects = await loadProjects(reader, mine.segments.map((segment) => segment.project_id))
   const matched = jobQuery
     ? projects.filter((project) => project.name.toLowerCase().includes(jobQuery))
     : projects
   const ids = matched.map((project) => project.id)
-  if (jobQuery && ids.length === 0) {
-    return { about, from, to, jobs: [], note: notOnJob }
-  }
-  if (ids.length === 0) {
-    return { about, from, to, jobs: [], note: nothing }
-  }
+  if (jobQuery && ids.length === 0) return emptySchedule(about, from, to, notOnJob)
+  if (ids.length === 0) return emptySchedule(about, from, to, nothing)
   // Other crews on the same jobs, same dates. Not their other jobs.
-  const expanded = await segmentsOverlapping(reader, from, to, { kind: "projects", projectIds: ids }, 300)
+  const expanded = await segmentsOverlapping(reader, from, to, { kind: "projects", projectIds: ids }, SCHEDULE_FETCH_CAP)
   return describeSegments(
     reader,
     from,
@@ -422,11 +497,11 @@ export async function lookupSchedule(reader: AskReader, user: AskUser, input: { 
   if (jobQuery) {
     const found = await findProjectsByName(reader, jobQuery)
     if (found.projects.length === 0) return { about: "whole company", from: range.from, to: range.to, jobs: [], note: "No job matches that." }
-    const loaded = await segmentsOverlapping(reader, range.from, range.to, { kind: "projects", projectIds: found.projects.map((project) => project.id) }, 200)
+    const loaded = await segmentsOverlapping(reader, range.from, range.to, { kind: "projects", projectIds: found.projects.map((project) => project.id) }, SCHEDULE_FETCH_CAP)
     segments = loaded.segments
     truncated = loaded.truncated || found.truncated
   } else {
-    const loaded = await segmentsOverlapping(reader, range.from, range.to, { kind: "all" }, 200)
+    const loaded = await segmentsOverlapping(reader, range.from, range.to, { kind: "all" }, SCHEDULE_FETCH_CAP)
     segments = loaded.segments
     truncated = loaded.truncated
   }
@@ -443,7 +518,8 @@ async function loadTimesheets(
   const { rows, truncated } = await pages((start, end) => {
     let query = reader.from("timesheets").select(TIMESHEET_COLUMNS).gte("date", from).lte("date", to)
     if (workerId) query = query.eq("worker_id", workerId)
-    return query.order("date", { ascending: true }).order("id", { ascending: true }).range(start, end)
+    // Newest first, so a cap keeps recent days instead of the oldest page.
+    return query.order("date", { ascending: false }).order("id", { ascending: true }).range(start, end)
   }, cap)
   return {
     truncated,
@@ -485,13 +561,15 @@ async function onePersonsHours(reader: AskReader, from: string, to: string, work
       ...(away ? { away } : {}),
       ...(notes ? { notes } : {}),
     }
-  })
+  }).slice().sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  const lastLogged = days.length > 0 ? days[days.length - 1].date : null
   return {
     worker: name,
     scope,
     from,
     to,
     ...sumHours(loaded.rows),
+    last_logged: lastLogged,
     days,
     ...(loaded.truncated ? { truncated: true, note: "Some days were left out. Ask about a shorter period." } : {}),
   }
@@ -518,11 +596,16 @@ export async function lookupHours(reader: AskReader, user: AskUser, input: { fro
     return onePersonsHours(reader, range.from, range.to, found[0].id, found[0].name, "one person")
   }
 
-  // Boss, whole company, short window. Totals only — no one else's notes.
+  // Boss, whole company, short window. Totals and site headcounts — no one else's notes.
   const loaded = await loadTimesheets(reader, range.from, range.to, null, 2000)
   const workerIds = [...new Set(loaded.rows.map((row) => row.worker_id))]
-  const nameRows = await loadIn(reader, "workers", WORKER_LOOKUP_COLUMNS, "id", workerIds)
+  const projectIds = loaded.rows.map((row) => row.project_id).filter((id): id is string => !!id)
+  const [nameRows, projects] = await Promise.all([
+    loadIn(reader, "workers", WORKER_LOOKUP_COLUMNS, "id", workerIds),
+    loadProjects(reader, projectIds),
+  ])
   const names = new Map(nameRows.map((row) => [String(row.id), text(row.name) ?? "Unnamed"]))
+  const projectNames = new Map(projects.map((project) => [project.id, project.name]))
   const byWorker = new Map<string, Timesheet[]>()
   for (const row of loaded.rows) {
     const list = byWorker.get(row.worker_id) ?? []
@@ -531,15 +614,158 @@ export async function lookupHours(reader: AskReader, user: AskUser, input: { fro
   }
   const people = [...byWorker.entries()]
     .map(([id, rows]) => ({ name: names.get(id) ?? "Unnamed", ...sumHours(rows) }))
+    .slice()
     .sort((a, b) => a.name.localeCompare(b.name))
+  const sitesByDay = new Map<string, Map<string, { job: string; workers: Set<string> }>>()
+  for (const row of loaded.rows) {
+    if (!row.project_id) continue
+    const job = projectNames.get(row.project_id) ?? "Unknown job"
+    let sites = sitesByDay.get(row.date)
+    if (!sites) {
+      sites = new Map()
+      sitesByDay.set(row.date, sites)
+    }
+    let site = sites.get(row.project_id)
+    if (!site) {
+      site = { job, workers: new Set() }
+      sites.set(row.project_id, site)
+    }
+    site.workers.add(row.worker_id)
+  }
+  const days = [...sitesByDay.entries()]
+    .map(([date, sites]) => ({
+      date,
+      sites: [...sites.values()]
+        .map((site) => ({ job: site.job, people: site.workers.size }))
+        .slice()
+        .sort((a, b) => b.people - a.people || a.job.localeCompare(b.job)),
+    }))
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
   return {
     scope: "company",
     from: range.from,
     to: range.to,
     ...sumHours(loaded.rows),
+    last_logged: days[0]?.date ?? null,
+    days,
     people,
     ...(loaded.truncated ? { truncated: true, note: "Some hours were left out. Ask about fewer days or one person." } : {}),
   }
+}
+
+function presentProjects(projects: Project[], truncated: boolean, scope: string) {
+  const sorted = projects.slice().sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
+    return a.name.localeCompare(b.name, "en", { numeric: true, sensitivity: "base" })
+  })
+  const shown = sorted.slice(0, PROJECT_LIMIT)
+  const jobs = shown.map((project) => ({
+    name: project.name,
+    client: project.client,
+    pinned: project.pinned,
+    ...(project.archived ? { archived: true } : {}),
+    completed: project.completed,
+    ...(project.completed_at ? { completed_at: project.completed_at } : {}),
+  }))
+  const hidden = truncated || sorted.length > jobs.length
+  return {
+    scope,
+    jobs,
+    ...(hidden
+      ? {
+          truncated: true,
+          returned: jobs.length,
+          ...(truncated ? { matched_at_least: sorted.length } : { matched: sorted.length }),
+          note: truncated
+            ? `Showing ${jobs.length} jobs. At least ${sorted.length} matched and the rest were not loaded.`
+            : `Showing ${jobs.length} of ${sorted.length} jobs.`,
+        }
+      : {}),
+  }
+}
+
+async function projectIdsForCrewMember(reader: AskReader, user: AskUser): Promise<{ ids: string[]; truncated: boolean }> {
+  const ids = new Set<string>()
+  let truncated = false
+  const crewId = user.crewId
+  if (crewId) {
+    const loaded = await pages((start, end) => {
+      return reader
+        .from("segments")
+        .select(SEGMENT_COLUMNS)
+        .eq("crew_id", crewId)
+        .order("start_date", { ascending: true })
+        .order("id", { ascending: true })
+        .range(start, end)
+    }, SCHEDULE_FETCH_CAP)
+    truncated = loaded.truncated
+    for (const row of loaded.rows) ids.add(String(row.project_id))
+  }
+  const mine = await pages((start, end) => {
+    return reader
+      .from("timesheets")
+      .select(TIMESHEET_COLUMNS)
+      .eq("worker_id", user.id)
+      .order("date", { ascending: false })
+      .order("id", { ascending: true })
+      .range(start, end)
+  }, SCHEDULE_FETCH_CAP)
+  if (mine.truncated) truncated = true
+  for (const row of mine.rows) {
+    const projectId = text(row.project_id)
+    if (projectId) ids.add(projectId)
+  }
+  return { ids: [...ids], truncated }
+}
+
+async function loadProjectList(reader: AskReader, filters: ProjectFilter): Promise<{ projects: Project[]; truncated: boolean }> {
+  const pattern = filters.name ? containsPattern(filters.name) : null
+  const { rows, truncated } = await pages((start, end) => {
+    // True is safe as .eq (null is not true). False is applied in projectMatches
+    // so a null archived/completed flag still counts as not set, same as the board.
+    let query = reader.from("projects").select(PROJECT_COLUMNS)
+    if (filters.pinned === true) query = query.eq("pinned", true)
+    if (filters.archived === true) query = query.eq("archived", true)
+    if (filters.completed === true) query = query.eq("completed", true)
+    if (pattern) query = query.ilike("name", pattern)
+    return query.order("name", { ascending: true }).order("id", { ascending: true }).range(start, end)
+  }, SCHEDULE_FETCH_CAP)
+  return { truncated, projects: rows.map(mapProject).filter((project) => projectMatches(project, filters)) }
+}
+
+export async function lookupProjects(
+  reader: AskReader,
+  user: AskUser,
+  input: { pinned?: boolean; archived?: boolean; completed?: boolean; name?: string },
+) {
+  const name = plainQuery(input.name)
+  if (input.name?.trim() && !name) return { error: "Use a bit more of the street name." }
+  const filters: ProjectFilter = {
+    pinned: input.pinned,
+    archived: input.archived,
+    completed: input.completed,
+    name,
+  }
+
+  if (!isBoss(user)) {
+    const found = await projectIdsForCrewMember(reader, user)
+    const allowed = new Set(found.ids)
+    const projects = (await loadProjects(reader, found.ids)).filter((project) => allowed.has(project.id) && projectMatches(project, filters))
+    const listed = presentProjects(projects, found.truncated, "your jobs")
+    if (listed.jobs.length === 0 && !("truncated" in listed)) {
+      return { ...listed, note: "No job you are on matches that." }
+    }
+    return listed
+  }
+
+  const loaded = await loadProjectList(reader, filters)
+  return presentProjects(loaded.projects, loaded.truncated, "company")
+}
+
+function flag(value: unknown): boolean | undefined {
+  if (value === true || value === false) return value
+  return undefined
 }
 
 export function readToolInput(input: unknown): { from?: unknown; to?: unknown; job_query?: string; person?: string } {
@@ -553,11 +779,23 @@ export function readToolInput(input: unknown): { from?: unknown; to?: unknown; j
   }
 }
 
+export function readProjectInput(input: unknown): { pinned?: boolean; archived?: boolean; completed?: boolean; name?: string } {
+  if (!input || typeof input !== "object") return {}
+  const src = input as Record<string, unknown>
+  const rawName = typeof src.name === "string" ? src.name : typeof src.job_query === "string" ? src.job_query : undefined
+  return {
+    pinned: flag(src.pinned),
+    archived: flag(src.archived),
+    completed: flag(src.completed),
+    name: rawName?.slice(0, 80),
+  }
+}
+
 export async function runAskTool(reader: AskReader, user: AskUser, name: string | undefined, input: unknown) {
-  const args = readToolInput(input)
   try {
-    if (name === "lookup_schedule") return await lookupSchedule(reader, user, args)
-    if (name === "lookup_hours") return await lookupHours(reader, user, args)
+    if (name === "lookup_schedule") return await lookupSchedule(reader, user, readToolInput(input))
+    if (name === "lookup_hours") return await lookupHours(reader, user, readToolInput(input))
+    if (name === "lookup_projects") return await lookupProjects(reader, user, readProjectInput(input))
     return { error: "That lookup is not available." }
   } catch (err) {
     if (err instanceof AskReadError) return { error: "The schedule couldn't be read. Try again." }

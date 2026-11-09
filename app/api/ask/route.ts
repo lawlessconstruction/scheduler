@@ -37,7 +37,7 @@ const buckets = new Map<string, number[]>()
 const TOOLS = [
   {
     name: "lookup_schedule",
-    description: "Read-only. Jobs in a date range: street address (the project name), client, crew, booking notes, day notes, and the names of people on those jobs. A crew member only gets jobs their crew is on, plus the other people on those same jobs. A boss can ask about one person or the whole company.",
+    description: "Read-only. Jobs booked on the board in a date range: street address (the project name), client, whether the job is pinned or completed, crew, booking notes, day notes, and the names of people on those jobs. A crew member only gets jobs their crew is on, plus the other people on those same jobs. A boss can ask about one person or the whole company. If the result sets board_empty, the board has nothing in that short window: call lookup_hours for hours_from to hours_to and answer from what was last logged. This is not how you list current or starred jobs.",
     input_schema: {
       type: "object",
       properties: {
@@ -51,7 +51,7 @@ const TOOLS = [
   },
   {
     name: "lookup_hours",
-    description: "Read-only timesheet hours: ordinary hours, overtime, leave, and the job name. A crew member can only see their own hours. A boss can ask for one person, or a company total of 31 days or fewer. No pay rates.",
+    description: "Read-only timesheet hours: ordinary hours, overtime, leave, and the job name. Company results include last_logged and, for each day, sites with how many people were there. A crew member can only see their own hours. A boss can ask for one person, or a company total of 31 days or fewer. No pay rates. Use this after board_empty to say what was last logged.",
     input_schema: {
       type: "object",
       properties: {
@@ -60,6 +60,19 @@ const TOOLS = [
         person: { type: "string", description: "Boss only. Omit for a company total. For a crew member this is ignored unless it is their own name; anyone else's hours are refused." },
       },
       required: ["from", "to"],
+    },
+  },
+  {
+    name: "lookup_projects",
+    description: "Read-only list of jobs. Returns the street (name), client, pinned, completed, and completed_at. Current, starred, and with the star mean pinned true, archived false, and completed false. A completed job is not current. Do not use a date search for this. A crew member only sees jobs their crew is booked on and jobs they have logged hours on. A boss sees the whole company. No pay, no invoices.",
+    input_schema: {
+      type: "object",
+      properties: {
+        pinned: { type: "boolean", description: "True for current, starred, or with the star. False to leave starred jobs out." },
+        archived: { type: "boolean", description: "True for archived jobs only. False to leave archived jobs out. Omit to include both." },
+        completed: { type: "boolean", description: "True for finished jobs. False to leave finished jobs out. A completed job is not current." },
+        name: { type: "string", description: "Optional part of a street address, e.g. Vista." },
+      },
     },
   },
 ]

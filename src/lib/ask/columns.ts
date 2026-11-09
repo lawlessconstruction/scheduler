@@ -1,10 +1,11 @@
 // Column allow-lists for Ask. These strings are the only fields the
-// assistant is allowed to read. Pay, invoices, pins, and contact details
-// are intentionally absent. The auth lookup (pin check) uses its own list
-// in the route and never hands that row to the model.
+// assistant is allowed to read. Pay, invoices, and contact details are
+// intentionally absent. The star on the board is projects.pinned, and
+// completed / completed_at say a job is finished. The auth lookup (pin
+// check) uses its own list in the route and never hands that row to the model.
 
 export const SEGMENT_COLUMNS = "id, name, project_id, crew_id, start_date, end_date, notes"
-export const PROJECT_COLUMNS = "id, name, client, archived"
+export const PROJECT_COLUMNS = "id, name, client, archived, pinned, completed, completed_at"
 export const CREW_COLUMNS = "id, name, nickname"
 export const LABEL_COLUMNS = "project_id, date, label"
 export const CREWMATE_COLUMNS = "name, crew_id, role"
