@@ -37,7 +37,7 @@ const buckets = new Map<string, number[]>()
 const TOOLS = [
   {
     name: "lookup_schedule",
-    description: "Read-only. Jobs booked on the board in a date range: street address (the project name), client, whether the job is pinned or completed, crew, booking notes, day notes, and the names of people on those jobs. A crew member only gets jobs their crew is on, plus the other people on those same jobs. A boss can ask about one person or the whole company. If the result sets board_empty, the board has nothing in that short window: call lookup_hours for hours_from to hours_to and answer from what was last logged. This is not how you list current or starred jobs.",
+    description: "Read-only. Jobs booked on the board in a date range: street address (the project name), client, whether the job is pinned or completed, crew, booking notes, day notes, and the names of people on those jobs. A crew member only gets jobs their crew is on, plus the other people on those same jobs. A boss can ask about one person or the whole company. If the result sets board_empty, the board has nothing in that short window: call lookup_hours for hours_from to hours_to and answer from what was last logged. This is not how you list current or starred jobs, and it is not the life of a job. For how long a named job has been going, when it started, or the total hours on it, call job_summary.",
     input_schema: {
       type: "object",
       properties: {
@@ -51,7 +51,7 @@ const TOOLS = [
   },
   {
     name: "lookup_hours",
-    description: "Read-only timesheet hours: ordinary hours, overtime, leave, and the job name. Company results include last_logged and, for each day, sites with how many people were there. A crew member can only see their own hours. A boss can ask for one person, or a company total of 31 days or fewer. No pay rates. Use this after board_empty to say what was last logged.",
+    description: "Read-only timesheet hours: ordinary hours, overtime, leave, and the job name. Company results include last_logged and, for each day, sites with how many people were there. A crew member can only see their own hours. A boss can ask for one person, or a company total of 31 days or fewer. No pay rates. Use this after board_empty to say what was last logged. This cannot filter by job. For the hours on one named street, call job_summary. When a job is named, do not call this for the asker's own timesheet.",
     input_schema: {
       type: "object",
       properties: {
@@ -73,6 +73,17 @@ const TOOLS = [
         completed: { type: "boolean", description: "True for finished jobs. False to leave finished jobs out. A completed job is not current." },
         name: { type: "string", description: "Optional part of a street address, e.g. Vista." },
       },
+    },
+  },
+  {
+    name: "job_summary",
+    description: "Read-only summary of one job, with no date window. Matches a street the same way as lookup_projects. Returns pinned, completed, completed_at, how many bookings, the first and last booking dates, the first and last day hours were logged, ordinary hours, overtime, total hours, days worked, and how many people. A boss also gets hours by crew and by person. A crew member only gets a job their crew is booked on or they have logged hours on, and only the totals, not anyone's individual hours. Use this for how long a job has been going, when it started, and the total hours on that street. If more than one job matches, ask for more of the street. Do not fall back to the asker's own timesheet.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Part of the street address, e.g. Hedderwick." },
+      },
+      required: ["name"],
     },
   },
 ]

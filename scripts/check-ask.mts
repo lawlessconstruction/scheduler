@@ -4,8 +4,8 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { NextRequest } from "next/server"
 import { GET, POST } from "../app/api/ask/route.ts"
-import { FORBIDDEN_COLUMN_WORDS, PROJECT_COLUMNS, TOOL_COLUMN_LISTS, WORKER_AUTH_COLUMNS } from "../src/lib/ask/columns.ts"
-import { SCHEDULE_JOB_LIMIT, lookupHours, lookupProjects, lookupSchedule, runAskTool, type AskReader } from "../src/lib/ask/data.ts"
+import { FORBIDDEN_COLUMN_WORDS, JOB_SEGMENT_COLUMNS, JOB_TIMESHEET_COLUMNS, PROJECT_COLUMNS, TOOL_COLUMN_LISTS, WORKER_AUTH_COLUMNS } from "../src/lib/ask/columns.ts"
+import { SCHEDULE_JOB_LIMIT, lookupHours, lookupJobSummary, lookupProjects, lookupSchedule, runAskTool, type AskReader } from "../src/lib/ask/data.ts"
 import { addDays, formatAu, mondayOf, parseRange } from "../src/lib/ask/dates.ts"
 import { modelExtras, resolveAskModel } from "../src/lib/ask/model.ts"
 import {
@@ -116,9 +116,18 @@ assert.match(prompt, /board_empty/)
 assert.match(prompt, /Nothing booked on the board/)
 assert.match(prompt, /6 people at 8 Vista St Bullen/)
 assert.match(prompt, /completed job is not current/i)
+assert.match(prompt, /job_summary/)
+assert.match(prompt, /How long a job has been going/)
+assert.match(prompt, /no date window/)
+assert.match(prompt, /own timesheet/)
+assert.match(prompt, /totals only/i)
 const bossPrompt = systemPrompt(boss, "2026-11-04")
 assert.match(bossPrompt, /boss/i)
+assert.match(bossPrompt, /job_summary/)
+assert.match(bossPrompt, /hours by crew and by person/)
+assert.match(bossPrompt, /own timesheet/)
 assert.doesNotMatch(bossPrompt, /Sam Jones/)
+assert.doesNotMatch(bossPrompt, /totals only/i)
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const data = readFileSync(join(root, "src/lib/ask/data.ts"), "utf8")
@@ -140,6 +149,8 @@ assert.equal(/console\.log\(/.test(data), false)
 assert.equal(route.includes("NEXT_PUBLIC_ANTHROPIC"), false)
 assert.equal(route.includes("WORKER_AUTH_COLUMNS"), true)
 assert.equal(route.includes("lookup_projects"), true)
+assert.equal(route.includes("job_summary"), true)
+assert.match(route, /do not call this for the asker's own timesheet/)
 assert.match(data, /segments\.slice\(\)\.sort/)
 assert.match(data, /projects\.slice\(\)\.sort/)
 assert.ok(panel.includes("sendingRef"))
@@ -299,6 +310,13 @@ assert.equal(bossDb.calls[0].eqs.some(([column]) => column === "worker_id"), fal
 const leadDenied = await lookupHours(fakeReader({}).reader, lead, { from, to, person: "Sam Jones" })
 assert.deepEqual(leadDenied, { error: "You can only see your own hours." })
 
+const namedJobHours = fakeReader({
+  timesheets: [{ id: "t1", date: "2026-11-03", worker_id: "2", project_id: "p1", ordinary_hours: 8, ot_hours: 0, notes: null, absence_type: null }],
+})
+const notByJob = await lookupHours(namedJobHours.reader, boss, { from, to, person: "Alex Stone", job_query: "Hedderwick" })
+assert.deepEqual(notByJob, { error: "That tool can't filter by job. Call job_summary with the street." })
+assert.equal(namedJobHours.calls.some((call) => call.table === "timesheets"), false)
+
 const vista = { id: "p1", name: "8 Vista St Bullen", client: "A", archived: false, pinned: true, completed: false, completed_at: null }
 const other = { id: "p2", name: "1 Other St", client: "B", archived: false, pinned: true, completed: false, completed_at: null }
 const done = { id: "p3", name: "9 Done St", client: "C", archived: false, pinned: true, completed: true, completed_at: "2026-10-01" }
@@ -418,6 +436,232 @@ if ("truncated" in wide && "matched" in wide && "returned" in wide && "jobs" in 
   assert.equal(wide.returned, SCHEDULE_JOB_LIMIT)
   assert.equal(wide.jobs.length, SCHEDULE_JOB_LIMIT)
   assert.equal(wide.jobs[0].starts <= wide.jobs[wide.jobs.length - 1].starts, true)
+}
+
+const columnDb = fakeReader({
+  projects: [{ id: "p1", name: "7 Balmoral Rd", client: "Builder", archived: false, pinned: false, completed: true, completed_at: "2026-11-01" }],
+  segments: [{ id: "s1", project_id: "p1", crew_id: "crew-a", start_date: "2026-11-02", end_date: "2026-11-03", notes: "secret note" }],
+  timesheets: [
+    { id: "t1", date: "2026-11-02", worker_id: "w1", project_id: "p1", ordinary_hours: 8, ot_hours: 0, notes: "secret note", absence_type: null },
+    { id: "t0", date: "2026-11-09", worker_id: "w9", project_id: "p1", ordinary_hours: 0, ot_hours: 0, notes: null, absence_type: null },
+  ],
+  workers: [
+    { id: "w1", name: "Sam Jones", crew_id: "crew-a" },
+    { id: "w9", name: "Blank Person", crew_id: null },
+  ],
+  crews: [{ id: "crew-a", name: "Crew A", nickname: null }],
+})
+const columnSummary = await lookupJobSummary(columnDb.reader, boss, { name: "Balmoral" })
+assert.equal(columnDb.calls.some((call) => call.table === "segments" && call.columns === JOB_SEGMENT_COLUMNS), true)
+assert.equal(columnDb.calls.some((call) => call.table === "timesheets" && call.columns === JOB_TIMESHEET_COLUMNS), true)
+assert.equal(columnDb.calls.every((call) => TOOL_COLUMN_LISTS.includes(call.columns)), true)
+if ("total_hours" in columnSummary && "people" in columnSummary && Array.isArray(columnSummary.people)) {
+  assert.equal(columnSummary.total_hours, 8)
+  assert.equal(columnSummary.days, 1)
+  assert.equal(columnSummary.workers, 1)
+  assert.equal(columnSummary.first_hours, "2026-11-02")
+  assert.equal(columnSummary.last_hours, "2026-11-02")
+  assert.equal(columnSummary.completed, true)
+  assert.equal(columnSummary.completed_at, "2026-11-01")
+  assert.equal(columnSummary.detail, "full")
+  assert.deepEqual(columnSummary.people.map((person) => person.name), ["Sam Jones"])
+  assert.equal(JSON.stringify(columnSummary).includes("Blank Person"), false)
+  assert.equal(JSON.stringify(columnSummary).includes("secret note"), false)
+  assert.equal(JSON.stringify(columnSummary).includes("p1"), false)
+}
+
+const crewColumn = fakeReader({
+  projects: [{ id: "p1", name: "7 Balmoral Rd", client: "Builder", archived: false, pinned: true, completed: false, completed_at: null }],
+  segments: [{ id: "s1", project_id: "p1", crew_id: "crew-a", start_date: "2026-11-02", end_date: "2026-11-03", notes: null }],
+  timesheets: [
+    { id: "t1", date: "2026-11-02", worker_id: "1", project_id: "p1", ordinary_hours: 8, ot_hours: 1, notes: null, absence_type: null },
+    { id: "t2", date: "2026-11-02", worker_id: "2", project_id: "p1", ordinary_hours: 4, ot_hours: 0, notes: null, absence_type: null },
+  ],
+  workers: [{ id: "2", name: "Alex Secret", crew_id: "crew-a" }],
+  crews: [{ id: "crew-a", name: "Crew A", nickname: "Jack" }],
+})
+const crewSummary = await lookupJobSummary(crewColumn.reader, worker, { name: "Balmoral" })
+assert.equal(crewColumn.calls.some((call) => call.table === "workers"), false)
+assert.equal(crewColumn.calls.every((call) => TOOL_COLUMN_LISTS.includes(call.columns)), true)
+if ("total_hours" in crewSummary) {
+  assert.equal(crewSummary.total_hours, 13)
+  assert.equal(crewSummary.workers, 2)
+  assert.equal(crewSummary.detail, "totals")
+  assert.equal("people" in crewSummary, false)
+  assert.equal("crews" in crewSummary, false)
+  assert.match(String(crewSummary.note), /Totals only/)
+  assert.equal(JSON.stringify(crewSummary).includes("Alex Secret"), false)
+}
+const leadSummary = await lookupJobSummary(crewColumn.reader, lead, { name: "Balmoral" })
+if ("detail" in leadSummary) assert.equal(leadSummary.detail, "totals")
+
+// 114 Hedderwick St Essendon, as logged: first booking and first hours
+// 2026-08-26, last hours 2026-10-29, 6 segments, 904.5 hours, 22 days, 8 workers.
+const hedDates = Array.from({ length: 21 }, (_, index) => addDays("2026-08-26", index))
+hedDates.push("2026-10-29")
+const hedPeople = [
+  { id: "w-ada", name: "Ada", crew_id: "crew-b", ordinary: 175, ot: 0.5 },
+  { id: "w-ben", name: "Ben", crew_id: "crew-b", ordinary: 171, ot: 0.5 },
+  { id: "w-cara", name: "Cara", crew_id: "crew-b", ordinary: 175.5, ot: 0 },
+  { id: "w-dan", name: "Dan", crew_id: "crew-b", ordinary: 141, ot: 0.5 },
+  { id: "w-eve", name: "Eve", crew_id: "crew-b", ordinary: 177, ot: 0.5 },
+  { id: "w-finn", name: "Finn", crew_id: "crew-a", ordinary: 45, ot: 0 },
+  { id: "w-gus", name: "Gus", crew_id: "crew-c", ordinary: 9, ot: 0 },
+  { id: "w-hal", name: "Hal", crew_id: "crew-c", ordinary: 9, ot: 0 },
+]
+const hedTimes = [
+  ...hedDates.map((date, index) => ({
+    id: `ada-${index}`,
+    date,
+    worker_id: "w-ada",
+    project_id: "p-hed",
+    ordinary_hours: index === 0 ? 154 : 1,
+    ot_hours: index === hedDates.length - 1 ? 0.5 : 0,
+    notes: "secret note",
+    absence_type: null,
+  })),
+  ...hedPeople.slice(1).map((person) => ({
+    id: person.id,
+    date: hedDates[0],
+    worker_id: person.id,
+    project_id: "p-hed",
+    ordinary_hours: person.ordinary,
+    ot_hours: person.ot,
+    notes: null,
+    absence_type: null,
+  })),
+  { id: "other-time", date: "2020-01-01", worker_id: "w-other", project_id: "p-other", ordinary_hours: 10000, ot_hours: 0, notes: null, absence_type: null },
+]
+const hedSegments = [
+  ["2026-08-26", "2026-08-26"],
+  ["2026-09-28", "2026-10-05"],
+  ["2026-09-30", "2026-09-30"],
+  ["2026-10-06", "2026-10-08"],
+  ["2026-10-09", "2026-10-15"],
+  ["2026-10-16", "2026-10-29"],
+].map(([start, end], index) => ({
+  id: `hed-seg-${index}`,
+  project_id: "p-hed",
+  crew_id: "crew-b",
+  start_date: start,
+  end_date: end,
+  notes: "secret note",
+}))
+const hed = pagingReader({
+  projects: [
+    { id: "p-hed", name: "114 hedderwick st Essendon", client: "Builder", archived: false, pinned: true, completed: false, completed_at: null },
+    { id: "p-other", name: "1 Other St", client: "Someone", archived: false, pinned: false, completed: false, completed_at: null },
+  ],
+  segments: [
+    ...hedSegments,
+    { id: "other-seg", project_id: "p-other", crew_id: "crew-z", start_date: "2020-01-01", end_date: "2020-01-02", notes: null },
+  ],
+  timesheets: hedTimes,
+  workers: [
+    ...hedPeople.map((person) => ({ id: person.id, name: person.name, crew_id: person.crew_id })),
+    { id: "w-other", name: "Other Person", crew_id: "crew-z" },
+  ],
+  crews: [
+    { id: "crew-a", name: "Crew A", nickname: "Jack" },
+    { id: "crew-b", name: "Crew B", nickname: "George" },
+    { id: "crew-c", name: "Crew C", nickname: "Mack" },
+    { id: "crew-z", name: "Crew Z", nickname: null },
+  ],
+})
+const hedSummary = await lookupJobSummary(hed.reader, boss, { name: "114 Hedderwick" })
+if ("total_hours" in hedSummary && "people" in hedSummary && "crews" in hedSummary && Array.isArray(hedSummary.people) && Array.isArray(hedSummary.crews)) {
+  assert.equal(hedSummary.job, "114 hedderwick st Essendon")
+  assert.equal(hedSummary.pinned, true)
+  assert.equal(hedSummary.completed, false)
+  assert.equal(hedSummary.segment_count, 6)
+  assert.equal(hedSummary.first_segment, "2026-08-26")
+  assert.equal(hedSummary.last_segment, "2026-10-29")
+  assert.equal(hedSummary.first_hours, "2026-08-26")
+  assert.equal(hedSummary.last_hours, "2026-10-29")
+  assert.equal(hedSummary.ordinary_hours, 902.5)
+  assert.equal(hedSummary.overtime_hours, 2)
+  assert.equal(hedSummary.total_hours, 904.5)
+  assert.equal(hedSummary.days, 22)
+  assert.equal(hedSummary.workers, 8)
+  assert.equal(hedSummary.detail, "full")
+  assert.deepEqual(hedSummary.people.map((person) => person.name), ["Eve", "Ada", "Cara", "Ben", "Dan", "Finn", "Gus", "Hal"])
+  assert.equal(hedSummary.people[0].total_hours, 177.5)
+  assert.deepEqual(hedSummary.crews.map((crew) => ({ crew: crew.crew, total_hours: crew.total_hours, workers: crew.workers })), [
+    { crew: "Crew B — George", total_hours: 841.5, workers: 5 },
+    { crew: "Crew A — Jack", total_hours: 45, workers: 1 },
+    { crew: "Crew C — Mack", total_hours: 18, workers: 2 },
+  ])
+  assert.equal(JSON.stringify(hedSummary).includes("secret note"), false)
+  assert.equal(JSON.stringify(hedSummary).includes("p-hed"), false)
+  assert.equal(JSON.stringify(hedSummary).includes("Other Person"), false)
+}
+const hedViaTool = await runAskTool(hed.reader, boss, "job_summary", { job_query: "114 Hedderwick" })
+if ("total_hours" in hedViaTool) assert.equal(hedViaTool.total_hours, 904.5)
+const hedMany = await lookupJobSummary(hed.reader, boss, { name: "st" })
+if ("matches" in hedMany && Array.isArray(hedMany.matches)) {
+  assert.deepEqual(hedMany.matches.map((job) => job.job), ["1 Other St", "114 hedderwick st Essendon"])
+  assert.equal("total_hours" in hedMany, false)
+}
+assert.deepEqual(await lookupJobSummary(hed.reader, boss, { name: "zzzz" }), { note: "No job matches that." })
+assert.deepEqual(await lookupJobSummary(hed.reader, boss, { name: "1" }), { error: "Use a bit more of the street name." })
+assert.deepEqual(await lookupJobSummary(hed.reader, boss, {}), { error: "Name the street." })
+
+const finn = { ...worker, id: "w-finn", name: "Finn", crewId: "crew-a" }
+const finnSummary = await lookupJobSummary(hed.reader, finn, { name: "Hedderwick" })
+if ("total_hours" in finnSummary) {
+  assert.equal(finnSummary.total_hours, 904.5)
+  assert.equal(finnSummary.segment_count, 6)
+  assert.equal(finnSummary.workers, 8)
+  assert.equal(finnSummary.detail, "totals")
+  assert.equal("people" in finnSummary, false)
+  assert.equal(JSON.stringify(finnSummary).includes("Eve"), false)
+  assert.equal(JSON.stringify(finnSummary).includes("Finn"), false)
+}
+const bookedOnly = { ...worker, id: "w-booked", name: "Booked", crewId: "crew-b" }
+const bookedSummary = await lookupJobSummary(hed.reader, bookedOnly, { name: "Hedderwick" })
+if ("total_hours" in bookedSummary) {
+  assert.equal(bookedSummary.total_hours, 904.5)
+  assert.equal(bookedSummary.detail, "totals")
+  assert.equal("people" in bookedSummary, false)
+}
+const outsider = { ...worker, id: "w-outsider", name: "Outsider", crewId: "crew-z" }
+assert.deepEqual(await lookupJobSummary(hed.reader, outsider, { name: "Hedderwick" }), { note: "No job you are on matches that." })
+assert.deepEqual(await lookupJobSummary(hed.reader, lead, { name: "Hedderwick" }), { note: "No job you are on matches that." })
+
+const pagedJob = pagingReader({
+  projects: [{ id: "p-page", name: "Paging Rd", client: null, archived: false, pinned: false, completed: false, completed_at: null }],
+  segments: Array.from({ length: 1001 }, (_, index) => ({
+    id: `s${String(index).padStart(4, "0")}`,
+    project_id: "p-page",
+    crew_id: "crew-a",
+    start_date: index === 1000 ? "2026-02-02" : "2026-01-01",
+    end_date: index === 1000 ? "2026-03-03" : "2026-01-02",
+    notes: null,
+  })),
+  timesheets: Array.from({ length: 1001 }, (_, index) => ({
+    id: `t${String(index).padStart(4, "0")}`,
+    date: index === 1000 ? "2026-04-04" : "2026-01-01",
+    worker_id: "w1",
+    project_id: "p-page",
+    ordinary_hours: index === 1000 ? 1.5 : 1,
+    ot_hours: 0,
+    notes: null,
+    absence_type: null,
+  })),
+  workers: [{ id: "w1", name: "Sam Jones", crew_id: "crew-a" }],
+  crews: [{ id: "crew-a", name: "Crew A", nickname: null }],
+})
+const pagedSummary = await lookupJobSummary(pagedJob.reader, boss, { name: "Paging" })
+assert.ok(pagedJob.ranges.some(([start]) => start >= 1000), "job summary must page past the first 1000")
+if ("segment_count" in pagedSummary && "total_hours" in pagedSummary) {
+  assert.equal(pagedSummary.segment_count, 1001)
+  assert.equal(pagedSummary.first_segment, "2026-01-01")
+  assert.equal(pagedSummary.last_segment, "2026-03-03")
+  assert.equal(pagedSummary.first_hours, "2026-01-01")
+  assert.equal(pagedSummary.last_hours, "2026-04-04")
+  assert.equal(pagedSummary.total_hours, 1001.5)
+  assert.equal(pagedSummary.days, 2)
+  assert.equal(pagedSummary.workers, 1)
 }
 
 process.env.ANTHROPIC_API_KEY = ""

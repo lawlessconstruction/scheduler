@@ -1,6 +1,8 @@
 import {
   CREW_COLUMNS,
   CREWMATE_COLUMNS,
+  JOB_SEGMENT_COLUMNS,
+  JOB_TIMESHEET_COLUMNS,
   LABEL_COLUMNS,
   PROJECT_COLUMNS,
   SEGMENT_COLUMNS,
@@ -97,6 +99,8 @@ export const SCHEDULE_FETCH_CAP = 5000
 // How many bookings we hand the model. The rest stay counted in matched.
 export const SCHEDULE_JOB_LIMIT = 40
 export const PROJECT_LIMIT = 100
+// One job can outlive a 1000-row page. Page until this backstop, then say the total may be short.
+export const JOB_SUMMARY_CAP = 20000
 const BOARD_EMPTY_MAX_DAYS = 14
 // Days before the window, so "next week" still reaches work logged this week.
 const BOARD_HOURS_LOOKBACK = 7
@@ -109,6 +113,28 @@ function text(value: unknown): string | null {
 
 function day(value: unknown): string {
   return String(value ?? "").slice(0, 10)
+}
+
+function earliest(dates: string[]): string | null {
+  let best: string | null = null
+  for (const date of dates) {
+    if (!date) continue
+    if (best === null || date < best) best = date
+  }
+  return best
+}
+
+function latest(dates: string[]): string | null {
+  let best: string | null = null
+  for (const date of dates) {
+    if (!date) continue
+    if (best === null || date > best) best = date
+  }
+  return best
+}
+
+function totalHours(ordinary: number, overtime: number): number {
+  return Math.round((ordinary + overtime) * 100) / 100
 }
 
 function hours(value: unknown): number {
@@ -575,7 +601,11 @@ async function onePersonsHours(reader: AskReader, from: string, to: string, work
   }
 }
 
-export async function lookupHours(reader: AskReader, user: AskUser, input: { from?: unknown; to?: unknown; person?: string }) {
+export async function lookupHours(reader: AskReader, user: AskUser, input: { from?: unknown; to?: unknown; person?: string; job_query?: string }) {
+  // A named job is job_summary. Searching one person's timesheet will not find it.
+  if (typeof input.job_query === "string" && input.job_query.trim()) {
+    return { error: "That tool can't filter by job. Call job_summary with the street." }
+  }
   const target = hoursTarget(user, input.person)
   if (target.kind === "denied") return { error: "You can only see your own hours." }
   if (target.kind === "company" && !isBoss(user)) return { error: "You can only see your own hours." }
@@ -763,6 +793,171 @@ export async function lookupProjects(
   return presentProjects(loaded.projects, loaded.truncated, "company")
 }
 
+type HourRow = { date: string; workerId: string; ordinary: number; ot: number }
+
+function jobFields(project: Project) {
+  return {
+    job: project.name,
+    ...(project.client ? { client: project.client } : {}),
+    pinned: project.pinned,
+    ...(project.archived ? { archived: true } : {}),
+    completed: project.completed,
+    ...(project.completed_at ? { completed_at: project.completed_at } : {}),
+  }
+}
+
+function byJobName(a: Project, b: Project): number {
+  return a.name.localeCompare(b.name, "en", { numeric: true, sensitivity: "base" })
+}
+
+function presentJobMatches(projects: Project[], truncated: boolean) {
+  const sorted = projects.slice().sort(byJobName)
+  const shown = sorted.slice(0, PROJECT_LIMIT)
+  const hidden = truncated || sorted.length > shown.length
+  return {
+    matches: shown.map(jobFields),
+    ...(hidden
+      ? {
+          truncated: true,
+          returned: shown.length,
+          ...(truncated ? { matched_at_least: sorted.length } : { matched: sorted.length }),
+        }
+      : {}),
+    note: hidden
+      ? "More than one job matches, and some were not loaded. Ask again with more of the street."
+      : "More than one job matches. Ask again with more of the street.",
+  }
+}
+
+async function loadProjectRows(
+  reader: AskReader,
+  table: string,
+  columns: string,
+  projectId: string,
+  dateColumn: string,
+): Promise<{ rows: Row[]; truncated: boolean }> {
+  return pages((start, end) => {
+    return reader
+      .from(table)
+      .select(columns)
+      .eq("project_id", projectId)
+      .order(dateColumn, { ascending: true })
+      .order("id", { ascending: true })
+      .range(start, end)
+  }, JOB_SUMMARY_CAP)
+}
+
+// Hours are grouped by each worker's current crew. Timesheet rows on a job
+// are not tied to the booking, so the segment's crew is not the hour split.
+async function hourBreakdown(reader: AskReader, rows: HourRow[]) {
+  const workerIds = [...new Set(rows.map((row) => row.workerId))]
+  const workerRows = await loadIn(reader, "workers", WORKER_LOOKUP_COLUMNS, "id", workerIds)
+  const workers = new Map(workerRows.map((row) => [String(row.id), {
+    name: text(row.name) ?? "Unnamed",
+    crewId: text(row.crew_id),
+  }]))
+  const crewIds = [...workers.values()].map((worker) => worker.crewId).filter((id): id is string => !!id)
+  const crewRows = await loadIn(reader, "crews", CREW_COLUMNS, "id", crewIds)
+  const crews = new Map(crewRows.map((row) => {
+    const crew: Crew = {
+      id: String(row.id),
+      name: text(row.name) ?? "Crew",
+      nickname: text(row.nickname),
+    }
+    return [crew.id, crew] as const
+  }))
+
+  const byWorker = new Map<string, { name: string; crew: string; ordinary: number; ot: number }>()
+  const byCrew = new Map<string, { ordinary: number; ot: number; workers: Set<string> }>()
+  for (const row of rows) {
+    const worker = workers.get(row.workerId)
+    const crewId = worker?.crewId ?? null
+    const crew = crewId ? crewLabel(crews.get(crewId)) : "No crew"
+    const person = byWorker.get(row.workerId) ?? { name: worker?.name ?? "Unnamed", crew, ordinary: 0, ot: 0 }
+    person.ordinary += row.ordinary
+    person.ot += row.ot
+    byWorker.set(row.workerId, person)
+    const bucket = byCrew.get(crew) ?? { ordinary: 0, ot: 0, workers: new Set<string>() }
+    bucket.ordinary += row.ordinary
+    bucket.ot += row.ot
+    bucket.workers.add(row.workerId)
+    byCrew.set(crew, bucket)
+  }
+
+  const pack = (ordinary: number, ot: number) => {
+    const sums = sumHours([{ ordinary_hours: ordinary, ot_hours: ot }])
+    return { ...sums, total_hours: totalHours(sums.ordinary_hours, sums.overtime_hours) }
+  }
+  const people = [...byWorker.values()]
+    .map((person) => ({ name: person.name, crew: person.crew, ...pack(person.ordinary, person.ot) }))
+    .sort((a, b) => b.total_hours - a.total_hours || a.name.localeCompare(b.name, "en", { sensitivity: "base" }))
+  const crewHours = [...byCrew.entries()]
+    .map(([crew, bucket]) => ({ crew, ...pack(bucket.ordinary, bucket.ot), workers: bucket.workers.size }))
+    .sort((a, b) => b.total_hours - a.total_hours || a.crew.localeCompare(b.crew, "en", { sensitivity: "base" }))
+  return { people, crews: crewHours }
+}
+
+async function summarizeJob(reader: AskReader, project: Project, full: boolean) {
+  const [segmentLoad, timeLoad] = await Promise.all([
+    loadProjectRows(reader, "segments", JOB_SEGMENT_COLUMNS, project.id, "start_date"),
+    loadProjectRows(reader, "timesheets", JOB_TIMESHEET_COLUMNS, project.id, "date"),
+  ])
+  const hourRows: HourRow[] = timeLoad.rows.map((row) => ({
+    date: day(row.date),
+    workerId: String(row.worker_id ?? ""),
+    ordinary: hours(row.ordinary_hours),
+    ot: hours(row.ot_hours),
+  }))
+  // A blank row is not a day worked and does not move the first or last hour.
+  const worked = hourRows.filter((row) => row.workerId && row.ordinary + row.ot > 0)
+  const sums = sumHours(worked.map((row) => ({ ordinary_hours: row.ordinary, ot_hours: row.ot })))
+  const truncated = segmentLoad.truncated || timeLoad.truncated
+  const notes = [
+    ...(full ? [] : ["Totals only. Individual hours are not shown."]),
+    ...(truncated ? ["Some rows were left out, so these totals can be short."] : []),
+  ]
+  const breakdown = full ? await hourBreakdown(reader, worked) : null
+  return {
+    ...jobFields(project),
+    segment_count: segmentLoad.rows.length,
+    first_segment: earliest(segmentLoad.rows.map((row) => day(row.start_date))),
+    last_segment: latest(segmentLoad.rows.map((row) => day(row.end_date))),
+    first_hours: earliest(worked.map((row) => row.date)),
+    last_hours: latest(worked.map((row) => row.date)),
+    ...sums,
+    total_hours: totalHours(sums.ordinary_hours, sums.overtime_hours),
+    days: new Set(worked.map((row) => row.date)).size,
+    workers: new Set(worked.map((row) => row.workerId)).size,
+    detail: full ? "full" as const : "totals" as const,
+    ...(breakdown ? { crews: breakdown.crews, people: breakdown.people } : {}),
+    ...(truncated ? { truncated: true } : {}),
+    ...(notes.length ? { note: notes.join(" ") } : {}),
+  }
+}
+
+export async function lookupJobSummary(reader: AskReader, user: AskUser, input: { name?: string }) {
+  const name = plainQuery(input.name)
+  if (input.name?.trim() && !name) return { error: "Use a bit more of the street name." }
+  if (!name) return { error: "Name the street." }
+
+  let projects: Project[]
+  if (!isBoss(user)) {
+    const found = await projectIdsForCrewMember(reader, user)
+    const allowed = new Set(found.ids)
+    projects = (await loadProjects(reader, found.ids)).filter((project) => allowed.has(project.id) && project.name.toLowerCase().includes(name))
+    if (projects.length === 0) return { note: "No job you are on matches that." }
+  } else {
+    const found = await findProjectsByName(reader, name)
+    projects = found.projects.filter((project) => project.name.toLowerCase().includes(name))
+    if (projects.length === 0) return { note: "No job matches that." }
+    if (projects.length > 1 || found.truncated) return presentJobMatches(projects, found.truncated)
+  }
+  if (projects.length > 1) return presentJobMatches(projects, false)
+  const project = projects[0]
+  if (!project) return { note: isBoss(user) ? "No job matches that." : "No job you are on matches that." }
+  return summarizeJob(reader, project, isBoss(user))
+}
+
 function flag(value: unknown): boolean | undefined {
   if (value === true || value === false) return value
   return undefined
@@ -777,6 +972,13 @@ export function readToolInput(input: unknown): { from?: unknown; to?: unknown; j
     job_query: typeof src.job_query === "string" ? src.job_query.slice(0, 80) : undefined,
     person: typeof src.person === "string" ? src.person.slice(0, 80) : undefined,
   }
+}
+
+export function readJobSummaryInput(input: unknown): { name?: string } {
+  if (!input || typeof input !== "object") return {}
+  const src = input as Record<string, unknown>
+  const rawName = typeof src.name === "string" ? src.name : typeof src.job_query === "string" ? src.job_query : undefined
+  return { name: rawName?.slice(0, 80) }
 }
 
 export function readProjectInput(input: unknown): { pinned?: boolean; archived?: boolean; completed?: boolean; name?: string } {
@@ -796,6 +998,7 @@ export async function runAskTool(reader: AskReader, user: AskUser, name: string 
     if (name === "lookup_schedule") return await lookupSchedule(reader, user, readToolInput(input))
     if (name === "lookup_hours") return await lookupHours(reader, user, readToolInput(input))
     if (name === "lookup_projects") return await lookupProjects(reader, user, readProjectInput(input))
+    if (name === "job_summary") return await lookupJobSummary(reader, user, readJobSummaryInput(input))
     return { error: "That lookup is not available." }
   } catch (err) {
     if (err instanceof AskReadError) return { error: "The schedule couldn't be read. Try again." }
