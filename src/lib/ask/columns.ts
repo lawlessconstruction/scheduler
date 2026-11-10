@@ -11,6 +11,9 @@ export const LABEL_COLUMNS = "project_id, date, label"
 export const CREWMATE_COLUMNS = "name, crew_id, role"
 export const WORKER_LOOKUP_COLUMNS = "id, name, crew_id"
 export const TIMESHEET_COLUMNS = "id, date, worker_id, project_id, ordinary_hours, ot_hours, notes, absence_type"
+// Job summary only needs dates and hours. Notes stay out of this read.
+export const JOB_SEGMENT_COLUMNS = "id, project_id, start_date, end_date"
+export const JOB_TIMESHEET_COLUMNS = "id, date, worker_id, project_id, ordinary_hours, ot_hours"
 
 // Used only to check the PIN. Never passed to the model.
 export const WORKER_AUTH_COLUMNS = "id, name, app_role, crew_id, pin"
@@ -23,6 +26,8 @@ export const TOOL_COLUMN_LISTS = [
   CREWMATE_COLUMNS,
   WORKER_LOOKUP_COLUMNS,
   TIMESHEET_COLUMNS,
+  JOB_SEGMENT_COLUMNS,
+  JOB_TIMESHEET_COLUMNS,
 ]
 
 export const FORBIDDEN_COLUMN_WORDS = [
