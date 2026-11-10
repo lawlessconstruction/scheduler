@@ -120,6 +120,9 @@ export function AskPanel({
   const [enteredPin, setEnteredPin] = useState("")
   const [box, setBox] = useState<{ top: number; height: number } | null>(null)
   const sendingRef = useRef(false)
+  // Each question records this number. New chat bumps it so a reply
+  // that arrives afterwards is dropped and does not join the fresh thread.
+  const threadGeneration = useRef(0)
   const listRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
@@ -169,6 +172,7 @@ export function AskPanel({
     }
     // The ref flips before any await. Two taps in the same moment both
     // read the old state, so state alone cannot lock the button.
+    const generation = threadGeneration.current
     sendingRef.current = true
     setSending(true)
     setDraft("")
@@ -195,6 +199,7 @@ export function AskPanel({
         }),
       })
       const data = await res.json().catch(() => null) as { answer?: unknown; error?: unknown } | null
+      if (threadGeneration.current !== generation) return
       if (res.status === 401) {
         onPinChange("")
         setDraft(question)
@@ -214,11 +219,24 @@ export function AskPanel({
       }
       setMessages((prev) => [...prev, { role: "assistant", content: data.answer as string }])
     } catch {
+      if (threadGeneration.current !== generation) return
       setMessages((prev) => [...prev, { role: "assistant", content: "No answer came back. Try again.", error: true }])
     } finally {
+      if (threadGeneration.current !== generation) return
       sendingRef.current = false
       setSending(false)
     }
+  }
+
+  function startNewChat() {
+    const nothingToClear = messages.length === 0 && draft.trim() === "" && pinError === ""
+    if (nothingToClear && !sendingRef.current) return
+    threadGeneration.current += 1
+    sendingRef.current = false
+    setSending(false)
+    setMessages([])
+    setDraft("")
+    setPinError("")
   }
 
   function pushPinDigit(digit: string) {
@@ -233,6 +251,8 @@ export function AskPanel({
   }
 
   if (!open) return null
+
+  const newChatDisabled = sending || (messages.length === 0 && draft.trim() === "" && pinError === "")
 
   const overlayStyle: CSSProperties = box
     ? { position: "fixed", top: box.top, left: 0, width: "100%", height: box.height, zIndex: 240 }
@@ -277,18 +297,40 @@ export function AskPanel({
       <div className="ask-frame">
         <div className="ask-sheet" role="dialog" aria-modal="true" aria-labelledby="ask-title" onClick={(event) => event.stopPropagation()}>
           <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 12px 12px 16px", borderBottom: "1px solid #2e3a58" }}>
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div id="ask-title" style={{ fontWeight: 800, fontSize: 18 }}>Ask</div>
-              <div style={{ fontSize: 12, color: "#8ea0c0" }}>{user.name}</div>
+              <div style={{ fontSize: 12, color: "#8ea0c0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</div>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              style={{ width: 44, height: 44, borderRadius: 12, border: "1px solid #2e3a58", background: "#141a28", color: "#f0f4ff", fontSize: 22, cursor: "pointer", touchAction: "manipulation" }}
-            >
-              ×
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <button
+                type="button"
+                onClick={startNewChat}
+                disabled={newChatDisabled}
+                style={{
+                  height: 44,
+                  padding: "0 12px",
+                  borderRadius: 12,
+                  border: "1px solid #2e3a58",
+                  background: newChatDisabled ? "#1a2035" : "#141a28",
+                  color: newChatDisabled ? "#6b7a9a" : "#f0f4ff",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: newChatDisabled ? "default" : "pointer",
+                  touchAction: "manipulation",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                New chat
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                style={{ width: 44, height: 44, borderRadius: 12, border: "1px solid #2e3a58", background: "#141a28", color: "#f0f4ff", fontSize: 22, cursor: "pointer", touchAction: "manipulation" }}
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           {pin.length < 4 ? (
