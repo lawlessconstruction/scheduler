@@ -4,7 +4,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { NextRequest } from "next/server"
 import { GET, POST } from "../app/api/ask/route.ts"
-import { FORBIDDEN_COLUMN_WORDS, JOB_SEGMENT_COLUMNS, JOB_TIMESHEET_COLUMNS, PROJECT_COLUMNS, TOOL_COLUMN_LISTS, WORKER_AUTH_COLUMNS } from "../src/lib/ask/columns.ts"
+import { FORBIDDEN_COLUMN_WORDS, JOB_SEGMENT_COLUMNS, JOB_TIMESHEET_COLUMNS, MILESTONE_STAGE_COLUMNS, PROJECT_COLUMNS, QUOTE_COLUMNS, TOOL_COLUMN_LISTS, WORKER_AUTH_COLUMNS } from "../src/lib/ask/columns.ts"
 import { SCHEDULE_JOB_LIMIT, lookupHours, lookupJobSummary, lookupProjects, lookupSchedule, runAskTool, type AskReader } from "../src/lib/ask/data.ts"
 import { addDays, formatAu, mondayOf, parseRange } from "../src/lib/ask/dates.ts"
 import { modelExtras, resolveAskModel } from "../src/lib/ask/model.ts"
@@ -116,6 +116,8 @@ assert.match(prompt, /board_empty/)
 assert.match(prompt, /Nothing booked on the board/)
 assert.match(prompt, /6 people at 8 Vista St Bullen/)
 assert.match(prompt, /completed job is not current/i)
+assert.match(prompt, /lookup_quotes/)
+assert.match(prompt, /can't see quotes/)
 assert.match(prompt, /job_summary/)
 assert.match(prompt, /How long a job has been going/)
 assert.match(prompt, /no date window/)
@@ -123,6 +125,7 @@ assert.match(prompt, /own timesheet/)
 assert.match(prompt, /totals only/i)
 const bossPrompt = systemPrompt(boss, "2026-11-04")
 assert.match(bossPrompt, /boss/i)
+assert.match(bossPrompt, /lookup_quotes/)
 assert.match(bossPrompt, /job_summary/)
 assert.match(bossPrompt, /hours by crew and by person/)
 assert.match(bossPrompt, /own timesheet/)
@@ -549,8 +552,8 @@ const hedSegments = [
 }))
 const hed = pagingReader({
   projects: [
-    { id: "p-hed", name: "114 hedderwick st Essendon", client: "Builder", archived: false, pinned: true, completed: false, completed_at: null },
-    { id: "p-other", name: "1 Other St", client: "Someone", archived: false, pinned: false, completed: false, completed_at: null },
+    { id: "p-hed", name: "114 hedderwick st Essendon", client: "Builder", archived: false, pinned: true, completed: false, completed_at: null, quoted: false },
+    { id: "p-other", name: "1 Other St", client: "Someone", archived: false, pinned: false, completed: false, completed_at: null, quoted: false },
   ],
   segments: [
     ...hedSegments,
@@ -629,7 +632,7 @@ assert.deepEqual(await lookupJobSummary(hed.reader, outsider, { name: "Hedderwic
 assert.deepEqual(await lookupJobSummary(hed.reader, lead, { name: "Hedderwick" }), { note: "No job you are on matches that." })
 
 const pagedJob = pagingReader({
-  projects: [{ id: "p-page", name: "Paging Rd", client: null, archived: false, pinned: false, completed: false, completed_at: null }],
+  projects: [{ id: "p-page", name: "Paging Rd", client: null, archived: false, pinned: false, completed: false, completed_at: null, quoted: false }],
   segments: Array.from({ length: 1001 }, (_, index) => ({
     id: `s${String(index).padStart(4, "0")}`,
     project_id: "p-page",
@@ -663,6 +666,53 @@ if ("segment_count" in pagedSummary && "total_hours" in pagedSummary) {
   assert.equal(pagedSummary.days, 2)
   assert.equal(pagedSummary.workers, 1)
 }
+
+const kent = {
+  id: "q1",
+  name: "5 Kent Av Brighton",
+  client: "Brighton",
+  archived: false,
+  pinned: false,
+  completed: false,
+  completed_at: null,
+  quoted: true,
+  quote_number: "Q-5",
+  quote_date: "2026-11-01",
+}
+const quoteList = fakeReader({ projects: [vista, kent] })
+const stillLive = await lookupProjects(quoteList.reader, boss, {})
+if ("jobs" in stillLive && Array.isArray(stillLive.jobs)) {
+  assert.equal(stillLive.jobs.some((job) => job.name.includes("Kent")), false)
+  assert.equal(stillLive.jobs.some((job) => job.name.includes("Vista")), true)
+}
+assert.equal(quoteList.calls.some((call) => call.table === "projects" && call.eqs.some(([column, value]) => column === "quoted" && value === "false")), true)
+
+const quoteBoard = await lookupSchedule(fakeReader({
+  segments: [{ id: "sq", name: "Frame", project_id: "q1", crew_id: "crew-a", start_date: from, end_date: to, notes: null }],
+  projects: [kent],
+  crews: [{ id: "crew-a", name: "Crew A", nickname: null }],
+  workers: [],
+  project_day_labels: [],
+}).reader, boss, { from, to })
+assert.equal("board_empty" in quoteBoard, true)
+assert.equal(JSON.stringify(quoteBoard).includes("Kent"), false)
+
+const quoteDb = fakeReader({
+  projects: [vista, kent],
+  milestones: [{ id: "m1", project_id: "q1" }, { id: "m2", project_id: "q1" }],
+})
+const openQuotes = await runAskTool(quoteDb.reader, boss, "lookup_quotes", {})
+assert.equal(quoteDb.calls.some((call) => call.table === "projects" && call.columns === QUOTE_COLUMNS && call.eqs.some(([column, value]) => column === "quoted" && value === "true")), true)
+assert.equal(quoteDb.calls.some((call) => call.table === "milestones" && call.columns === MILESTONE_STAGE_COLUMNS), true)
+if ("quotes" in openQuotes && Array.isArray(openQuotes.quotes)) {
+  assert.equal(openQuotes.quotes.length, 1)
+  assert.equal(openQuotes.quotes[0].address, "5 Kent Av Brighton")
+  assert.equal(openQuotes.quotes[0].quote_number, "Q-5")
+  assert.equal(openQuotes.quotes[0].stages, 2)
+  assert.equal(JSON.stringify(openQuotes).includes("Vista"), false)
+  assert.equal(JSON.stringify(openQuotes).includes("q1"), false)
+}
+assert.deepEqual(await runAskTool(fakeReader({ projects: [kent] }).reader, worker, "lookup_quotes", {}), { error: "You can't see quotes." })
 
 process.env.ANTHROPIC_API_KEY = ""
 const hidden = await GET()

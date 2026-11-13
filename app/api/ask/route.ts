@@ -37,7 +37,7 @@ const buckets = new Map<string, number[]>()
 const TOOLS = [
   {
     name: "lookup_schedule",
-    description: "Read-only. Jobs booked on the board in a date range: street address (the project name), client, whether the job is pinned or completed, crew, booking notes, day notes, and the names of people on those jobs. A crew member only gets jobs their crew is on, plus the other people on those same jobs. A boss can ask about one person or the whole company. If the result sets board_empty, the board has nothing in that short window: call lookup_hours for hours_from to hours_to and answer from what was last logged. This is not how you list current or starred jobs, and it is not the life of a job. For how long a named job has been going, when it started, or the total hours on it, call job_summary.",
+    description: "Read-only. Jobs booked on the board in a date range: street address (the project name), client, whether the job is pinned or completed, crew, booking notes, day notes, and the names of people on those jobs. A crew member only gets jobs their crew is on, plus the other people on those same jobs. A boss can ask about one person or the whole company. If the result sets board_empty, the board has nothing in that short window: call lookup_hours for hours_from to hours_to and answer from what was last logged. This is not how you list current or starred jobs, and it is not the life of a job. For how long a named job has been going, when it started, or the total hours on it, call job_summary. Unwon quotes are not on the board; call lookup_quotes for those.",
     input_schema: {
       type: "object",
       properties: {
@@ -64,7 +64,7 @@ const TOOLS = [
   },
   {
     name: "lookup_projects",
-    description: "Read-only list of jobs. Returns the street (name), client, pinned, completed, and completed_at. Current, starred, and with the star mean pinned true, archived false, and completed false. A completed job is not current. Do not use a date search for this. A crew member only sees jobs their crew is booked on and jobs they have logged hours on. A boss sees the whole company. No pay, no invoices.",
+    description: "Read-only list of jobs. Returns the street (name), client, pinned, completed, and completed_at. Current, starred, and with the star mean pinned true, archived false, and completed false. A completed job is not current. Do not use a date search for this. A crew member only sees jobs their crew is booked on and jobs they have logged hours on. A boss sees the whole company. No pay, no invoices. Unwon quotes are left out; call lookup_quotes for those.",
     input_schema: {
       type: "object",
       properties: {
@@ -77,13 +77,23 @@ const TOOLS = [
   },
   {
     name: "job_summary",
-    description: "Read-only summary of one job, with no date window. Matches a street the same way as lookup_projects. Returns pinned, completed, completed_at, how many bookings, the first and last booking dates, the first and last day hours were logged, ordinary hours, overtime, total hours, days worked, and how many people. A boss also gets hours by crew and by person. A crew member only gets a job their crew is booked on or they have logged hours on, and only the totals, not anyone's individual hours. Use this for how long a job has been going, when it started, and the total hours on that street. If more than one job matches, ask for more of the street. Do not fall back to the asker's own timesheet.",
+    description: "Read-only summary of one job, with no date window. Matches a street the same way as lookup_projects. Returns pinned, completed, completed_at, how many bookings, the first and last booking dates, the first and last day hours were logged, ordinary hours, overtime, total hours, days worked, and how many people. A boss also gets hours by crew and by person. A crew member only gets a job their crew is booked on or they have logged hours on, and only the totals, not anyone's individual hours. Use this for how long a job has been going, when it started, and the total hours on that street. If more than one job matches, ask for more of the street. Do not fall back to the asker's own timesheet. Unwon quotes are left out; call lookup_quotes for those.",
     input_schema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Part of the street address, e.g. Hedderwick." },
       },
       required: ["name"],
+    },
+  },
+  {
+    name: "lookup_quotes",
+    description: "Read-only list of open quotes that have not been won. Returns the street address, client, quote number, quote date, and how many priced stages. No dollar amounts. Boss only. Call this when the question is about quotes. Do not use lookup_projects, lookup_schedule, lookup_hours, or job_summary for a quote that has not been won.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Optional part of a street address, e.g. Kent." },
+      },
     },
   },
 ]

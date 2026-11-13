@@ -13,6 +13,27 @@ function isAuthorised(req: NextRequest) {
   return token === process.env.BOT_API_TOKEN
 }
 
+// Unwon quotes are not live work. Drop those rows and the quoted flag so the
+// payload stays name + client. Embeds come back as an object or a one-item array.
+function quotedFlag(projects: unknown): boolean {
+  const row = Array.isArray(projects) ? projects[0] : projects
+  if (!row || typeof row !== "object") return false
+  return (row as { quoted?: boolean }).quoted === true
+}
+
+function stripQuoted(projects: unknown): unknown {
+  if (Array.isArray(projects)) return projects.map((item) => stripQuoted(item))
+  if (!projects || typeof projects !== "object") return projects
+  return Object.fromEntries(Object.entries(projects as Record<string, unknown>).filter(([key]) => key !== "quoted"))
+}
+
+function withoutQuotes<T extends { projects?: unknown }>(rows: T[] | null): T[] {
+  return (rows ?? []).filter((row) => !quotedFlag(row.projects)).map((row) => {
+    if (row.projects == null) return row
+    return { ...row, projects: stripQuoted(row.projects) } as T
+  })
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorised(req)) return NextResponse.json({ error: "Unauthorised" }, { status: 401 })
 
@@ -25,6 +46,7 @@ export async function GET(req: NextRequest) {
       .from("projects")
       .select("id, name, client, archived")
       .eq("archived", false)
+      .eq("quoted", false)
       .order("name")
     return NextResponse.json({ projects: data })
   }
@@ -39,11 +61,11 @@ export async function GET(req: NextRequest) {
 
     const { data } = await supabase
       .from("segments")
-      .select("*, projects(name, client), crews(name, color)")
+      .select("*, projects(name, client, quoted), crews(name, color)")
       .gte("end_date", today)
       .lte("start_date", end)
       .order("start_date")
-    return NextResponse.json({ segments: data, from: today, to: end })
+    return NextResponse.json({ segments: withoutQuotes(data), from: today, to: end })
   }
 
   // ── GET /api/bot?action=milestones&status=pending ─────────────────
@@ -53,17 +75,18 @@ export async function GET(req: NextRequest) {
 
     let query = supabase
       .from("milestones")
-      .select("*, projects(name, client)")
+      .select("*, projects(name, client, quoted)")
       .order("sort_order")
 
     if (status !== "all") query = query.eq("status", status)
 
     const { data } = await query
+    const live = withoutQuotes(data)
     // Attach resolved due date
     const { data: segs } = await supabase.from("segments").select("id, end_date")
     const segMap = new Map((segs ?? []).map((s: any) => [s.id, s.end_date]))
 
-    const milestones = (data ?? []).map((m: any) => ({
+    const milestones = live.map((m: any) => ({
       ...m,
       due_date: m.due_date_override ?? (m.segment_id ? segMap.get(m.segment_id) : null),
       overdue: (m.due_date_override ?? segMap.get(m.segment_id) ?? "9999") < today && m.status !== "paid",
@@ -74,10 +97,11 @@ export async function GET(req: NextRequest) {
 
   // ── GET /api/bot?action=cashflow ──────────────────────────────────
   if (action === "cashflow") {
-    const { data: milestones } = await supabase
+    const { data: milestoneRows } = await supabase
       .from("milestones")
-      .select("amount, status, due_date_override, segment_id")
+      .select("amount, status, due_date_override, segment_id, projects(quoted)")
       .not("amount", "is", null)
+    const milestones = (milestoneRows ?? []).filter((row) => !quotedFlag(row.projects))
 
     const { data: segments } = await supabase
       .from("segments")
@@ -108,7 +132,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabase
       .from("segments")
-      .select("*, projects(name, client), crews(name)")
+      .select("*, projects(name, client, quoted), crews(name)")
       .gte("end_date", today)
       .lte("start_date", future.toISOString().slice(0, 10))
       .order("start_date")
@@ -116,7 +140,7 @@ export async function GET(req: NextRequest) {
     if (crewName) query = query.ilike("crews.name", `%${crewName}%`)
 
     const { data } = await query
-    return NextResponse.json({ segments: data })
+    return NextResponse.json({ segments: withoutQuotes(data) })
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 })
