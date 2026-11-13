@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../src/lib/supabase"
+import { melbourneToday } from "../src/lib/ask/dates"
 import { AskButton, AskPanel } from "../src/components/AskPanel"
 import {
   amountCanBeInvoiced,
@@ -24,6 +25,12 @@ type Project = {
   profitability_included: boolean | null
   pinned: boolean | null
   default_billable_hourly: boolean | null
+  /** Still a quote. Won jobs are false and show on the board. */
+  quoted: boolean | null
+  quote_number: string | null
+  quote_date: string | null
+  won_at: string | null
+  quote_pdf_path: string | null
 }
 
 type Extra = {
@@ -346,6 +353,7 @@ type ProjectEditorState = {
   completed_at: string
   contract_value: string
   default_billable_hourly: boolean
+  quotePdfPath: string | null
 }
 
 const DAY_COL_WIDTH = 80
@@ -586,6 +594,164 @@ function dateOnly(value: string | null | undefined) {
   if (!value) return null
   const day = value.slice(0, 10)
   return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null
+}
+
+const ROW_PAGE = 1000
+
+function isQuotedProject(project: { quoted?: boolean | null }): boolean {
+  return project.quoted === true
+}
+
+// A plain .select() stops at 1000 rows. Page in name order, with id as a
+// tie-break so a full page cannot skip a row. Live jobs stay in that order.
+async function fetchAllProjectRows(): Promise<Project[]> {
+  const out: Project[] = []
+  for (let from = 0; ; from += ROW_PAGE) {
+    const { data, error } = await supabase
+      .from("projects")
+      .select("*")
+      .order("name")
+      .order("id")
+      .range(from, from + ROW_PAGE - 1)
+    if (error) return out
+    const rows = (data ?? []) as Project[]
+    out.push(...rows)
+    if (rows.length < ROW_PAGE) return out
+    if (out.length >= 100000) return out
+  }
+}
+
+function splitProjects(rows: Project[]): { live: Project[]; quoted: Project[] } {
+  return {
+    live: rows.filter((row) => !isQuotedProject(row)),
+    quoted: rows.filter((row) => isQuotedProject(row)),
+  }
+}
+
+// Quote stages would otherwise fill the first 1000 milestone rows and push
+// live stages off the board's billing checks. When nothing is quoted, keep
+// the original single read so a job that is not a quote is unchanged.
+async function fetchLiveMilestones(quotedIds: Set<string>): Promise<{ live: Milestone[]; stageCounts: Record<string, number> }> {
+  const stageCounts: Record<string, number> = {}
+  if (quotedIds.size === 0) {
+    const { data } = await supabase.from("milestones").select("*").order("sort_order")
+    return { live: (data ?? []) as Milestone[], stageCounts }
+  }
+  const live: Milestone[] = []
+  for (let from = 0; ; from += ROW_PAGE) {
+    const { data, error } = await supabase
+      .from("milestones")
+      .select("*")
+      .order("id")
+      .range(from, from + ROW_PAGE - 1)
+    if (error) break
+    const rows = (data ?? []) as Milestone[]
+    for (const row of rows) {
+      if (quotedIds.has(row.project_id)) {
+        stageCounts[row.project_id] = (stageCounts[row.project_id] ?? 0) + 1
+      } else {
+        live.push(row)
+      }
+    }
+    if (rows.length < ROW_PAGE) break
+    if (from >= 100000) break
+  }
+  live.sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id))
+  return { live, stageCounts }
+}
+
+function quoteClientLabel(project: Project, clients: Client[]): string {
+  if (project.client?.trim()) return project.client.trim()
+  return clients.find((client) => client.id === project.client_id)?.name ?? "—"
+}
+
+function formatQuoteDate(value: string | null): string {
+  const day = dateOnly(value)
+  if (!day) return "—"
+  const [year, month, date] = day.split("-").map(Number)
+  return new Date(year, month - 1, date).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })
+}
+
+function QuotesModal({
+  quotes,
+  stageCounts,
+  clients,
+  winningId,
+  onClose,
+  onView,
+  onWon,
+}: {
+  quotes: Project[]
+  stageCounts: Record<string, number>
+  clients: Client[]
+  winningId: string | null
+  onClose: () => void
+  onView: (projectId: string) => void
+  onWon: (projectId: string) => void
+}) {
+  const rows = quotes.slice().sort((a, b) => {
+    const aDate = dateOnly(a.quote_date) ?? ""
+    const bDate = dateOnly(b.quote_date) ?? ""
+    if (aDate !== bDate) {
+      if (!aDate) return 1
+      if (!bDate) return -1
+      return aDate < bDate ? 1 : -1
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" })
+  })
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", display: "flex", alignItems: "stretch", justifyContent: "center", zIndex: 120, padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} className="modal-frame" style={{ width: "100%", maxWidth: "calc(100vw - 32px)", background: "#1e2130", border: "1px solid #2e3650", borderRadius: 14, color: "white", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid #252f45", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: "#f0f4ff" }}>Quotes</div>
+            <div style={{ fontSize: 13, color: "#6b7a9a", marginTop: 2 }}>{rows.length} open {rows.length === 1 ? "quote" : "quotes"} · totals ex GST</div>
+          </div>
+          <button type="button" onClick={onClose} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2e3650", background: "#141a28", color: "#8899bb", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Close</button>
+        </div>
+        <div style={{ padding: "10px 28px", background: "#161d2e", display: "grid", gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 0.6fr 180px", gap: 12 }}>
+          {["Address", "Client", "Quote no.", "Quote date", "Total ex GST", "Stages", ""].map((heading) => (
+            <div key={heading} style={{ fontSize: 11, color: "#6b7a9a", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px" }}>{heading}</div>
+          ))}
+        </div>
+        <div className="modal-body-scroll" style={{ flex: 1, overflowY: "auto" }}>
+          {rows.length === 0 && (
+            <div style={{ padding: "60px 28px", textAlign: "center", color: "#6b7a9a", fontSize: 14 }}>No open quotes</div>
+          )}
+          {rows.map((quote) => {
+            const hasPdf = !!quote.quote_pdf_path?.trim()
+            const busy = winningId !== null
+            return (
+              <div key={quote.id} style={{ padding: "14px 28px", borderBottom: "1px solid #1a2035", display: "grid", gridTemplateColumns: "2fr 1.2fr 1fr 1fr 1fr 0.6fr 180px", gap: 12, alignItems: "center" }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: "#f0f4ff" }}>{quote.name}</div>
+                <div style={{ fontSize: 13, color: "#c8d4f0" }}>{quoteClientLabel(quote, clients)}</div>
+                <div style={{ fontSize: 13, color: "#e4e4e7" }}>{quote.quote_number?.trim() || "—"}</div>
+                <div style={{ fontSize: 13, color: "#e4e4e7" }}>{formatQuoteDate(quote.quote_date)}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "#e4e4e7" }}>{quote.contract_value != null ? `$${formatMoney(quote.contract_value)}` : "—"}</div>
+                <div style={{ fontSize: 14, color: "#e4e4e7" }}>{stageCounts[quote.id] ?? 0}</div>
+                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  {hasPdf && (
+                    <button type="button" onClick={() => onView(quote.id)} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #1e3a6e", background: "#141a28", color: "#93c5fd", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      View quote
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onWon(quote.id)}
+                    style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #166534", background: busy ? "#14532d" : "#166534", color: "white", fontSize: 12, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
+                  >
+                    {winningId === quote.id ? "Saving…" : "Won"}
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function formatCompletedBadge(date: string | null | undefined) {
@@ -2634,6 +2800,12 @@ function LoginScreen({ onLogin }: { onLogin: (user: { id: string; name: string; 
 
 export default function Home() {
   const [projects, setProjects] = useState<Project[]>([])
+  const [quotedProjects, setQuotedProjects] = useState<Project[]>([])
+  const [quoteStageCounts, setQuoteStageCounts] = useState<Record<string, number>>({})
+  const [showQuotesModal, setShowQuotesModal] = useState(false)
+  const winningQuoteRef = useRef(false)
+  const [winningQuoteId, setWinningQuoteId] = useState<string | null>(null)
+  const quotedIdsRef = useRef<Set<string>>(new Set())
   const [crews, setCrews] = useState<Crew[]>([])
   const [segments, setSegments] = useState<Segment[]>([])
   const [labels, setLabels] = useState<DayLabel[]>([])
@@ -2763,6 +2935,7 @@ export default function Home() {
     completed_at: "",
     contract_value: "",
     default_billable_hourly: false,
+    quotePdfPath: null,
   })
 
   const [segmentForm, setSegmentForm] = useState({
@@ -2842,6 +3015,9 @@ export default function Home() {
     setAskConfigured(false)
     // Clear all state so stale data doesn't persist
     setProjects([])
+    setQuotedProjects([])
+    setQuoteStageCounts({})
+    quotedIdsRef.current = new Set()
     setSegments([])
     setEstimates([])
     setEstimateItems([])
@@ -2850,12 +3026,16 @@ export default function Home() {
   async function loadData(opts?: { initial?: boolean }) {
     if (opts?.initial) setLoading(true)
 
-    const [projectsRes, crewsRes, segmentsRes, labelsRes, milestonesRes, contractsRes, contractTypesRes, contractTypeMilestonesRes, workersRes, classificationRatesRes, clientsRes, allTimesheetsRes, projectCostsRes, estimatesRes, estimateItemsRes, scopeTemplatesRes, estimateTemplatesRes, estimateTemplateItemsRes] = await Promise.all([
-      supabase.from("projects").select("*").order("name"),
+    const allProjects = await fetchAllProjectRows()
+    const { live: liveProjects, quoted } = splitProjects(allProjects)
+    const quotedIds = new Set(quoted.map((project) => project.id))
+    quotedIdsRef.current = quotedIds
+
+    const [crewsRes, segmentsRes, labelsRes, milestoneLoad, contractsRes, contractTypesRes, contractTypeMilestonesRes, workersRes, classificationRatesRes, clientsRes, allTimesheetsRes, projectCostsRes, estimatesRes, estimateItemsRes, scopeTemplatesRes, estimateTemplatesRes, estimateTemplateItemsRes] = await Promise.all([
       supabase.from("crews").select("*").order("name"),
       supabase.from("segments").select(`*, projects(name), crews(name, nickname, color, capacity)`).order("start_date"),
       supabase.from("project_day_labels").select(`*, projects(name)`),
-      supabase.from("milestones").select("*").order("sort_order"),
+      fetchLiveMilestones(quotedIds),
       supabase.from("contracts").select("*").order("sort_order"),
       supabase.from("contract_types").select("*").order("sort_order"),
       supabase.from("contract_type_milestones").select("*").order("sort_order"),
@@ -2871,11 +3051,11 @@ export default function Home() {
       supabase.from("estimate_template_items").select("*").order("sort_order"),
     ])
 
-    const projectsData = (projectsRes.data ?? []) as Project[]
+    const projectsData = liveProjects
     const crewsData = (crewsRes.data ?? []) as Crew[]
-    const segmentsData = (segmentsRes.data ?? []) as Segment[]
-    const labelsData = (labelsRes.data ?? []) as DayLabel[]
-    const milestonesData = (milestonesRes.data ?? []) as Milestone[]
+    const segmentsData = ((segmentsRes.data ?? []) as Segment[]).filter((segment) => !quotedIds.has(segment.project_id))
+    const labelsData = ((labelsRes.data ?? []) as DayLabel[]).filter((label) => !quotedIds.has(label.project_id))
+    const milestonesData = milestoneLoad.live
     const contractsData = (contractsRes.data ?? []) as Contract[]
     const contractTypesData = (contractTypesRes.data ?? []) as ContractType[]
     const contractTypeMilestonesData = (contractTypeMilestonesRes.data ?? []) as ContractTypeMilestone[]
@@ -2892,6 +3072,8 @@ export default function Home() {
     const scopeTemplatesData = (scopeTemplatesRes.data ?? []) as ScopeTemplate[]
 
     setProjects(projectsData)
+    setQuotedProjects(quoted)
+    setQuoteStageCounts(milestoneLoad.stageCounts)
     setCrews(crewsData)
     setSegments(segmentsData)
     setLabels(labelsData)
@@ -3015,9 +3197,11 @@ export default function Home() {
       arr.push({ start_date: s.start_date, end_date: s.end_date })
       segsByProject.set(s.project_id, arr)
     }
+    const quotedIds = new Set(quotedProjects.map((project) => project.id))
     const result: TimesheetEntry[] = []
     for (const t of allTimesheets) {
       if (!t.project_id) continue
+      if (quotedIds.has(t.project_id)) continue
       if (t.unplanned_ignored) continue
       if (t.date < rangeStart || t.date > rangeEnd) continue
       const d = parseDate(t.date)
@@ -3027,7 +3211,7 @@ export default function Home() {
       if (!covered) result.push(t)
     }
     return result
-  }, [allTimesheets, segments, dates])
+  }, [allTimesheets, segments, dates, quotedProjects])
 
   // Group unplanned entries by week (Monday date as key) for the banner
   const unplannedByWeek = useMemo(() => {
@@ -4413,7 +4597,7 @@ Payment terms:
 
   async function loadProfitability() {
     const { data } = await supabase.from("project_profitability").select("*")
-    const rows = (data ?? []) as ProfitabilityRow[]
+    const rows = ((data ?? []) as ProfitabilityRow[]).filter((row) => !quotedIdsRef.current.has(row.project_id))
     setProfitabilityData(rows)
     setSelectedProfitProjects(new Set(rows.filter((r) => r.profitability_included !== false).map((r) => r.project_id)))
   }
@@ -4531,11 +4715,50 @@ Payment terms:
       completed_at: dateOnly(project.completed_at) ?? formatDateKey(new Date()),
       contract_value: project.contract_value != null ? String(project.contract_value) : "",
       default_billable_hourly: project.default_billable_hourly ?? false,
+      quotePdfPath: project.quote_pdf_path?.trim() || null,
     })
   }
 
   function closeProjectEditor() {
-    setProjectEditor({ open: false, projectId: "", name: "", client: "", client_id: null, archived: false, completed: false, completed_at: "", contract_value: "", default_billable_hourly: false })
+    setProjectEditor({ open: false, projectId: "", name: "", client: "", client_id: null, archived: false, completed: false, completed_at: "", contract_value: "", default_billable_hourly: false, quotePdfPath: null })
+  }
+
+  async function openQuotePdf(projectId: string) {
+    try {
+      const res = await fetch(`/api/quotes/file?projectId=${encodeURIComponent(projectId)}`)
+      const body = await res.json().catch(() => null) as { url?: string; error?: string } | null
+      const url = body && typeof body.url === "string" ? body.url : ""
+      if (!res.ok || !url) {
+        showToast(body?.error || "Could not open the quote")
+        return
+      }
+      window.open(url, "_blank", "noopener,noreferrer")
+    } catch {
+      showToast("Could not open the quote")
+    }
+  }
+
+  // The ref flips before the await. Two clicks in the same moment both read
+  // the old state, so state alone cannot lock the button.
+  async function markQuoteWon(projectId: string) {
+    if (winningQuoteRef.current) return
+    winningQuoteRef.current = true
+    setWinningQuoteId(projectId)
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({ quoted: false, won_at: melbourneToday() })
+        .eq("id", projectId)
+      if (error) {
+        showToast(`Could not mark the quote won: ${error.message}`)
+        return
+      }
+      showToast("Quote won — it's on the board")
+      await loadData()
+    } finally {
+      winningQuoteRef.current = false
+      setWinningQuoteId(null)
+    }
   }
 
   async function saveProject() {
@@ -4828,18 +5051,20 @@ Payment terms:
           onClick={async () => {
             // Fetch fresh timesheets, crews AND projects so we're guaranteed to have all three.
             // (On slow first-load, state might not have populated yet.)
-            const [tsRes, crewsRes, projRes] = await Promise.all([
+            const [tsRes, crewsRes, allProjects] = await Promise.all([
               supabase.from("timesheets").select("*").order("date"),
               supabase.from("crews").select("*").order("name"),
-              supabase.from("projects").select("*").order("name"),
+              fetchAllProjectRows(),
             ])
             const freshTs = (tsRes.data ?? []) as TimesheetEntry[]
             const freshCrews = (crewsRes.data ?? []) as Crew[]
-            const freshProjects = (projRes.data ?? []) as Project[]
+            const { live: freshProjects, quoted } = splitProjects(allProjects)
+            quotedIdsRef.current = new Set(quoted.map((project) => project.id))
             setTimesheetEntries(freshTs)
             setAllTimesheets(freshTs)
             setCrews(freshCrews)
             setProjects(freshProjects)
+            setQuotedProjects(quoted)
 
             // Set the week to this week
             setTimesheetWeekStart(mondayStr)
@@ -5109,6 +5334,10 @@ Payment terms:
             {canSeeAll && <button type="button" onClick={() => setShowEstimatesModal(true)} style={pillAmber}>
               <span style={{ ...iconStyle, background: "rgba(255,255,255,0.2)" }}>📋</span>
               Estimates {estimates.length > 0 && <span style={{ background: "rgba(255,255,255,0.25)", color: "white", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2, fontWeight: 800 }}>{estimates.length}</span>}
+            </button>}
+            {canSeeAll && <button type="button" onClick={() => setShowQuotesModal(true)} style={pillBase}>
+              <span style={{ ...iconStyle, background: "#f3f4f6" }}>📄</span>
+              Quotes {quotedProjects.length > 0 && <span style={{ background: "#e5e7eb", color: "#1a1a1a", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2, fontWeight: 800 }}>{quotedProjects.length}</span>}
             </button>}
             {canSeeAll && <button type="button" onClick={async () => {
               setShowCashflowModal(true)
@@ -6163,7 +6392,7 @@ Payment terms:
 
                     // Materials costs out this week — use effective_date
                     const materialsOut = projectCosts
-                      .filter(c => c.effective_date && c.effective_date >= wsKey && c.effective_date <= weKey)
+                      .filter(c => c.effective_date && !quotedIdsRef.current.has(c.project_id) && c.effective_date >= wsKey && c.effective_date <= weKey)
                       .reduce((s, c) => s + c.amount, 0)
 
                     const hasActual = actualOut > 0
@@ -6872,9 +7101,16 @@ Payment terms:
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 22 }}>
               <div style={{ fontSize: 24, fontWeight: 800 }}>Edit Project</div>
-              <button type="button" onClick={closeProjectEditor} style={secondaryButtonStyle}>
-                Close
-              </button>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {projectEditor.quotePdfPath && (
+                  <button type="button" onClick={() => openQuotePdf(projectEditor.projectId)} style={secondaryButtonStyle}>
+                    View quote
+                  </button>
+                )}
+                <button type="button" onClick={closeProjectEditor} style={secondaryButtonStyle}>
+                  Close
+                </button>
+              </div>
             </div>
 
             <div style={{ display: "grid", gap: 16 }}>
@@ -9126,7 +9362,7 @@ Payment terms:
 
                   {/* Per-project cost summary */}
                   {(() => {
-                    const projectIds = [...new Set(timesheetEntries.filter((e) => e.project_id).map((e) => e.project_id!))]
+                    const projectIds = [...new Set(timesheetEntries.filter((e) => e.project_id && !quotedIdsRef.current.has(e.project_id)).map((e) => e.project_id!))]
                     if (projectIds.length === 0) return null
 
                     const projectSummaries = projectIds.map((pid) => {
@@ -9898,6 +10134,7 @@ Payment terms:
         // For each invoiced extra, sum line item values (inc. GST) and anchor to invoiced_at date.
         // Extras that aren't yet invoiced don't count — they're still speculative.
         for (const ex of cashflowExtras) {
+          if (ex.project_id && quotedIdsRef.current.has(ex.project_id)) continue
           if (!ex.invoiced_at) continue
           const items = cashflowExtraItems.filter(i => i.extra_id === ex.id)
           const totalExGst = items.reduce((s, i) => {
@@ -9961,7 +10198,7 @@ Payment terms:
         // --- Money OUT (materials/costs): by effective date ---
         const moneyOutMaterials: Record<string, number> = {}
         for (const c of projectCosts) {
-          if (!c.effective_date) continue
+          if (!c.effective_date || quotedIdsRef.current.has(c.project_id)) continue
           const key = getPeriodKey(c.effective_date, cashflowView)
           moneyOutMaterials[key] = (moneyOutMaterials[key] ?? 0) + c.amount
         }
@@ -11196,6 +11433,18 @@ Payment terms:
           projects={projects}
           contracts={contracts}
           profitabilityData={profitabilityData}
+        />
+      )}
+
+      {canSeeAll && showQuotesModal && (
+        <QuotesModal
+          quotes={quotedProjects}
+          stageCounts={quoteStageCounts}
+          clients={clients}
+          winningId={winningQuoteId}
+          onClose={() => setShowQuotesModal(false)}
+          onView={openQuotePdf}
+          onWon={markQuoteWon}
         />
       )}
 

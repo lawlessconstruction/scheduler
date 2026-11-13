@@ -4,7 +4,9 @@ import {
   JOB_SEGMENT_COLUMNS,
   JOB_TIMESHEET_COLUMNS,
   LABEL_COLUMNS,
+  MILESTONE_STAGE_COLUMNS,
   PROJECT_COLUMNS,
+  QUOTE_COLUMNS,
   SEGMENT_COLUMNS,
   TIMESHEET_COLUMNS,
   WORKER_LOOKUP_COLUMNS,
@@ -264,9 +266,25 @@ async function segmentsOverlapping(
   }
 }
 
-async function loadProjects(reader: AskReader, ids: string[]): Promise<Project[]> {
+// An unwon quote is not live work. `quoted` is not null in the database, so
+// .eq("quoted", false) is the real filter. The row check is what a reader that
+// ignores .eq still has to honour.
+function liveProjectRows(rows: Row[]): { projects: Project[]; quotedIds: Set<string> } {
+  const quotedIds = new Set<string>()
+  const projects: Project[] = []
+  for (const row of rows) {
+    if (row.quoted === true) {
+      quotedIds.add(String(row.id))
+      continue
+    }
+    projects.push(mapProject(row))
+  }
+  return { projects, quotedIds }
+}
+
+async function loadProjects(reader: AskReader, ids: string[]): Promise<{ projects: Project[]; quotedIds: Set<string> }> {
   const rows = await loadIn(reader, "projects", PROJECT_COLUMNS, "id", ids)
-  return rows.map(mapProject)
+  return liveProjectRows(rows)
 }
 
 async function findProjectsByName(reader: AskReader, query: string): Promise<{ projects: Project[]; truncated: boolean }> {
@@ -276,12 +294,13 @@ async function findProjectsByName(reader: AskReader, query: string): Promise<{ p
     return reader
       .from("projects")
       .select(PROJECT_COLUMNS)
+      .eq("quoted", false)
       .ilike("name", pattern)
       .order("name", { ascending: true })
       .order("id", { ascending: true })
       .range(start, end)
   }, 200)
-  return { truncated, projects: rows.map(mapProject) }
+  return { truncated, projects: liveProjectRows(rows).projects }
 }
 
 async function findWorkers(reader: AskReader, query: string): Promise<WorkerHit[]> {
@@ -405,12 +424,16 @@ async function describeSegments(
 ) {
   const projectIds = segments.map((segment) => segment.project_id)
   const crewIds = segments.map((segment) => segment.crew_id)
-  const [projects, crewRows, labelRows, peopleRows] = await Promise.all([
+  const [loaded, crewRows, labelRows, peopleRows] = await Promise.all([
     loadProjects(reader, projectIds),
     loadIn(reader, "crews", CREW_COLUMNS, "id", crewIds),
     loadLabels(reader, projectIds, from, to),
     loadIn(reader, "workers", CREWMATE_COLUMNS, "crew_id", crewIds),
   ])
+  const projects = loaded.projects
+  // Drop bookings on an unwon quote. A segment whose project row is missing
+  // still shows as an unknown job, same as before.
+  const liveSegments = segments.filter((segment) => !loaded.quotedIds.has(segment.project_id))
   const crews: Crew[] = crewRows.map((row) => ({
     id: String(row.id),
     name: text(row.name) ?? "Crew",
@@ -425,7 +448,7 @@ async function describeSegments(
     about,
     from,
     to,
-    segments,
+    segments: liveSegments,
     projects,
     crews,
     labels: labelRows,
@@ -473,7 +496,7 @@ async function rosterForCrew(
     ? "Nothing is booked for you in those dates."
     : "Nothing is booked for that person in those dates."
   const mine = await segmentsOverlapping(reader, from, to, { kind: "crew", crewId }, SCHEDULE_FETCH_CAP)
-  const projects = await loadProjects(reader, mine.segments.map((segment) => segment.project_id))
+  const { projects } = await loadProjects(reader, mine.segments.map((segment) => segment.project_id))
   const matched = jobQuery
     ? projects.filter((project) => project.name.toLowerCase().includes(jobQuery))
     : projects
@@ -574,7 +597,7 @@ function sumHours(rows: { ordinary_hours: number; ot_hours: number }[]) {
 async function onePersonsHours(reader: AskReader, from: string, to: string, workerId: string, name: string, scope: "self" | "one person") {
   const loaded = await loadTimesheets(reader, from, to, workerId, 1500)
   const projectIds = loaded.rows.map((row) => row.project_id).filter((id): id is string => !!id)
-  const projects = await loadProjects(reader, projectIds)
+  const { projects } = await loadProjects(reader, projectIds)
   const names = new Map(projects.map((project) => [project.id, project.name]))
   const days = loaded.rows.map((row) => {
     const notes = clip(row.notes, 200)
@@ -630,12 +653,13 @@ export async function lookupHours(reader: AskReader, user: AskUser, input: { fro
   const loaded = await loadTimesheets(reader, range.from, range.to, null, 2000)
   const workerIds = [...new Set(loaded.rows.map((row) => row.worker_id))]
   const projectIds = loaded.rows.map((row) => row.project_id).filter((id): id is string => !!id)
-  const [nameRows, projects] = await Promise.all([
+  const [nameRows, loadedProjects] = await Promise.all([
     loadIn(reader, "workers", WORKER_LOOKUP_COLUMNS, "id", workerIds),
     loadProjects(reader, projectIds),
   ])
   const names = new Map(nameRows.map((row) => [String(row.id), text(row.name) ?? "Unnamed"]))
-  const projectNames = new Map(projects.map((project) => [project.id, project.name]))
+  const projectNames = new Map(loadedProjects.projects.map((project) => [project.id, project.name]))
+  const quotedIds = loadedProjects.quotedIds
   const byWorker = new Map<string, Timesheet[]>()
   for (const row of loaded.rows) {
     const list = byWorker.get(row.worker_id) ?? []
@@ -648,7 +672,7 @@ export async function lookupHours(reader: AskReader, user: AskUser, input: { fro
     .sort((a, b) => a.name.localeCompare(b.name))
   const sitesByDay = new Map<string, Map<string, { job: string; workers: Set<string> }>>()
   for (const row of loaded.rows) {
-    if (!row.project_id) continue
+    if (!row.project_id || quotedIds.has(row.project_id)) continue
     const job = projectNames.get(row.project_id) ?? "Unknown job"
     let sites = sitesByDay.get(row.date)
     if (!sites) {
@@ -754,14 +778,15 @@ async function loadProjectList(reader: AskReader, filters: ProjectFilter): Promi
   const { rows, truncated } = await pages((start, end) => {
     // True is safe as .eq (null is not true). False is applied in projectMatches
     // so a null archived/completed flag still counts as not set, same as the board.
-    let query = reader.from("projects").select(PROJECT_COLUMNS)
+    // Unwon quotes are not live jobs. False is safe as .eq because quoted is not null.
+    let query = reader.from("projects").select(PROJECT_COLUMNS).eq("quoted", false)
     if (filters.pinned === true) query = query.eq("pinned", true)
     if (filters.archived === true) query = query.eq("archived", true)
     if (filters.completed === true) query = query.eq("completed", true)
     if (pattern) query = query.ilike("name", pattern)
     return query.order("name", { ascending: true }).order("id", { ascending: true }).range(start, end)
   }, SCHEDULE_FETCH_CAP)
-  return { truncated, projects: rows.map(mapProject).filter((project) => projectMatches(project, filters)) }
+  return { truncated, projects: liveProjectRows(rows).projects.filter((project) => projectMatches(project, filters)) }
 }
 
 export async function lookupProjects(
@@ -781,7 +806,7 @@ export async function lookupProjects(
   if (!isBoss(user)) {
     const found = await projectIdsForCrewMember(reader, user)
     const allowed = new Set(found.ids)
-    const projects = (await loadProjects(reader, found.ids)).filter((project) => allowed.has(project.id) && projectMatches(project, filters))
+    const projects = (await loadProjects(reader, found.ids)).projects.filter((project) => allowed.has(project.id) && projectMatches(project, filters))
     const listed = presentProjects(projects, found.truncated, "your jobs")
     if (listed.jobs.length === 0 && !("truncated" in listed)) {
       return { ...listed, note: "No job you are on matches that." }
@@ -944,7 +969,7 @@ export async function lookupJobSummary(reader: AskReader, user: AskUser, input: 
   if (!isBoss(user)) {
     const found = await projectIdsForCrewMember(reader, user)
     const allowed = new Set(found.ids)
-    projects = (await loadProjects(reader, found.ids)).filter((project) => allowed.has(project.id) && project.name.toLowerCase().includes(name))
+    projects = (await loadProjects(reader, found.ids)).projects.filter((project) => allowed.has(project.id) && project.name.toLowerCase().includes(name))
     if (projects.length === 0) return { note: "No job you are on matches that." }
   } else {
     const found = await findProjectsByName(reader, name)
@@ -961,6 +986,90 @@ export async function lookupJobSummary(reader: AskReader, user: AskUser, input: 
 function flag(value: unknown): boolean | undefined {
   if (value === true || value === false) return value
   return undefined
+}
+
+type QuoteJob = {
+  id: string
+  name: string
+  client: string | null
+  quoteNumber: string | null
+  quoteDate: string | null
+}
+
+function mapQuote(row: Row): QuoteJob {
+  const quoteDate = day(row.quote_date)
+  return {
+    id: String(row.id),
+    name: text(row.name) ?? "Untitled quote",
+    client: text(row.client),
+    quoteNumber: text(row.quote_number),
+    quoteDate: quoteDate || null,
+  }
+}
+
+function byQuoteNewest(a: QuoteJob, b: QuoteJob): number {
+  if (a.quoteDate !== b.quoteDate) {
+    if (!a.quoteDate) return 1
+    if (!b.quoteDate) return -1
+    return a.quoteDate < b.quoteDate ? 1 : -1
+  }
+  return a.name.localeCompare(b.name, "en", { numeric: true, sensitivity: "base" })
+}
+
+async function stageCounts(reader: AskReader, ids: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  if (ids.length === 0) return counts
+  const rows = await loadIn(reader, "milestones", MILESTONE_STAGE_COLUMNS, "project_id", ids)
+  for (const row of rows) {
+    const projectId = String(row.project_id ?? "")
+    if (!projectId) continue
+    counts.set(projectId, (counts.get(projectId) ?? 0) + 1)
+  }
+  return counts
+}
+
+export async function lookupQuotes(reader: AskReader, user: AskUser, input: { name?: string }) {
+  if (!isBoss(user)) return { error: "You can't see quotes." }
+  const name = plainQuery(input.name)
+  if (input.name?.trim() && !name) return { error: "Use a bit more of the street name." }
+  const pattern = name ? containsPattern(name) : null
+  const { rows, truncated } = await pages((start, end) => {
+    let query = reader.from("projects").select(QUOTE_COLUMNS).eq("quoted", true)
+    if (pattern) query = query.ilike("name", pattern)
+    return query.order("id", { ascending: true }).range(start, end)
+  }, SCHEDULE_FETCH_CAP)
+  const matched = rows.filter((row) => row.quoted === true).map(mapQuote)
+  const named = name ? matched.filter((quote) => quote.name.toLowerCase().includes(name)) : matched
+  const sorted = named.slice().sort(byQuoteNewest)
+  const shown = sorted.slice(0, PROJECT_LIMIT)
+  const counts = await stageCounts(reader, shown.map((quote) => quote.id))
+  const quotes = shown.map((quote) => ({
+    address: quote.name,
+    ...(quote.client ? { client: quote.client } : {}),
+    ...(quote.quoteNumber ? { quote_number: quote.quoteNumber } : {}),
+    ...(quote.quoteDate ? { quote_date: quote.quoteDate } : {}),
+    stages: counts.get(quote.id) ?? 0,
+  }))
+  if (quotes.length === 0) return { quotes, note: name ? "No open quote matches that." : "No open quotes." }
+  const hidden = truncated || sorted.length > quotes.length
+  return {
+    quotes,
+    ...(hidden
+      ? {
+          truncated: true,
+          returned: quotes.length,
+          ...(truncated ? { matched_at_least: sorted.length } : { matched: sorted.length }),
+          note: "Some open quotes were left out. Ask about one street.",
+        }
+      : {}),
+  }
+}
+
+export function readQuoteInput(input: unknown): { name?: string } {
+  if (!input || typeof input !== "object") return {}
+  const src = input as Record<string, unknown>
+  const rawName = typeof src.name === "string" ? src.name : typeof src.job_query === "string" ? src.job_query : undefined
+  return { name: rawName?.slice(0, 80) }
 }
 
 export function readToolInput(input: unknown): { from?: unknown; to?: unknown; job_query?: string; person?: string } {
@@ -999,6 +1108,7 @@ export async function runAskTool(reader: AskReader, user: AskUser, name: string 
     if (name === "lookup_hours") return await lookupHours(reader, user, readToolInput(input))
     if (name === "lookup_projects") return await lookupProjects(reader, user, readProjectInput(input))
     if (name === "job_summary") return await lookupJobSummary(reader, user, readJobSummaryInput(input))
+    if (name === "lookup_quotes") return await lookupQuotes(reader, user, readQuoteInput(input))
     return { error: "That lookup is not available." }
   } catch (err) {
     if (err instanceof AskReadError) return { error: "The schedule couldn't be read. Try again." }

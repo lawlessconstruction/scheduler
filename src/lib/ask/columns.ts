@@ -5,7 +5,12 @@
 // check) uses its own list in the route and never hands that row to the model.
 
 export const SEGMENT_COLUMNS = "id, name, project_id, crew_id, start_date, end_date, notes"
-export const PROJECT_COLUMNS = "id, name, client, archived, pinned, completed, completed_at"
+// `quoted` is read so live tools can leave an unwon quote out. It is not
+// passed through to the model.
+export const PROJECT_COLUMNS = "id, name, client, archived, pinned, completed, completed_at, quoted"
+// Open quotes only. No contract value and no stage amounts.
+export const QUOTE_COLUMNS = "id, name, client, quote_number, quote_date, quoted"
+export const MILESTONE_STAGE_COLUMNS = "id, project_id"
 export const CREW_COLUMNS = "id, name, nickname"
 export const LABEL_COLUMNS = "project_id, date, label"
 export const CREWMATE_COLUMNS = "name, crew_id, role"
@@ -21,6 +26,8 @@ export const WORKER_AUTH_COLUMNS = "id, name, app_role, crew_id, pin"
 export const TOOL_COLUMN_LISTS = [
   SEGMENT_COLUMNS,
   PROJECT_COLUMNS,
+  QUOTE_COLUMNS,
+  MILESTONE_STAGE_COLUMNS,
   CREW_COLUMNS,
   LABEL_COLUMNS,
   CREWMATE_COLUMNS,
