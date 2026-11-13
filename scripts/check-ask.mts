@@ -160,6 +160,9 @@ assert.ok(panel.includes("sendingRef"))
 assert.ok(panel.indexOf('className="ask-log"') < panel.indexOf("<form"))
 assert.match(panel, /min-height:\s*0/)
 assert.match(panel, /overflow-y:\s*auto/)
+assert.match(panel, /New chat/)
+assert.match(panel, /threadGeneration\.current \+= 1/)
+assert.match(panel, /threadGeneration\.current !== generation/)
 
 type Call = {
   table: string
