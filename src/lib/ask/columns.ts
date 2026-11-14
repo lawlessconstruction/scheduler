@@ -9,7 +9,7 @@ export const SEGMENT_COLUMNS = "id, name, project_id, crew_id, start_date, end_d
 // passed through to the model.
 export const PROJECT_COLUMNS = "id, name, client, archived, pinned, completed, completed_at, quoted"
 // Open quotes only. No contract value and no stage amounts.
-export const QUOTE_COLUMNS = "id, name, client, quote_number, quote_date, quoted"
+export const QUOTE_COLUMNS = "id, name, client, quote_number, quote_date, quoted, quote_pdf_path"
 export const MILESTONE_STAGE_COLUMNS = "id, project_id"
 export const CREW_COLUMNS = "id, name, nickname"
 export const LABEL_COLUMNS = "project_id, date, label"

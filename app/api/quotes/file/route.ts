@@ -39,5 +39,8 @@ export async function GET(req: NextRequest) {
 
   const signed = await db.storage.from("quotes").createSignedUrl(stored, SIGNED_URL_SECONDS)
   if (signed.error || !signed.data?.signedUrl) return json({ error: "Could not open the quote" }, 500)
+  if (new URL(req.url).searchParams.get("redirect") === "1") {
+    return NextResponse.redirect(signed.data.signedUrl)
+  }
   return json({ url: signed.data.signedUrl })
 }

@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "../src/lib/supabase"
 import { melbourneToday } from "../src/lib/ask/dates"
 import { AskButton, AskPanel } from "../src/components/AskPanel"
+import { InvoicesPanel } from "../src/components/InvoicesPanel"
+import { RaiseInvoiceDialog } from "../src/components/RaiseInvoiceDialog"
+import { canRaiseInvoice } from "../src/lib/qbo/roles"
 import {
   amountCanBeInvoiced,
   pastVisitsForInvoice,
@@ -151,6 +154,8 @@ type Client = {
   billing_address: string | null
   /** Days to pay, e.g. 14 or 30. Null = nothing agreed. */
   payment_terms_days: number | null
+  /** QuickBooks Customer.Id. Empty until someone matches the builder once. */
+  qbo_customer_id?: string | null
 }
 
 type Worker = {
@@ -333,6 +338,10 @@ type Milestone = {
   invoice_date: string | null
   paid_date: string | null
   invoice_number: string | null
+  /** Set when this stage was raised from Scheduler. Absent until the SQL has been applied. */
+  qbo_invoice_id?: string | null
+  invoice_sent_at?: string | null
+  invoiced_by_name?: string | null
 }
 
 type MilestoneModalState = {
@@ -1131,12 +1140,13 @@ function findCrewAvailability(
 
 
 
-function MilestonesListModal({ onClose, milestones, projects, contracts, segments }: {
+function MilestonesListModal({ onClose, milestones, projects, contracts, segments, onRaise }: {
   onClose: () => void
   milestones: Milestone[]
   projects: { id: string; name: string; client: string | null }[]
   contracts: { id: string; project_id: string; name: string | null; color: string | null }[]
   segments: { id: string; end_date: string; milestone_id: string | null }[]
+  onRaise?: (milestoneId: string) => void
 }) {
   const [filter, setFilter] = useState<"all" | "pending" | "invoiced" | "paid" | "no_amount">("pending")
   
@@ -1263,6 +1273,10 @@ function MilestonesListModal({ onClose, milestones, projects, contracts, segment
                       <div style={{ fontWeight: 600, color: "#c8d4f0" }}>{m.invoice_number}</div>
                       {m.invoice_date && <div style={{ fontSize: 11, color: "#6b7a9a" }}>{m.invoice_date}</div>}
                     </div>
+                  ) : status === "pending" && onRaise && amountCanBeInvoiced(m.amount) ? (
+                    <button type="button" onClick={() => onRaise(m.id)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #2563eb", background: "#2563eb", color: "white", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                      Raise invoice
+                    </button>
                   ) : status !== "pending" ? <span style={{ color: "#52525b" }}>—</span> : null}
                 </div>
                 <div style={{ fontSize: 12, color: "#4ade80" }}>{m.paid_date ?? (status === "paid" ? <span style={{ color: "#52525b" }}>—</span> : null)}</div>
@@ -2983,6 +2997,8 @@ export default function Home() {
   const [qboFillNote, setQboFillNote] = useState<{ id: string; exGst: number; total: number; tax: number } | null>(null)
   const qboLookupRef = useRef(false)
   const invoiceNumberRefs = useRef<Record<string, HTMLInputElement | null>>({})
+  const [showInvoicesPanel, setShowInvoicesPanel] = useState(false)
+  const [raiseInvoiceId, setRaiseInvoiceId] = useState<string | null>(null)
 
   const [cellSegmentForm, setCellSegmentForm] = useState({
     segmentId: "",
@@ -3005,6 +3021,7 @@ export default function Home() {
   const isWorker = currentUser?.app_role === "worker"
   const canSeeAll = isBoss
   const canSeeTimesheets = isBoss || isCrewBoss
+  const mayRaiseInvoice = canRaiseInvoice(currentUser?.app_role)
   const canSeeSchedulerOnly = isWorker
 
   function logout() {
@@ -5356,6 +5373,10 @@ Payment terms:
               <span style={{ ...iconStyle, background: "#7c3aed22" }}>◆</span>
               Milestones
             </button>}
+            {canSeeAll && <button type="button" onClick={() => setShowInvoicesPanel(true)} style={pillBase}>
+              <span style={{ ...iconStyle, background: "#2563eb22" }}>✉</span>
+              Invoices
+            </button>}
             {canSeeAll && <button type="button" onClick={() => { setShowProfitabilityModal(true); loadProfitability() }} style={pillBase}>
               <span style={{ ...iconStyle, background: "#16a34a22" }}>$</span>
               Profitability
@@ -7451,6 +7472,11 @@ Payment terms:
                       Set an amount greater than $0 before marking this invoiced or paid.
                     </div>
                   )}
+                  {mayRaiseInvoice && (m.status ?? "pending") === "pending" && amountCanBeInvoiced(m.amount) && !m.qbo_invoice_id && (
+                    <button type="button" onClick={() => setRaiseInvoiceId(m.id)} style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 8, border: "1px solid #2563eb", background: "#2563eb", color: "white", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                      Raise invoice
+                    </button>
+                  )}
                 </div>
                 {(m.status === "invoiced" || m.status === "paid" || qboLookupEnabled) && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
@@ -7494,6 +7520,13 @@ Payment terms:
                     Filled ${formatMoney(qboFillNote.exGst)} ex. GST from QuickBooks
                     (total ${formatMoney(qboFillNote.total)} inc. GST, tax ${formatMoney(qboFillNote.tax)}).
                     QuickBooks totals include GST; this amount is the ex-GST figure.
+                  </div>
+                )}
+                {m.qbo_invoice_id && (
+                  <div style={{ fontSize: 12, color: "#93c5fd", lineHeight: 1.45 }}>
+                    QuickBooks {m.invoice_number ?? m.qbo_invoice_id}
+                    {m.invoice_sent_at ? ` · emailed ${new Date(m.invoice_sent_at).toLocaleString("en-AU", { timeZone: "Australia/Melbourne", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : " · email not confirmed"}
+                    {m.invoiced_by_name ? ` · ${m.invoiced_by_name}` : ""}
                   </div>
                 )}
               </div>
@@ -11422,8 +11455,40 @@ Payment terms:
           projects={projects}
           contracts={contracts}
           segments={segments}
+          onRaise={mayRaiseInvoice ? (id) => setRaiseInvoiceId(id) : undefined}
         />
       )}
+
+      {showInvoicesPanel && (
+        <InvoicesPanel workerId={currentUser.id} pin={sessionPin} onClose={() => setShowInvoicesPanel(false)} />
+      )}
+
+      {raiseInvoiceId && (() => {
+        const milestone = milestones.find((item) => item.id === raiseInvoiceId)
+        if (!milestone || !amountCanBeInvoiced(milestone.amount)) return null
+        const project = projects.find((item) => item.id === milestone.project_id)
+        const named = project?.client?.trim().toLowerCase() ?? ""
+        const namedMatches = named ? clients.filter((item) => item.name.trim().toLowerCase() === named) : []
+        const client = project?.client_id
+          ? clients.find((item) => item.id === project.client_id) ?? null
+          : namedMatches.length === 1 ? namedMatches[0] : null
+        return (
+          <RaiseInvoiceDialog
+            milestoneId={milestone.id}
+            jobName={project?.name ?? "Job"}
+            stageName={(milestone.name ?? "").trim() || "Stage"}
+            amountExGst={Number(milestone.amount)}
+            builder={client ? { id: client.id, name: client.name, qboCustomerId: client.qbo_customer_id ?? null } : null}
+            workerId={currentUser.id}
+            pin={sessionPin}
+            onClose={() => setRaiseInvoiceId(null)}
+            onLinked={(clientId, qboCustomerId) => {
+              setClients((prev) => prev.map((item) => item.id === clientId ? { ...item, qbo_customer_id: qboCustomerId } : item))
+            }}
+            onChanged={() => { void loadData() }}
+          />
+        )
+      })()}
 
       {showClientsListModal && (
         <ClientsListModal

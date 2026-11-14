@@ -77,7 +77,7 @@ const TOOLS = [
   },
   {
     name: "job_summary",
-    description: "Read-only summary of one job, with no date window. Matches a street the same way as lookup_projects. Returns pinned, completed, completed_at, how many bookings, the first and last booking dates, the first and last day hours were logged, ordinary hours, overtime, total hours, days worked, and how many people. A boss also gets hours by crew and by person. A crew member only gets a job their crew is booked on or they have logged hours on, and only the totals, not anyone's individual hours. Use this for how long a job has been going, when it started, and the total hours on that street. If more than one job matches, ask for more of the street. Do not fall back to the asker's own timesheet. Unwon quotes are left out; call lookup_quotes for those.",
+    description: "Read-only summary of one job, with no date window. Matches a street the same way as lookup_projects. Returns pinned, completed, completed_at, how many bookings, the first and last booking dates, the first and last day hours were logged, ordinary hours, overtime, total hours, days worked, and how many people. A boss also gets hours by crew and by person. A crew member only gets a job their crew is booked on or they have logged hours on, and only the totals, not anyone's individual hours. Use this for how long a job has been going, when it started, and the total hours on that street. If one job matches, answer from it and do not ask which job. If more than one job matches, ask for more of the street. Do not fall back to the asker's own timesheet. Unwon quotes are left out; call lookup_quotes for those.",
     input_schema: {
       type: "object",
       properties: {
@@ -88,7 +88,7 @@ const TOOLS = [
   },
   {
     name: "lookup_quotes",
-    description: "Read-only list of open quotes that have not been won. Returns the street address, client, quote number, quote date, and how many priced stages. No dollar amounts. Boss only. Call this when the question is about quotes. Do not use lookup_projects, lookup_schedule, lookup_hours, or job_summary for a quote that has not been won.",
+    description: "Read-only list of open quotes that have not been won. Returns the street address, client, quote number, quote date, how many priced stages, and pdf_url when a PDF is saved. No dollar amounts. Boss only. Call this when the question is about quotes or a quote PDF, including when they do not name a street. If one quote matches, use it and do not ask which one. If pdf_url is set and they want the PDF, reply with that link. Do not use lookup_projects, lookup_schedule, lookup_hours, or job_summary for a quote that has not been won.",
     input_schema: {
       type: "object",
       properties: {
