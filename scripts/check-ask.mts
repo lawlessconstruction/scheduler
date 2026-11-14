@@ -717,6 +717,27 @@ if ("quotes" in openQuotes && Array.isArray(openQuotes.quotes)) {
 }
 assert.deepEqual(await runAskTool(fakeReader({ projects: [kent] }).reader, worker, "lookup_quotes", {}), { error: "You can't see quotes." })
 
+const pdfId = "11111111-1111-4111-8111-111111111111"
+const pdfQuote = {
+  id: pdfId,
+  name: "9 Only St",
+  client: "Only",
+  quoted: true,
+  quote_number: "Q-9",
+  quote_date: "2026-11-02",
+  quote_pdf_path: "only/quote.pdf",
+}
+const pdfResult = await runAskTool(fakeReader({ projects: [pdfQuote], milestones: [] }).reader, boss, "lookup_quotes", {})
+assert.equal("quotes" in pdfResult && Array.isArray(pdfResult.quotes) && pdfResult.quotes.length === 1, true)
+if ("quotes" in pdfResult && Array.isArray(pdfResult.quotes) && pdfResult.quotes[0]) {
+  assert.equal(pdfResult.quotes[0].pdf_url, `/api/quotes/file?projectId=${pdfId}&redirect=1`)
+  assert.match(String(pdfResult.note), /One open quote/)
+  assert.equal(JSON.stringify(pdfResult).includes("only/quote.pdf"), false)
+}
+assert.match(prompt, /one job, one person, or one quote/)
+assert.match(prompt, /Open quote PDF/)
+assert.match(bossPrompt, /one job, one person, or one quote/)
+
 process.env.ANTHROPIC_API_KEY = ""
 const hidden = await GET()
 assert.deepEqual(await hidden.json(), { configured: false })
