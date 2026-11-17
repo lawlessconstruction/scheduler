@@ -994,6 +994,16 @@ type QuoteJob = {
   client: string | null
   quoteNumber: string | null
   quoteDate: string | null
+  pdfUrl: string | null
+}
+
+const QUOTE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function quotePdfUrl(id: string, path: unknown): string | null {
+  const stored = text(path)
+  if (!stored || stored.includes("..") || stored.startsWith("/") || stored.includes("\\")) return null
+  if (!QUOTE_ID.test(id)) return null
+  return `/api/quotes/file?projectId=${id}&redirect=1`
 }
 
 function mapQuote(row: Row): QuoteJob {
@@ -1004,6 +1014,7 @@ function mapQuote(row: Row): QuoteJob {
     client: text(row.client),
     quoteNumber: text(row.quote_number),
     quoteDate: quoteDate || null,
+    pdfUrl: quotePdfUrl(String(row.id), row.quote_pdf_path),
   }
 }
 
@@ -1049,17 +1060,23 @@ export async function lookupQuotes(reader: AskReader, user: AskUser, input: { na
     ...(quote.quoteNumber ? { quote_number: quote.quoteNumber } : {}),
     ...(quote.quoteDate ? { quote_date: quote.quoteDate } : {}),
     stages: counts.get(quote.id) ?? 0,
+    ...(quote.pdfUrl ? { pdf_url: quote.pdfUrl } : {}),
   }))
   if (quotes.length === 0) return { quotes, note: name ? "No open quote matches that." : "No open quotes." }
   const hidden = truncated || sorted.length > quotes.length
+  const note = hidden
+    ? "Some open quotes were left out. Ask about one street."
+    : quotes.length === 1
+      ? "One open quote matches. Use it. If they asked for the PDF and pdf_url is set, give that link and do not ask which quote."
+      : "More than one open quote matches. Ask which street only if they need a single one."
   return {
     quotes,
+    note,
     ...(hidden
       ? {
           truncated: true,
           returned: quotes.length,
           ...(truncated ? { matched_at_least: sorted.length } : { matched: sorted.length }),
-          note: "Some open quotes were left out. Ask about one street.",
         }
       : {}),
   }

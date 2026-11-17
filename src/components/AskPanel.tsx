@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useRef, useState, type CSSProperties } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { askParts } from "../lib/ask/links"
 import { supabase } from "../lib/supabase"
 
 export type AskPerson = {
@@ -391,7 +392,7 @@ export function AskPanel({
                       border: `1px solid ${message.error ? "#7f1d1d" : message.role === "user" ? "#2563eb" : "#2e3a58"}`,
                       color: message.error ? "#f87171" : "#f0f4ff",
                     }}>
-                      {message.content}
+                      {message.role === "assistant" && !message.error ? <AskText content={message.content} /> : message.content}
                     </div>
                   </div>
                 ))}
@@ -460,4 +461,22 @@ const pinKeyStyle: CSSProperties = {
   color: "#f0f4ff",
   cursor: "pointer",
   touchAction: "manipulation",
+}
+
+function AskText({ content }: { content: string }): ReactNode {
+  const parts = askParts(content)
+  return parts.map((part, index) => {
+    if (part.type === "text") return <span key={index}>{part.text}</span>
+    return (
+      <a
+        key={index}
+        href={part.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: "#93c5fd", fontWeight: 700 }}
+      >
+        {part.label}
+      </a>
+    )
+  })
 }
