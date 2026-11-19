@@ -13,7 +13,10 @@ const CLAIM_TTL_MS = 3 * 60 * 1000
 export type InvoiceLine = { description: string; amountExGst: number }
 
 export type InvoiceDraft = {
+  /** Project sub-customer. Existing Woodcode invoices use this, not the builder. */
   customerId: string
+  /** Projects-centre id. Sent when we know it. minorversion 75 accepts ProjectRef (added in 69). */
+  projectRefId?: string | null
   email: string
   txnDate: string
   lines: InvoiceLine[]
@@ -60,8 +63,10 @@ export function cleanLines(raw: unknown): InvoiceLine[] | { error: string } {
 }
 
 export function invoiceBody(draft: InvoiceDraft): Record<string, unknown> {
+  const projectRefId = draft.projectRefId ? qboId(draft.projectRefId) : null
   return {
     CustomerRef: { value: draft.customerId },
+    ...(projectRefId ? { ProjectRef: { value: projectRefId } } : {}),
     BillEmail: { Address: draft.email },
     TxnDate: draft.txnDate,
     GlobalTaxCalculation: "TaxExcluded",

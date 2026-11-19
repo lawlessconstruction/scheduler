@@ -8,7 +8,7 @@ export function serviceClient(): SupabaseClient | null {
 }
 
 export function schemaHint(message: string): string | null {
-  if (/qbo_tokens|qbo_customer_id|qbo_invoice_id|invoice_claim|invoice_sent_at|invoiced_by/i.test(message)) {
+  if (/qbo_tokens|qbo_customer_id|qbo_invoice_id|qbo_project_id|invoice_claim|invoice_sent_at|invoiced_by/i.test(message)) {
     return "The QuickBooks columns aren't in the database yet. Run the SQL from the pull request, then try again."
   }
   return null

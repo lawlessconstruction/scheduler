@@ -17,6 +17,7 @@ import {
   stageLineDescription,
   type InvoiceLine,
 } from "./payload"
+import { resolveInvoiceProject } from "./projects"
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -27,6 +28,7 @@ type ProjectRow = {
   client_id: string | null
   quote_number: string | null
   quoted: boolean | null
+  qbo_project_id?: string | null
 }
 
 type ClientRow = { id: string; name: string | null; qbo_customer_id: string | null }
@@ -98,12 +100,6 @@ async function loadCustomer(customerId: string): Promise<{ email: string; name: 
     return { error: "That QuickBooks customer could not be found.", status: 404 }
   }
   const email = customerEmail(customer)
-  if (!email || !email.includes("@")) {
-    return {
-      error: "This builder has no email address in QuickBooks, so the invoice was not created and nothing was sent. Add their email on the customer in QuickBooks, then try again.",
-      status: 400,
-    }
-  }
   const name = typeof customer.DisplayName === "string" ? customer.DisplayName : ""
   return { email, name }
 }
@@ -178,10 +174,11 @@ export async function raiseInvoice(
 
   const projectRes = await db
     .from("projects")
-    .select("id, name, client, client_id, quote_number, quoted")
+    .select("id, name, client, client_id, quote_number, quoted, qbo_project_id")
     .eq("id", milestone.project_id)
     .maybeSingle()
-  if (projectRes.error || !projectRes.data) return { status: 404, body: { error: "That job could not be found." } }
+  if (projectRes.error) return { status: 500, body: { error: projectRes.error.message } }
+  if (!projectRes.data) return { status: 404, body: { error: "That job could not be found." } }
   const project = projectRes.data as ProjectRow
   if (project.quoted) return { status: 400, body: { error: "Win the quote before invoicing it." } }
 
@@ -195,6 +192,9 @@ export async function raiseInvoice(
 
   const customer = await loadCustomer(customerId)
   if ("error" in customer) return { status: customer.status, body: { error: customer.error } }
+
+  const target = await resolveInvoiceProject(db, project, { id: customerId, email: customer.email })
+  if ("error" in target) return { status: target.status, body: { error: target.error } }
 
   const stageAmount = asMoney(milestone.amount)
   if (stageAmount == null || stageAmount <= 0) {
@@ -248,8 +248,9 @@ export async function raiseInvoice(
     const [item, taxCodeId] = await Promise.all([serviceItem(), gstTaxCode()])
     sentToQuickBooks = true
     const created = await qboPost(`invoice?requestid=${encodeURIComponent(claim)}`, invoiceBody({
-      customerId,
-      email: customer.email,
+      customerId: target.customerId,
+      projectRefId: target.projectRefId,
+      email: target.email,
       txnDate: melbourneToday(),
       lines,
       note,
