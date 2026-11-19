@@ -4770,7 +4770,34 @@ Payment terms:
         showToast(`Could not mark the quote won: ${error.message}`)
         return
       }
-      showToast("Quote won — it's on the board")
+      // Won is already saved. A QuickBooks failure must not undo it.
+      let note = "Quote won — it's on the board"
+      if (!currentUser) {
+        showToast("Quote won. The QuickBooks project wasn't created — sign in again, then create it from Raise invoice.", 8000)
+        await loadData()
+        return
+      }
+      try {
+        const res = await fetch("/api/qbo/project", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "ensure", projectId, workerId: currentUser.id, pin: sessionPin }),
+        })
+        const data = await res.json().catch(() => ({})) as { error?: string; message?: string; qboProjectName?: string; created?: boolean; linked?: boolean }
+        if (!res.ok) {
+          const reason = data.error || data.message || "QuickBooks didn't respond"
+          note = `Quote won. The QuickBooks project wasn't created. ${reason} You can create it from Raise invoice.`
+        } else if (data.qboProjectName) {
+          note = data.created
+            ? `Quote won — QuickBooks project created: ${data.qboProjectName}`
+            : `Quote won — QuickBooks project ${data.qboProjectName}`
+        } else if (data.message) {
+          note = `Quote won. ${data.message}`
+        }
+      } catch {
+        note = "Quote won. The QuickBooks project wasn't created — QuickBooks didn't respond. You can create it from Raise invoice."
+      }
+      showToast(note, 8000)
       await loadData()
     } finally {
       winningQuoteRef.current = false
@@ -4901,9 +4928,9 @@ Payment terms:
     }
   }
 
-  function showToast(message: string) {
+  function showToast(message: string, ms = 3000) {
     setToast(message)
-    setTimeout(() => setToast(null), 3000)
+    setTimeout(() => setToast(null), ms)
   }
 
   // After any segment change, re-sort milestones on that project by their linked segment's end date
@@ -7432,7 +7459,7 @@ Payment terms:
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
-                  <FieldLabel>Amount ($ inc. GST)</FieldLabel>
+                  <FieldLabel>Amount ($ ex GST)</FieldLabel>
                   <input type="number" value={m.amount ?? ""} onChange={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; if (amountCanBeInvoiced(amount)) setMilestoneBillBlockId((prev) => prev === m.id ? null : prev); setMilestones((prev) => prev.map((x) => x.id === m.id ? { ...x, amount, percent } : x)) }} onBlur={(e) => { const amount = e.target.value ? Number(e.target.value) : null; const percent = amount != null && contractValue ? Number(((amount / contractValue) * 100).toFixed(2)) : m.percent; saveMilestone({ ...m, amount, percent }) }} placeholder="0.00" style={fieldStyle} />
                 </div>
                 <div>
@@ -7556,7 +7583,7 @@ Payment terms:
                   <div>
                     <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 3 }}>Allocated</div>
                     <div style={{ fontSize: 16, fontWeight: 700, color: totalAllocated > totalContractValue ? "#f87171" : "#a78bfa" }}>${formatMoney(totalAllocated)}</div>
-                    <div style={{ fontSize: 11, color: "#6b7a9a", marginTop: 2 }}>${formatMoney(totalAllocated / 1.1)} ex. GST</div>
+                    <div style={{ fontSize: 11, color: "#6b7a9a", marginTop: 2 }}>ex GST</div>
                   </div>
                   <div>
                     <div style={{ fontSize: 11, color: "#6b7a9a", marginBottom: 3 }}>Remaining</div>
@@ -11479,6 +11506,7 @@ Payment terms:
             stageName={(milestone.name ?? "").trim() || "Stage"}
             amountExGst={Number(milestone.amount)}
             builder={client ? { id: client.id, name: client.name, qboCustomerId: client.qbo_customer_id ?? null } : null}
+            projectId={project?.id ?? ""}
             workerId={currentUser.id}
             pin={sessionPin}
             onClose={() => setRaiseInvoiceId(null)}

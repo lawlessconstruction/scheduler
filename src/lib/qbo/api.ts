@@ -49,6 +49,35 @@ export async function qboGet(path: string): Promise<Record<string, unknown>> {
   return (json ?? {}) as Record<string, unknown>
 }
 
+const QBO_GRAPHQL_URL = "https://qb.api.intuit.com/graphql"
+
+type GraphqlBody = { data?: Record<string, unknown>; errors?: { message?: string }[] }
+
+export async function qboGraphql(query: string, variables: Record<string, unknown>, retry = true): Promise<Record<string, unknown>> {
+  const token = await getAccessToken(false)
+  const res = await fetch(QBO_GRAPHQL_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query, variables }),
+  })
+  const json = await res.json().catch(() => null) as GraphqlBody | null
+  if (res.status === 401 && retry) {
+    clearAccessTokenCache()
+    await getAccessToken(true)
+    return qboGraphql(query, variables, false)
+  }
+  const message = json?.errors?.map((item) => item.message).find((item) => typeof item === "string" && item.trim())
+  if (!res.ok || message) {
+    const status = res.status === 400 || res.status === 403 ? res.status : 502
+    throw new QboApiError((message || "QuickBooks projects didn't respond.").slice(0, 240), res.ok ? 502 : status)
+  }
+  return json?.data ?? {}
+}
+
 export async function qboPost(path: string, body: unknown): Promise<Record<string, unknown>> {
   const json = await call(path, {
     method: "POST",
