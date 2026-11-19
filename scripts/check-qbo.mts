@@ -13,6 +13,16 @@ import {
   stageLineDescription,
 } from "../src/lib/qbo/payload.ts"
 import { canRaiseInvoice, canReviewInvoices } from "../src/lib/qbo/roles.ts"
+import {
+  billEmail,
+  matchBuilderName,
+  matchProjects,
+  normaliseJobName,
+  pickProjectRef,
+  projectChoices,
+  projectDisplayName,
+  soleProjectRef,
+} from "../src/lib/qbo/names.ts"
 
 assert.equal(canRaiseInvoice("boss"), true)
 assert.equal(canRaiseInvoice("crew_boss"), true)
@@ -61,6 +71,90 @@ assert.equal(line.Amount, 1000)
 assert.equal(line.SalesItemLineDetail.UnitPrice, 1000)
 assert.equal(line.SalesItemLineDetail.TaxCodeRef.value, "10")
 assert.equal((body.BillEmail as { Address: string }).Address, "builder@example.com")
+assert.equal("ProjectRef" in body, false)
+
+const withProject = invoiceBody({
+  customerId: "344",
+  projectRefId: "820539257",
+  email: "builder@example.com",
+  txnDate: "2026-11-14",
+  lines: [{ description: "81 Haldane Rd Niddrie — Lock up", amountExGst: 1000 }],
+  note: "",
+  privateNote: "Raised in Scheduler",
+  item: { value: "3", name: "Services" },
+  taxCodeId: "10",
+})
+assert.equal((withProject.CustomerRef as { value: string }).value, "344")
+assert.equal((withProject.ProjectRef as { value: string }).value, "820539257")
+assert.equal((withProject.BillEmail as { Address: string }).Address, "builder@example.com")
+
+const skippedRef = invoiceBody({
+  customerId: "344",
+  projectRefId: "not-a-project",
+  email: "builder@example.com",
+  txnDate: "2026-11-14",
+  lines: [{ description: "Job", amountExGst: 10 }],
+  note: "",
+  privateNote: "Raised in Scheduler",
+  item: { value: "3", name: "Services" },
+  taxCodeId: "10",
+})
+assert.equal("ProjectRef" in skippedRef, false)
+
+assert.equal(normaliseJobName("7 Fyfe st, Templestowe Lower"), normaliseJobName("7 Fyfe Street Templestowe Lower"))
+assert.equal(normaliseJobName("81 Haldane Rd Niddrie"), normaliseJobName("81 haldane road, niddrie"))
+assert.equal(normaliseJobName("88 May St. Fitzroy North"), normaliseJobName("88 May Street Fitzroy North"))
+assert.notEqual(normaliseJobName("81 Haldane Rd Niddrie"), normaliseJobName("81 Haldane Rd"))
+assert.equal(projectDisplayName(" 81 Haldane: Rd\nNiddrie "), "81 Haldane Rd Niddrie")
+
+const jobs = [
+  { id: "344", name: "81 Haldane Rd Niddrie", parentId: "58" },
+  { id: "321", name: "88 May Street, Fitzroy North", parentId: "58" },
+  { id: "900", name: "81 Haldane Road, Niddrie", parentId: "77" },
+  { id: "901", name: "81 Haldane Rd Niddrie", parentId: "58" },
+]
+const original = jobs.map((job) => job.id)
+assert.equal(matchProjects("81 Haldane Road, Niddrie", jobs, "58").status, "many")
+assert.equal(matchProjects("88 May St Fitzroy North", jobs, "58").status, "one")
+const one = matchProjects("88 May St Fitzroy North", jobs, "58")
+assert.equal(one.status === "one" ? one.match.id : "", "321")
+assert.equal(matchProjects("81 Haldane Road, Niddrie", jobs, "77").status, "one")
+assert.equal(matchProjects("81 Haldane Road, Niddrie", jobs, null).status, "many")
+assert.equal(matchProjects("12 Smith St", jobs, "58").status, "none")
+assert.equal(matchProjects("", jobs, "58").status, "none")
+assert.deepEqual(jobs.map((job) => job.id), original)
+
+const choices = projectChoices("no such job", jobs, "58")
+assert.deepEqual(choices.map((job) => job.id), ["344", "901", "321"])
+assert.deepEqual(jobs.map((job) => job.id), original)
+
+assert.equal(matchBuilderName("Metricon", [
+  { id: "1", name: "metricon", job: false },
+  { id: "2", name: "Metricon", job: true },
+]).status, "one")
+assert.equal(matchBuilderName("Metricon", [
+  { id: "1", name: "Metricon", job: false },
+  { id: "3", name: "METRICON", job: false },
+]).status, "many")
+
+assert.equal(billEmail("builder@example.com", "site@example.com"), "builder@example.com")
+assert.equal(billEmail("", "site@example.com"), "site@example.com")
+assert.equal(billEmail("not-an-email", ""), null)
+
+assert.equal(pickProjectRef([
+  { id: "820539257", name: "81 Haldane Rd Niddrie", customerId: "344" },
+  { id: "809096466", name: "88 May St Fitzroy North", customerId: "321" },
+], "81 Haldane Road, Niddrie", ["344", "58"]), "820539257")
+assert.equal(pickProjectRef([
+  { id: "1", name: "81 Haldane Rd Niddrie", customerId: "344" },
+  { id: "2", name: "81 Haldane Road Niddrie", customerId: "900" },
+], "81 Haldane Rd Niddrie", ["344"]), "1")
+assert.equal(pickProjectRef([
+  { id: "1", name: "81 Haldane Rd Niddrie", customerId: "344" },
+  { id: "2", name: "81 Haldane Road Niddrie", customerId: "900" },
+], "81 Haldane Rd Niddrie", ["58"]), null)
+assert.equal(soleProjectRef(["820539257", "820539257"]), "820539257")
+assert.equal(soleProjectRef(["820539257", "809096466"]), null)
 
 const parts = askParts("The quote is [Open quote PDF](/api/quotes/file?projectId=11111111-1111-4111-8111-111111111111).")
 assert.equal(parts.filter((part) => part.type === "link").length, 1)

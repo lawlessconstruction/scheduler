@@ -29,6 +29,7 @@ export function RaiseInvoiceDialog({
   workerId,
   pin,
   milestoneId,
+  projectId,
   onClose,
   onLinked,
   onChanged,
@@ -40,6 +41,7 @@ export function RaiseInvoiceDialog({
   workerId: string
   pin: string
   milestoneId: string
+  projectId: string
   onClose: () => void
   onLinked: (clientId: string, qboCustomerId: string) => void
   onChanged: () => void
@@ -53,6 +55,13 @@ export function RaiseInvoiceDialog({
   const [error, setError] = useState("")
   const [info, setInfo] = useState("")
   const [busy, setBusy] = useState(false)
+  const [projectName, setProjectName] = useState("")
+  const [projectReady, setProjectReady] = useState(false)
+  const [candidates, setCandidates] = useState<{ id: string; name: string }[]>([])
+  const [canCreate, setCanCreate] = useState(false)
+  const [projectMessage, setProjectMessage] = useState("")
+  const [billEmail, setBillEmail] = useState("")
+  const [projectFilter, setProjectFilter] = useState("")
   const lock = useRef(false)
 
   const clientId = builder?.id ?? ""
@@ -81,13 +90,61 @@ export function RaiseInvoiceDialog({
     }
   }, [linkedId, clientId, workerId, pin])
 
+  function applyProject(data: Record<string, unknown>, status: number) {
+    if (status === 401) {
+      setError(typeof data.error === "string" ? data.error : "Sign in again, then try.")
+      setProjectReady(false)
+      return
+    }
+    if (status >= 400) {
+      const message = typeof data.message === "string" ? data.message : typeof data.error === "string" ? data.error : "Couldn't check the QuickBooks project."
+      setError(message)
+      setProjectReady(false)
+      return
+    }
+    const name = typeof data.qboProjectName === "string" ? data.qboProjectName : ""
+    const id = typeof data.qboProjectId === "string" ? data.qboProjectId : ""
+    setProjectReady(!!id && !!name)
+    setProjectName(name)
+    if (id && name) setError("")
+    setCanCreate(data.canCreate === true)
+    setProjectMessage(typeof data.message === "string" ? data.message : "")
+    setBillEmail(typeof data.billEmail === "string" ? data.billEmail : "")
+    const rows = Array.isArray(data.candidates) ? data.candidates : []
+    setCandidates(rows.filter((row): row is { id: string; name: string } => {
+      if (!row || typeof row !== "object") return false
+      const item = row as { id?: unknown; name?: unknown }
+      return typeof item.id === "string" && typeof item.name === "string"
+    }))
+  }
+
+  useEffect(() => {
+    if (!projectId || pin.length < 4) return
+    let cancelled = false
+    setProjectReady(false)
+    setProjectName("")
+    setCanCreate(false)
+    setCandidates([])
+    setProjectMessage("")
+    void postJson("/api/qbo/project", { action: "preview", workerId, pin, projectId }).then(({ data, status }) => {
+      if (!cancelled) applyProject(data, status)
+    }).catch(() => {
+      if (!cancelled) setError("Couldn't check the QuickBooks project.")
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, workerId, pin, linkedId])
+
   const extras = lines
     .map((line) => ({ description: line.description.trim(), amount: asMoney(line.amount) }))
     .filter((line) => line.description !== "" || line.amount != null)
   const extraAmounts = extras.map((line) => line.amount ?? 0)
   const preview = sumExGst([amountExGst, ...extraAmounts])
   const stageOnly = splitGst(amountExGst)
-  const canSend = pin.length >= 4 && !!builder?.qboCustomerId && !!remoteEmail && remoteEmail.includes("@") && amountCanBeInvoiced(amountExGst)
+  const invoiceEmail = remoteEmail && remoteEmail.includes("@") ? remoteEmail : billEmail
+  const canSend = pin.length >= 4 && !!builder?.qboCustomerId && invoiceEmail.includes("@") && amountCanBeInvoiced(amountExGst) && projectReady
+  const shownProjects = candidates.filter((candidate) => candidate.name.toLowerCase().includes(projectFilter.trim().toLowerCase()))
 
   async function search() {
     if (lock.current) return
@@ -152,6 +209,52 @@ export function RaiseInvoiceDialog({
     }
   }
 
+  async function chooseProject(id: string) {
+    if (lock.current) return
+    setError("")
+    lock.current = true
+    setBusy(true)
+    try {
+      const { data, status } = await postJson("/api/qbo/project", { action: "link", workerId, pin, projectId, qboProjectId: id })
+      if (status >= 400) {
+        setError(typeof data.message === "string" ? data.message : typeof data.error === "string" ? data.error : "Couldn't save that project.")
+        return
+      }
+      applyProject(data, status)
+      setProjectFilter("")
+    } catch {
+      setError("Couldn't save that project.")
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
+
+  async function createQboProject() {
+    if (lock.current || !canCreate) return
+    setError("")
+    lock.current = true
+    setBusy(true)
+    try {
+      const { data, status } = await postJson("/api/qbo/project", { action: "create", workerId, pin, projectId })
+      if (status >= 400 || typeof data.qboProjectId !== "string" || !data.qboProjectId) {
+        const message = typeof data.message === "string" ? data.message : typeof data.error === "string" ? data.error : "The QuickBooks project was not created."
+        if (Array.isArray(data.candidates) && data.candidates.length > 0) {
+          applyProject({ ...data, qboProjectId: null, message }, 200)
+          return
+        }
+        setError(message)
+        return
+      }
+      applyProject(data, status)
+    } catch {
+      setError("The QuickBooks project was not created.")
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
+
   async function confirm() {
     if (lock.current || !canSend) return
     const payloadLines = []
@@ -192,7 +295,7 @@ export function RaiseInvoiceDialog({
     }
   }
 
-  const missingEmail = remoteEmail === ""
+  const missingEmail = remoteEmail === "" && !invoiceEmail.includes("@") && (projectReady || projectMessage !== "")
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 160, padding: 16 }}>
@@ -207,7 +310,7 @@ export function RaiseInvoiceDialog({
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", marginBottom: 14 }}>
           <div>
             <div id="raise-invoice-title" style={{ fontSize: 22, fontWeight: 800 }}>Raise invoice</div>
-            <div style={{ fontSize: 13, color: "#8899bb", marginTop: 4 }}>QuickBooks will email this to the builder.</div>
+            <div style={{ fontSize: 13, color: "#8899bb", marginTop: 4 }}>{invoiceEmail ? `QuickBooks will email ${invoiceEmail}.` : "QuickBooks will email this to the builder."}</div>
           </div>
           <button type="button" onClick={onClose} style={quietButton}>Close</button>
         </div>
@@ -215,6 +318,7 @@ export function RaiseInvoiceDialog({
         <div style={{ display: "grid", gap: 8, background: "#141a28", border: "1px solid #252f45", borderRadius: 10, padding: 14, marginBottom: 14 }}>
           <Row label="Builder" value={builder?.name ?? "No builder on this job"} />
           <Row label="Job" value={jobName} />
+          <Row label="QuickBooks project" value={projectReady ? projectName : "Not matched yet"} />
           <Row label="Stage" value={stageName} />
           <Row label="Amount ex GST" value={`$${money(stageOnly.exGst)}`} />
           <Row label="GST (10%)" value={`$${money(preview.gst)}`} />
@@ -250,7 +354,28 @@ export function RaiseInvoiceDialog({
             {remoteEmail ? ` · ${remoteEmail}` : ""}
           </div>
         )}
-        {missingEmail && <Banner>This builder has no email address in QuickBooks, so the invoice was not created and nothing was sent. Add their email on the customer in QuickBooks, then try again.</Banner>}
+        {builder && linkedId && !projectReady && (projectMessage || canCreate || candidates.length > 0) && (
+          <div style={{ marginBottom: 14 }}>
+            {projectMessage && <Banner>{projectMessage}</Banner>}
+            {candidates.length > 8 && (
+              <input aria-label="Filter QuickBooks projects" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)} style={{ ...fieldStyle, marginBottom: 8 }} placeholder="Filter projects" />
+            )}
+            <div style={{ display: "grid", gap: 6 }}>
+              {shownProjects.map((hit) => (
+                <button key={hit.id} type="button" onClick={() => void chooseProject(hit.id)} disabled={busy} style={hitButton}>
+                  <span style={{ fontWeight: 700 }}>{hit.name}</span>
+                </button>
+              ))}
+            </div>
+            {canCreate && (
+              <button type="button" onClick={() => void createQboProject()} disabled={busy} style={{ ...primaryButton, marginTop: 8, background: "#166534", borderColor: "#14532d" }}>
+                {busy ? "Working…" : "Create project in QuickBooks"}
+              </button>
+            )}
+          </div>
+        )}
+        {projectReady && <div style={{ fontSize: 13, color: "#86efac", marginBottom: 12 }}>Invoice goes against QuickBooks project {projectName}.</div>}
+        {missingEmail && <Banner>This builder has no email address in QuickBooks, and the job project doesn't either, so the invoice was not created and nothing was sent. Add the builder's email on the customer in QuickBooks, then try again.</Banner>}
 
         {canSend && (
           <>
@@ -274,7 +399,7 @@ export function RaiseInvoiceDialog({
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
           <button type="button" onClick={onClose} style={quietButton}>Cancel</button>
           <button type="button" onClick={() => void confirm()} disabled={!canSend || busy} style={{ ...primaryButton, opacity: !canSend || busy ? 0.55 : 1, cursor: !canSend || busy ? "default" : "pointer" }}>
-            {busy ? "Raising…" : "Raise and email"}
+            {busy && projectReady ? "Raising…" : "Raise and email"}
           </button>
         </div>
       </div>
